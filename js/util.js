@@ -1,0 +1,119 @@
+/* Small utility helpers used everywhere. Plain global namespace `Util`. */
+(function () {
+  const Util = {};
+
+  Util.fmtNum = function (n) {
+    if (n == null || Number.isNaN(n)) return "—";
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return (n / 1e9).toFixed(2).replace(/\.00$/, "") + "B";
+    if (abs >= 1e6) return (n / 1e6).toFixed(2).replace(/\.00$/, "") + "M";
+    if (abs >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
+    return String(Math.round(n));
+  };
+
+  Util.fmtPct = function (n) {
+    if (n == null || Number.isNaN(n)) return "—";
+    return (n * 100).toFixed(0) + "%";
+  };
+
+  Util.fmtDateShort = function (epochSeconds) {
+    if (!epochSeconds) return "—";
+    const d = new Date(epochSeconds * 1000);
+    return d.toISOString().slice(0, 16).replace("T", " ");
+  };
+
+  Util.relTime = function (epochSeconds) {
+    if (!epochSeconds) return "—";
+    const diff = Date.now() / 1000 - epochSeconds;
+    if (diff < 60) return Math.round(diff) + "s ago";
+    if (diff < 3600) return Math.round(diff / 60) + "m ago";
+    if (diff < 86400) return Math.round(diff / 3600) + "h ago";
+    if (diff < 86400 * 30) return Math.round(diff / 86400) + "d ago";
+    if (diff < 86400 * 365) return Math.round(diff / (86400 * 30)) + "mo ago";
+    return Math.round(diff / (86400 * 365)) + "y ago";
+  };
+
+  Util.escapeHtml = function (s) {
+    if (s == null) return "";
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  Util.normalizeSubName = function (s) {
+    if (!s) return "";
+    return String(s).trim().replace(/^\/?r\//i, "").replace(/\/$/, "").toLowerCase();
+  };
+
+  Util.parseIdList = function (text) {
+    if (!text) return [];
+    return String(text)
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.replace(/^t3_/, ""));
+  };
+
+  Util.debounce = function (fn, ms) {
+    let t;
+    return function (...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), ms);
+    };
+  };
+
+  Util.uniqBy = function (arr, key) {
+    const seen = new Set();
+    const out = [];
+    for (const v of arr) {
+      const k = typeof key === "function" ? key(v) : v[key];
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(v);
+      }
+    }
+    return out;
+  };
+
+  Util.average = function (arr) {
+    if (!arr.length) return 0;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  };
+
+  Util.median = function (arr) {
+    if (!arr.length) return 0;
+    const a = arr.slice().sort((x, y) => x - y);
+    const m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  };
+
+  Util.percentile = function (arr, p) {
+    if (!arr.length) return 0;
+    const a = arr.slice().sort((x, y) => x - y);
+    const idx = Math.min(a.length - 1, Math.max(0, Math.round((p / 100) * (a.length - 1))));
+    return a[idx];
+  };
+
+  Util.toast = function (msg, kind) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = "toast" + (kind ? " " + kind : "");
+    el.hidden = false;
+    clearTimeout(Util._toastTimer);
+    Util._toastTimer = setTimeout(() => (el.hidden = true), 3500);
+  };
+
+  Util.setStatus = function (msg, kind) {
+    const el = document.getElementById("status-bar");
+    if (!el) return;
+    el.innerHTML = `<span class="${kind || ""}">${Util.escapeHtml(msg)}</span><span>${new Date().toLocaleTimeString()}</span>`;
+  };
+
+  Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  window.Util = Util;
+})();
