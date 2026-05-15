@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reddit Campaign Reporter — old.reddit /json scrubber</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
+  <title>Reddit Campaign Reporter</title>
   <meta name="description" content="A static dashboard that scrubs old Reddit /json feeds for trend analysis, AI insights and cross-post campaign tracking." />
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
@@ -16,36 +18,39 @@
   <header class="topbar">
     <div class="brand">
       <div class="logo" aria-hidden="true">R</div>
-      <div>
+      <div class="brand-text">
         <h1>Reddit Campaign Reporter</h1>
-        <p class="tagline">old.reddit <code>/json</code> scrubber · trend analysis · AI insights · cross-post campaigns</p>
+        <p class="tagline">old.reddit <code>/json</code> · trends · AI insights · campaigns</p>
       </div>
     </div>
     <div class="topbar-actions">
-      <label class="topbar-select" title="Reddit doesn't send CORS headers for *.json so the browser cannot fetch directly. Requests are routed through a public proxy; switch if one stops working.">
+      <button id="filters-toggle" class="btn ghost only-mobile" aria-controls="controls" aria-expanded="false" title="Show / hide filters">
+        <span class="icon" aria-hidden="true">⚙</span><span class="btn-label">Filters</span>
+      </button>
+      <button id="refresh-btn" class="btn primary" title="Refetch from Reddit" aria-label="Refresh data">
+        <span class="icon" aria-hidden="true">↻</span><span class="btn-label">Refresh</span>
+      </button>
+      <label class="topbar-select hide-mobile" title="Reddit doesn't send CORS headers for *.json so the browser cannot fetch directly. Requests are routed through a public proxy; switch if one stops working.">
         <span>Data source</span>
         <select id="transport-select"></select>
       </label>
-      <button id="refresh-btn" class="btn primary" title="Refetch from Reddit">
-        <span class="icon">↻</span> Refresh
-      </button>
-      <button id="clear-cache-btn" class="btn ghost" title="Clear cached responses">Clear cache</button>
-      <a class="btn ghost" href="https://github.com/karshkode/old-reddit-json-reporter" id="repo-link" target="_blank" rel="noopener">Source</a>
+      <button id="clear-cache-btn" class="btn ghost hide-mobile" title="Clear cached responses">Clear cache</button>
+      <a class="btn ghost hide-mobile" href="https://github.com/karshkode/old-reddit-json-reporter" id="repo-link" target="_blank" rel="noopener">Source</a>
     </div>
   </header>
 
-  <section class="controls" aria-label="Filters">
+  <section class="controls" id="controls" aria-label="Filters">
     <div class="control-group">
-      <label>Subreddits</label>
+      <label class="group-label">Subreddits</label>
       <div id="subreddit-chips" class="chips"></div>
       <form id="add-sub-form" class="inline-form">
-        <input id="add-sub-input" type="text" placeholder="add subreddit (e.g. AnythingGoes)" autocomplete="off" />
+        <input id="add-sub-input" type="text" placeholder="add subreddit" autocomplete="off" inputmode="text" />
         <button class="btn small" type="submit">Add</button>
       </form>
     </div>
 
     <div class="control-group">
-      <label for="listing-select">Listing</label>
+      <label for="listing-select" class="group-label">Listing</label>
       <select id="listing-select">
         <option value="new">New</option>
         <option value="hot" selected>Hot</option>
@@ -53,7 +58,7 @@
         <option value="rising">Rising</option>
       </select>
 
-      <label for="time-select">Top window</label>
+      <label for="time-select" class="group-label">Top window</label>
       <select id="time-select">
         <option value="day">Day</option>
         <option value="week" selected>Week</option>
@@ -62,7 +67,7 @@
         <option value="all">All</option>
       </select>
 
-      <label for="limit-select">Limit</label>
+      <label for="limit-select" class="group-label">Limit</label>
       <select id="limit-select">
         <option>25</option>
         <option selected>100</option>
@@ -72,18 +77,24 @@
     </div>
 
     <div class="control-group">
-      <label for="post-id-filter">Filter by post ID</label>
-      <input id="post-id-filter" type="text" placeholder="e.g. 1abcd2e (comma-separated ok)" autocomplete="off" />
+      <label for="post-id-filter" class="group-label">Filter by post ID</label>
+      <input id="post-id-filter" type="text" placeholder="1abcd2e (comma-separated ok)" autocomplete="off" inputmode="text" />
 
-      <label for="search-input">Search title/author</label>
-      <input id="search-input" type="search" placeholder="keyword…" autocomplete="off" />
+      <label for="search-input" class="group-label">Search</label>
+      <input id="search-input" type="search" placeholder="title, author, flair…" autocomplete="off" />
+    </div>
+
+    <div class="control-group only-mobile">
+      <label for="transport-select-mobile" class="group-label">Data source</label>
+      <select id="transport-select-mobile"></select>
+      <button id="clear-cache-btn-mobile" class="btn small ghost" type="button">Clear cache</button>
     </div>
   </section>
 
   <main>
     <section class="kpis" id="kpi-row" aria-label="Headline metrics"></section>
 
-    <nav class="tabs" role="tablist">
+    <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab active" data-tab="overview" role="tab">Overview</button>
       <button class="tab" data-tab="trends" role="tab">Trends</button>
       <button class="tab" data-tab="posts" role="tab">Posts</button>
@@ -95,19 +106,19 @@
       <div class="grid two">
         <div class="card">
           <header class="card-header"><h2>Posts over time</h2><span class="hint">Submissions per hour</span></header>
-          <canvas id="chart-timeline" height="180"></canvas>
+          <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
         </div>
         <div class="card">
           <header class="card-header"><h2>Score vs comments</h2><span class="hint">Engagement scatter</span></header>
-          <canvas id="chart-scatter" height="180"></canvas>
+          <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
         </div>
         <div class="card">
           <header class="card-header"><h2>Subreddit comparison</h2><span class="hint">Totals across selected subs</span></header>
-          <canvas id="chart-sub-compare" height="180"></canvas>
+          <div class="chart-wrap"><canvas id="chart-sub-compare"></canvas></div>
         </div>
         <div class="card">
           <header class="card-header"><h2>Score distribution</h2><span class="hint">How posts performed</span></header>
-          <canvas id="chart-hist" height="180"></canvas>
+          <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
         </div>
       </div>
     </section>
@@ -116,15 +127,15 @@
       <div class="grid two">
         <div class="card">
           <header class="card-header"><h2>Best posting times</h2><span class="hint">Avg score by hour (UTC)</span></header>
-          <canvas id="chart-hour-heat" height="200"></canvas>
+          <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
         </div>
         <div class="card">
           <header class="card-header"><h2>Day-of-week activity</h2><span class="hint">Submissions by weekday</span></header>
-          <canvas id="chart-dow" height="200"></canvas>
+          <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
         </div>
         <div class="card span-2">
           <header class="card-header"><h2>Engagement velocity</h2><span class="hint">Score &amp; comments accumulation per post (newest)</span></header>
-          <canvas id="chart-velocity" height="200"></canvas>
+          <div class="chart-wrap tall"><canvas id="chart-velocity"></canvas></div>
         </div>
       </div>
     </section>
@@ -133,8 +144,19 @@
       <div class="card">
         <header class="card-header">
           <h2>Posts (<span id="posts-count">0</span>)</h2>
-          <span class="hint">Click a row for details &amp; comment summary</span>
+          <span class="hint">Tap a row for details &amp; comments</span>
         </header>
+        <div class="sort-row">
+          <label class="group-label only-mobile" for="mobile-sort">Sort by</label>
+          <select id="mobile-sort" class="only-mobile">
+            <option value="score:desc">Top score</option>
+            <option value="num_comments:desc">Most comments</option>
+            <option value="created_utc:desc">Newest</option>
+            <option value="created_utc:asc">Oldest</option>
+            <option value="upvote_ratio:desc">Highest UV%</option>
+            <option value="title:asc">Title A→Z</option>
+          </select>
+        </div>
         <div class="table-wrap">
           <table id="posts-table">
             <thead>
@@ -157,7 +179,7 @@
       <div class="card" id="post-detail" hidden>
         <header class="card-header">
           <h2>Post detail</h2>
-          <button id="close-detail" class="btn ghost small">Close</button>
+          <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
         </header>
         <div id="post-detail-body"></div>
       </div>
@@ -166,11 +188,11 @@
     <section id="tab-campaigns" class="tab-panel" role="tabpanel">
       <div class="grid two">
         <div class="card">
-          <header class="card-header"><h2>New campaign</h2><span class="hint">Track a list of cross-posts toward a goal</span></header>
+          <header class="card-header"><h2>New campaign</h2><span class="hint">Track cross-posts toward a goal</span></header>
           <form id="campaign-form" class="form-grid">
-            <label>Name <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required /></label>
-            <label>Goal upvotes <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" /></label>
-            <label>Goal comments <input id="campaign-goal-comments" type="number" min="0" placeholder="e.g. 500" /></label>
+            <label class="full">Name <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required /></label>
+            <label>Goal upvotes <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" inputmode="numeric" /></label>
+            <label>Goal comments <input id="campaign-goal-comments" type="number" min="0" placeholder="e.g. 500" inputmode="numeric" /></label>
             <label class="full">Post IDs (comma or newline separated)
               <textarea id="campaign-post-ids" rows="3" placeholder="1abcd2e, 9z8y7x6 …"></textarea>
             </label>
@@ -188,8 +210,8 @@
       <div class="card" id="campaign-detail" hidden>
         <header class="card-header">
           <h2 id="campaign-detail-title">Campaign</h2>
-          <div class="row gap">
-            <button id="campaign-refresh" class="btn small">Refresh posts</button>
+          <div class="row gap wrap">
+            <button id="campaign-refresh" class="btn small">Refresh</button>
             <button id="campaign-delete" class="btn small danger">Delete</button>
             <button id="campaign-close" class="btn ghost small">Close</button>
           </div>
@@ -201,23 +223,23 @@
     <section id="tab-ai" class="tab-panel" role="tabpanel">
       <div class="grid two">
         <div class="card span-2">
-          <header class="card-header"><h2>Narrative summary</h2><span class="hint">Auto-generated from the data on screen</span></header>
+          <header class="card-header"><h2>Narrative summary</h2><span class="hint">From data on screen</span></header>
           <div id="ai-summary" class="prose"></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Title sentiment</h2><span class="hint">Lexicon-based · positive vs negative</span></header>
-          <canvas id="chart-sentiment" height="200"></canvas>
+          <header class="card-header"><h2>Title sentiment</h2><span class="hint">Lexicon-based</span></header>
+          <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Top keywords</h2><span class="hint">TF-style frequency · stopwords filtered</span></header>
+          <header class="card-header"><h2>Top keywords</h2><span class="hint">Stopword-filtered</span></header>
           <div id="keywords" class="keyword-cloud"></div>
         </div>
         <div class="card span-2">
-          <header class="card-header"><h2>Cross-post detection</h2><span class="hint">Same titles or URLs appearing in multiple subs</span></header>
+          <header class="card-header"><h2>Cross-post detection</h2><span class="hint">Same titles or URLs across multiple subs</span></header>
           <div id="crossposts" class="crosspost-list"></div>
         </div>
         <div class="card span-2">
-          <header class="card-header"><h2>Recommendations</h2><span class="hint">Heuristics drawn from this dataset</span></header>
+          <header class="card-header"><h2>Recommendations</h2><span class="hint">Heuristics from this dataset</span></header>
           <ul id="recommendations" class="reco-list"></ul>
         </div>
       </div>
@@ -228,7 +250,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <footer>
-    <p>Data sourced live from <code>https://www.reddit.com/r/&lt;sub&gt;/&lt;listing&gt;.json</code> via your browser. Reddit blocks anonymous browser CORS, so the request is routed through a public CORS proxy (selectable in the top bar). No server, no tracking. Static site for GitHub Pages.</p>
+    <p>Live data from <code>www.reddit.com/r/&lt;sub&gt;.json</code> via your browser. Reddit blocks anonymous browser CORS, so requests route through a public CORS proxy (selectable in the top bar). No server, no tracking. Static site for GitHub Pages.</p>
   </footer>
 
   <script src="./js/util.js"></script>
