@@ -6,7 +6,8 @@
   <title>Reddit Campaign Reporter — old.reddit /json scrubber</title>
   <meta name="description" content="A static dashboard that scrubs old Reddit /json feeds for trend analysis, AI insights and cross-post campaign tracking." />
   <link rel="preconnect" href="https://www.reddit.com" />
-  <link rel="preconnect" href="https://old.reddit.com" />
+  <link rel="preconnect" href="https://api.codetabs.com" />
+  <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="stylesheet" href="./css/styles.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4500'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -21,11 +22,15 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <label class="topbar-select" title="Reddit doesn't send CORS headers for *.json so the browser cannot fetch directly. Requests are routed through a public proxy; switch if one stops working.">
+        <span>Data source</span>
+        <select id="transport-select"></select>
+      </label>
       <button id="refresh-btn" class="btn primary" title="Refetch from Reddit">
         <span class="icon">↻</span> Refresh
       </button>
       <button id="clear-cache-btn" class="btn ghost" title="Clear cached responses">Clear cache</button>
-      <a class="btn ghost" href="https://github.com" id="repo-link" target="_blank" rel="noopener">Source</a>
+      <a class="btn ghost" href="https://github.com/karshkode/old-reddit-json-reporter" id="repo-link" target="_blank" rel="noopener">Source</a>
     </div>
   </header>
 
@@ -223,7 +228,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <footer>
-    <p>Data sourced live from <code>https://www.reddit.com/r/&lt;sub&gt;/&lt;listing&gt;.json</code> via your browser. No server, no tracking. Static site for GitHub Pages.</p>
+    <p>Data sourced live from <code>https://www.reddit.com/r/&lt;sub&gt;/&lt;listing&gt;.json</code> via your browser. Reddit blocks anonymous browser CORS, so the request is routed through a public CORS proxy (selectable in the top bar). No server, no tracking. Static site for GitHub Pages.</p>
   </footer>
 
   <script src="./js/util.js"></script>

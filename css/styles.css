@@ -66,6 +66,8 @@ code {
   top: 0;
   z-index: 10;
   backdrop-filter: blur(6px);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -98,7 +100,30 @@ code {
   box-shadow: var(--shadow);
 }
 
-.topbar-actions { display: flex; gap: 8px; align-items: center; }
+.topbar-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.topbar-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+.topbar-select select {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.topbar-select select:focus { border-color: var(--accent); outline: none; }
 
 .btn {
   appearance: none;
@@ -399,9 +424,11 @@ tbody td .title-text {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
 }
 .status-bar .err { color: var(--bad); }
 .status-bar .ok { color: var(--good); }
+.status-bar .left, .status-bar .right { display: flex; gap: 12px; align-items: center; }
 
 .toast {
   position: fixed;
@@ -588,6 +615,19 @@ footer {
   color: var(--text-mute);
   font-size: 13px;
 }
+
+.banner {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.banner.warn { background: rgba(251, 191, 36, 0.08); border-color: var(--warn); color: var(--text); }
+.banner.bad { background: rgba(248, 113, 113, 0.08); border-color: var(--bad); color: var(--text); }
+.banner.info { background: rgba(96, 165, 250, 0.08); border-color: var(--info); color: var(--text); }
+.banner strong { color: var(--accent-2); }
+.banner .hint { display: block; color: var(--text-mute); font-size: 12px; margin-top: 4px; }
 
 .badge {
   display: inline-block;

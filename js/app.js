@@ -23,6 +23,8 @@
     searchQuery: "",
     detailCache: new Map(),
     campaignSummaries: {},
+    lastTransport: null,
+    lastErrors: [],
   };
 
   /* ---------- Persistence ---------- */
@@ -48,6 +50,25 @@
     localStorage.setItem(STORAGE_KEYS.listing, state.listing);
     localStorage.setItem(STORAGE_KEYS.time, state.timeWindow);
     localStorage.setItem(STORAGE_KEYS.limit, String(state.limit));
+  }
+
+  /* ---------- Banner ---------- */
+
+  function showBanner(kind, html) {
+    const main = document.querySelector("main");
+    if (!main) return;
+    let banner = document.getElementById("banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "banner";
+      main.insertBefore(banner, main.firstChild);
+    }
+    banner.className = "banner " + (kind || "info");
+    banner.innerHTML = html;
+  }
+  function hideBanner() {
+    const banner = document.getElementById("banner");
+    if (banner) banner.remove();
   }
 
   /* ---------- Filtering ---------- */
@@ -110,12 +131,14 @@
     if (!state.activeSubs.size) {
       state.posts = [];
       Util.setStatus("No active subreddits selected.", "err");
+      hideBanner();
       rerenderAll();
       return;
     }
     if (force) Reddit.clearCache();
     const subs = Array.from(state.activeSubs);
-    Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…`);
+    Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…`, "", "via " + describeTransport());
+    state.lastErrors = [];
     const all = [];
     let errors = 0;
     for (const sub of subs) {
@@ -128,17 +151,37 @@
         for (const p of list) all.push(p);
       } catch (err) {
         errors++;
+        state.lastErrors.push({ sub, message: err.message });
         Util.toast(`r/${sub}: ${err.message}`, "error");
       }
     }
     state.posts = Util.uniqBy(all, (p) => p.id);
+    state.lastTransport = Reddit._lastTransport || state.lastTransport;
     Util.setStatus(
       `Loaded ${state.posts.length} posts from ${subs.length} subreddit${subs.length > 1 ? "s" : ""}` +
       (errors ? ` · ${errors} error${errors > 1 ? "s" : ""}` : ""),
-      errors ? "err" : "ok"
+      errors ? "err" : "ok",
+      "via " + describeTransport()
     );
+    if (state.posts.length === 0 && state.activeSubs.size > 0) {
+      const errLines = state.lastErrors.map((e) => `<li><code>r/${Util.escapeHtml(e.sub)}</code> — ${Util.escapeHtml(e.message)}</li>`).join("");
+      showBanner("bad", `
+        <strong>All Reddit fetches failed.</strong>
+        Reddit doesn't send CORS headers for browser requests, so this site routes through public CORS proxies. The currently selected proxy may be down or rate-limited.
+        <ul style="margin:6px 0 0 18px;padding:0">${errLines}</ul>
+        <span class="hint">Try picking a different <strong>Data source</strong> in the top bar, or wait a minute and click <strong>Refresh</strong>.</span>
+      `);
+    } else if (state.posts.length > 0) {
+      hideBanner();
+    }
     rerenderAll();
     refreshAllCampaignSummaries();
+  }
+
+  function describeTransport() {
+    const pref = Reddit.getTransport();
+    if (pref === "auto") return "auto" + (state.lastTransport ? " → " + state.lastTransport : "");
+    return pref;
   }
 
   /* ---------- Post detail ---------- */
@@ -198,6 +241,26 @@
   /* ---------- Wire UI ---------- */
 
   function bind() {
+    const transportSelect = document.getElementById("transport-select");
+    if (transportSelect) {
+      for (const t of Reddit.TRANSPORTS) {
+        const opt = document.createElement("option");
+        opt.value = t.name;
+        opt.textContent = t.label;
+        transportSelect.appendChild(opt);
+      }
+      transportSelect.value = Reddit.getTransport();
+      transportSelect.addEventListener("change", (e) => {
+        Reddit.setTransport(e.target.value);
+        Reddit.clearCache();
+        Util.toast(`Data source: ${e.target.value}`, "ok");
+        refreshData(true);
+      });
+      Reddit.onTransportSuccess = function (name) {
+        state.lastTransport = name;
+      };
+    }
+
     document.getElementById("refresh-btn").addEventListener("click", () => refreshData(true));
     document.getElementById("clear-cache-btn").addEventListener("click", () => {
       Reddit.clearCache();
