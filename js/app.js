@@ -27,6 +27,10 @@
     lastErrors: [],
   };
 
+  function isMobile() {
+    return window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
+  }
+
   /* ---------- Persistence ---------- */
 
   function loadPersisted() {
@@ -69,6 +73,19 @@
   function hideBanner() {
     const banner = document.getElementById("banner");
     if (banner) banner.remove();
+  }
+
+  /* ---------- Filter drawer ---------- */
+
+  function setControlsExpanded(expanded) {
+    const controls = document.getElementById("controls");
+    const toggle = document.getElementById("filters-toggle");
+    if (!controls) return;
+    controls.classList.toggle("expanded", expanded);
+    if (toggle) {
+      toggle.classList.toggle("expanded", expanded);
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    }
   }
 
   /* ---------- Filtering ---------- */
@@ -158,8 +175,8 @@
     state.posts = Util.uniqBy(all, (p) => p.id);
     state.lastTransport = Reddit._lastTransport || state.lastTransport;
     Util.setStatus(
-      `Loaded ${state.posts.length} posts from ${subs.length} subreddit${subs.length > 1 ? "s" : ""}` +
-      (errors ? ` · ${errors} error${errors > 1 ? "s" : ""}` : ""),
+      `Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}` +
+      (errors ? ` · ${errors} err` : ""),
       errors ? "err" : "ok",
       "via " + describeTransport()
     );
@@ -169,7 +186,7 @@
         <strong>All Reddit fetches failed.</strong>
         Reddit doesn't send CORS headers for browser requests, so this site routes through public CORS proxies. The currently selected proxy may be down or rate-limited.
         <ul style="margin:6px 0 0 18px;padding:0">${errLines}</ul>
-        <span class="hint">Try picking a different <strong>Data source</strong> in the top bar, or wait a minute and click <strong>Refresh</strong>.</span>
+        <span class="hint">Try picking a different <strong>Data source</strong> (top bar on desktop, in Filters on mobile), or wait a minute and tap <strong>Refresh</strong>.</span>
       `);
     } else if (state.posts.length > 0) {
       hideBanner();
@@ -240,29 +257,55 @@
 
   /* ---------- Wire UI ---------- */
 
+  function populateTransportSelect(select) {
+    if (!select) return;
+    select.innerHTML = "";
+    for (const t of Reddit.TRANSPORTS) {
+      const opt = document.createElement("option");
+      opt.value = t.name;
+      opt.textContent = t.label;
+      select.appendChild(opt);
+    }
+    select.value = Reddit.getTransport();
+  }
+
   function bind() {
     const transportSelect = document.getElementById("transport-select");
-    if (transportSelect) {
-      for (const t of Reddit.TRANSPORTS) {
-        const opt = document.createElement("option");
-        opt.value = t.name;
-        opt.textContent = t.label;
-        transportSelect.appendChild(opt);
-      }
-      transportSelect.value = Reddit.getTransport();
-      transportSelect.addEventListener("change", (e) => {
-        Reddit.setTransport(e.target.value);
-        Reddit.clearCache();
-        Util.toast(`Data source: ${e.target.value}`, "ok");
-        refreshData(true);
+    const transportSelectMobile = document.getElementById("transport-select-mobile");
+    populateTransportSelect(transportSelect);
+    populateTransportSelect(transportSelectMobile);
+
+    function onTransportChange(e) {
+      const v = e.target.value;
+      Reddit.setTransport(v);
+      if (transportSelect && transportSelect !== e.target) transportSelect.value = v;
+      if (transportSelectMobile && transportSelectMobile !== e.target) transportSelectMobile.value = v;
+      Reddit.clearCache();
+      Util.toast(`Data source: ${v}`, "ok");
+      refreshData(true);
+    }
+    if (transportSelect) transportSelect.addEventListener("change", onTransportChange);
+    if (transportSelectMobile) transportSelectMobile.addEventListener("change", onTransportChange);
+
+    Reddit.onTransportSuccess = function (name) { state.lastTransport = name; };
+
+    const filtersToggle = document.getElementById("filters-toggle");
+    if (filtersToggle) {
+      filtersToggle.addEventListener("click", () => {
+        const controls = document.getElementById("controls");
+        const expanded = !controls.classList.contains("expanded");
+        setControlsExpanded(expanded);
       });
-      Reddit.onTransportSuccess = function (name) {
-        state.lastTransport = name;
-      };
     }
 
     document.getElementById("refresh-btn").addEventListener("click", () => refreshData(true));
-    document.getElementById("clear-cache-btn").addEventListener("click", () => {
+    const clearBtn = document.getElementById("clear-cache-btn");
+    if (clearBtn) clearBtn.addEventListener("click", () => {
+      Reddit.clearCache();
+      Util.toast("Cache cleared", "ok");
+    });
+    const clearBtnMobile = document.getElementById("clear-cache-btn-mobile");
+    if (clearBtnMobile) clearBtnMobile.addEventListener("click", () => {
       Reddit.clearCache();
       Util.toast("Cache cleared", "ok");
     });
@@ -314,8 +357,28 @@
         if (state.sortKey === k) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
         else { state.sortKey = k; state.sortDir = (k === "title" || k === "author" || k === "id" || k === "subreddit") ? "asc" : "desc"; }
         rerenderAll();
+        syncMobileSort();
       });
     });
+
+    const mobileSort = document.getElementById("mobile-sort");
+    if (mobileSort) {
+      mobileSort.addEventListener("change", (e) => {
+        const [k, d] = e.target.value.split(":");
+        state.sortKey = k;
+        state.sortDir = d === "asc" ? "asc" : "desc";
+        rerenderAll();
+      });
+    }
+
+    function syncMobileSort() {
+      if (mobileSort) {
+        const v = `${state.sortKey}:${state.sortDir}`;
+        const has = Array.from(mobileSort.options).some((o) => o.value === v);
+        if (has) mobileSort.value = v;
+      }
+    }
+    syncMobileSort();
 
     document.getElementById("close-detail").addEventListener("click", UI.hidePostDetail);
 
@@ -349,6 +412,17 @@
       UI.hideCampaignDetail();
       refreshAllCampaignSummaries();
     });
+
+    /* Close filters drawer when user finishes a filter action on mobile */
+    const closeOnSelect = (el) => {
+      if (!el) return;
+      el.addEventListener("change", () => {
+        if (isMobile()) setControlsExpanded(false);
+      });
+    };
+    closeOnSelect(document.getElementById("listing-select"));
+    closeOnSelect(document.getElementById("time-select"));
+    closeOnSelect(document.getElementById("limit-select"));
   }
 
   function renderChips() {
