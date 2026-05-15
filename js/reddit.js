@@ -5,23 +5,54 @@
  *   https://www.reddit.com/comments/<id>.json
  *   https://www.reddit.com/by_id/t3_<id>.json
  *
- * old.reddit.com mirrors the same endpoints. We default to www.reddit.com
- * because it is more reliably served with permissive CORS. Users can switch
- * via Reddit.setBase().
+ * However, Reddit's response does NOT include `Access-Control-Allow-Origin`
+ * headers, so a browser running on https://*.github.io cannot fetch these
+ * URLs directly. Reddit also actively returns a 403 "Blocked" HTML page to
+ * datacenter and unidentified IPs.
  *
- * Reddit rate-limits anonymous requests; we throttle, retry with backoff,
- * and cache responses in-memory + sessionStorage for the page lifetime.
+ * To make this static site work from GitHub Pages we route requests through
+ * a chain of public CORS proxies, validate that the response is real Reddit
+ * JSON (the proxy may forward Reddit's HTML "Blocked" page, which we must
+ * reject so the next proxy is tried), and cache successful responses.
+ *
+ * Users can override the proxy via the "Data source" select in the topbar
+ * or by calling Reddit.setTransport(name).
  */
 (function () {
   const Reddit = {};
 
-  let BASE = "https://www.reddit.com";
+  const BASE = "https://www.reddit.com";
   const CACHE_TTL_MS = 5 * 60 * 1000;
   const memCache = new Map();
   const inflight = new Map();
+  const STORAGE_KEY = "rj.transport";
 
-  Reddit.setBase = function (url) {
-    BASE = url.replace(/\/$/, "");
+  /* A "transport" wraps a Reddit URL into a CORS-friendly request.
+   * Each transport's `build(redditUrl)` returns the URL the browser hits.
+   *
+   * `direct` only works if the user has installed a CORS-disabling browser
+   * extension or if a future Reddit policy change adds CORS support; we
+   * keep it as a manual option but never auto-pick it.
+   */
+  const TRANSPORTS = [
+    { name: "auto", label: "Auto (try proxies in order)" },
+    { name: "codetabs", label: "codetabs.com proxy", build: (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u) },
+    { name: "allorigins", label: "allorigins.win proxy", build: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u) },
+    { name: "corsproxy", label: "corsproxy.io proxy", build: (u) => "https://corsproxy.io/?" + encodeURIComponent(u) },
+    { name: "isomorphic", label: "isomorphic-git/cors-proxy", build: (u) => "https://cors.isomorphic-git.org/" + u.replace(/^https?:\/\//, "") },
+    { name: "direct", label: "Direct (needs CORS unblocker)", build: (u) => u },
+  ];
+  Reddit.TRANSPORTS = TRANSPORTS;
+
+  const AUTO_ORDER = ["codetabs", "allorigins", "corsproxy", "isomorphic"];
+
+  let preferredTransport = "auto";
+  try { preferredTransport = localStorage.getItem(STORAGE_KEY) || "auto"; } catch (_) {}
+
+  Reddit.getTransport = () => preferredTransport;
+  Reddit.setTransport = function (name) {
+    preferredTransport = name;
+    try { localStorage.setItem(STORAGE_KEY, name); } catch (_) {}
   };
 
   Reddit.clearCache = function () {
@@ -57,6 +88,59 @@
     } catch (_) {}
   }
 
+  function getTransportByName(name) {
+    return TRANSPORTS.find((t) => t.name === name);
+  }
+
+  function transportsToTry() {
+    if (preferredTransport === "auto") {
+      return AUTO_ORDER.map(getTransportByName).filter(Boolean);
+    }
+    const t = getTransportByName(preferredTransport);
+    return t && t.build ? [t] : AUTO_ORDER.map(getTransportByName).filter(Boolean);
+  }
+
+  function looksLikeBlockedHtml(text) {
+    if (!text) return false;
+    const head = text.slice(0, 600).toLowerCase();
+    if (head.startsWith("<")) return true;
+    if (head.includes("whoa there, pardner")) return true;
+    if (head.includes("<title>blocked")) return true;
+    if (head.includes("blocked due to a network policy")) return true;
+    return false;
+  }
+
+  async function tryTransport(transport, redditUrl, attempt) {
+    const target = transport.build(redditUrl);
+    const res = await fetch(target, {
+      method: "GET",
+      credentials: "omit",
+      headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.5" },
+    });
+    if (res.status === 429) {
+      const retry = parseInt(res.headers.get("Retry-After") || "0", 10);
+      await Util.sleep(Math.max(800 * Math.pow(2, attempt), retry * 1000));
+      throw new Error("rate limited (429) via " + transport.name);
+    }
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status + " via " + transport.name);
+    }
+    const text = await res.text();
+    if (looksLikeBlockedHtml(text)) {
+      throw new Error("Reddit blocked page via " + transport.name);
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error("non-JSON response via " + transport.name);
+    }
+    if (data && typeof data === "object" && !Array.isArray(data) && data.error && (data.error === 403 || data.error === 404 || data.error === 429)) {
+      throw new Error("Reddit " + data.error + " via " + transport.name + (data.message ? ": " + data.message : ""));
+    }
+    return { data, transport: transport.name };
+  }
+
   async function fetchJson(path, params) {
     const url = new URL(BASE + path);
     url.searchParams.set("raw_json", "1");
@@ -65,39 +149,30 @@
         if (v != null && v !== "") url.searchParams.set(k, v);
       }
     }
+    const redditUrl = url.toString();
     const key = url.pathname + "?" + url.searchParams.toString();
     const cached = cacheGet(key);
     if (cached) return cached;
     if (inflight.has(key)) return inflight.get(key);
 
     const promise = (async () => {
-      let attempt = 0;
       let lastErr;
-      while (attempt < 4) {
-        try {
-          const res = await fetch(url.toString(), {
-            method: "GET",
-            credentials: "omit",
-            headers: { Accept: "application/json" },
-          });
-          if (res.status === 429) {
-            await Util.sleep(800 * Math.pow(2, attempt));
-            attempt++;
-            continue;
+      const transports = transportsToTry();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        for (const t of transports) {
+          try {
+            const out = await tryTransport(t, redditUrl, attempt);
+            cacheSet(key, out.data);
+            Reddit._lastTransport = out.transport;
+            if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
+            return out.data;
+          } catch (err) {
+            lastErr = err;
           }
-          if (!res.ok) {
-            throw new Error("HTTP " + res.status + " " + res.statusText);
-          }
-          const data = await res.json();
-          cacheSet(key, data);
-          return data;
-        } catch (err) {
-          lastErr = err;
-          await Util.sleep(400 * Math.pow(2, attempt));
-          attempt++;
         }
+        await Util.sleep(400 * Math.pow(2, attempt));
       }
-      throw lastErr || new Error("fetch failed");
+      throw lastErr || new Error("All proxies failed");
     })();
     inflight.set(key, promise);
     try {
@@ -119,7 +194,7 @@
     const target = Math.max(1, Math.min(opts.limit || 100, 1000));
     const out = [];
     let after = null;
-    let pageSize = Math.min(100, target);
+    const pageSize = Math.min(100, target);
     while (out.length < target) {
       const params = { limit: pageSize, t: time };
       if (after) params.after = after;

@@ -107,10 +107,11 @@
     Util._toastTimer = setTimeout(() => (el.hidden = true), 3500);
   };
 
-  Util.setStatus = function (msg, kind) {
+  Util.setStatus = function (msg, kind, extra) {
     const el = document.getElementById("status-bar");
     if (!el) return;
-    el.innerHTML = `<span class="${kind || ""}">${Util.escapeHtml(msg)}</span><span>${new Date().toLocaleTimeString()}</span>`;
+    const right = extra ? `<span>${Util.escapeHtml(extra)}</span>` : "";
+    el.innerHTML = `<span class="left ${kind || ""}">${Util.escapeHtml(msg)}</span><span class="right">${right}<span>${new Date().toLocaleTimeString()}</span></span>`;
   };
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
