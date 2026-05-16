@@ -892,7 +892,7 @@
      once the user adds the candidate to the dashboard.
      ============================================================ */
 
-  Analysis.scoreCandidate = function (candidate, campaignProfile) {
+  Analysis.scoreCandidate = function (candidate, campaignProfile, opts) {
     if (!candidate || !campaignProfile) return null;
     const text = ((candidate.title || "") + " " +
                   (candidate.public_description || "") + " " +
@@ -920,18 +920,30 @@
 
     const safety = candidate.over18 ? 0 : 1;
 
+    /* Bonus for subs that turned up in multiple search angles or were
+     * surfaced from active-post mining — these are the ones the user
+     * really hasn't seen yet, even if their description is sparse. */
+    const queryHits = Math.max(0, Math.min(8, opts && opts.queryHits ? opts.queryHits : 0));
+    const postHits = Math.max(0, Math.min(20, opts && opts.postHits ? opts.postHits : 0));
+    const multiBoost = clamp01(queryHits / 4);
+    const postBoost = clamp01(postHits / 8);
+
     const composite = clamp01(
-      0.55 * themeMatch +
-      0.18 * popularity +
-      0.20 * engagement +
-      0.07 * safety
+      0.45 * themeMatch +
+      0.14 * popularity +
+      0.16 * engagement +
+      0.10 * multiBoost +
+      0.10 * postBoost +
+      0.05 * safety
     );
     const score = Math.round(composite * 100);
 
     const reasons = [];
     if (matchedPhrases.length) reasons.push(`description matches <em>${matchedPhrases.map(htmlSafe).join(", ")}</em>`);
     if (matchedKeys.length) reasons.push(`description keyword overlap <em>${matchedKeys.slice(0, 6).map(htmlSafe).join(", ")}</em>`);
-    if (!matchedPhrases.length && !matchedKeys.length) reasons.push(`<span class="meta">no direct keyword match — ranked on size + activity only</span>`);
+    if (!matchedPhrases.length && !matchedKeys.length && !postHits) reasons.push(`<span class="meta">no direct keyword match — ranked on size + activity only</span>`);
+    if (postHits) reasons.push(`<span class="badge info">${postHits} hot post${postHits === 1 ? "" : "s"}</span> mention campaign keywords this month`);
+    if (queryHits >= 2) reasons.push(`appeared in <strong>${queryHits}</strong> of your search angles`);
     reasons.push(`<strong>${Util.fmtNum(subs)}</strong> subscribers`);
     if (candidate.active_user_count) {
       const pct = (ratio * 100).toFixed(2);
@@ -941,35 +953,57 @@
       score, composite,
       themeMatch, popularity, engagement,
       matchedKeys, matchedPhrases,
+      queryHits, postHits,
       reasons,
     };
   };
 
+  /* opts:
+   *   excludeNames  - subs to mark "alreadyLoaded" (still rendered separately)
+   *   includeAlready - keep already-loaded ones tagged but in the result
+   *   minSubs       - lower floor (default 25). Ghost-town protection only.
+   *   limit         - top N "new" candidates to keep
+   *   queryHitsByName - { lowercaseName: number of search angles it hit }
+   *   postHitsByName  - { lowercaseName: number of hot posts that mentioned the campaign keywords }
+   */
   Analysis.discoverCandidates = function (rawSearchResults, campaignProfile, opts) {
     opts = opts || {};
     const exclude = new Set(((opts.excludeNames || []).map((s) => String(s).toLowerCase())));
-    const minSubs = opts.minSubs || 100;
+    const minSubs = opts.minSubs != null ? opts.minSubs : 25;
+    const queryHitsByName = opts.queryHitsByName || {};
+    const postHitsByName = opts.postHitsByName || {};
     const seen = new Set();
-    const out = [];
+    const newOut = [];
+    const alreadyOut = [];
     for (const c of (rawSearchResults || [])) {
       if (!c || !c.display_name) continue;
       const name = String(c.display_name).toLowerCase();
       if (seen.has(name)) continue;
       seen.add(name);
-      if (exclude.has(name)) continue;
       if (c.over18) continue;
       if ((c.subscribers || 0) < minSubs) continue;
-      const scored = Analysis.scoreCandidate(c, campaignProfile);
+      const scored = Analysis.scoreCandidate(c, campaignProfile, {
+        queryHits: queryHitsByName[name] || 0,
+        postHits: postHitsByName[name] || 0,
+      });
       if (!scored) continue;
-      out.push({
+      const item = {
         name: c.display_name,
         canonical: name,
         candidate: c,
+        alreadyLoaded: exclude.has(name),
         ...scored,
-      });
+      };
+      if (item.alreadyLoaded) alreadyOut.push(item);
+      else newOut.push(item);
     }
-    out.sort((a, b) => b.score - a.score);
-    return out.slice(0, opts.limit || 12);
+    newOut.sort((a, b) => b.score - a.score);
+    alreadyOut.sort((a, b) => b.score - a.score);
+    return {
+      candidates: newOut.slice(0, opts.limit || 20),
+      alreadyLoaded: alreadyOut.slice(0, 8),
+      totalScanned: seen.size,
+    };
   };
 
   /* Build a search query from a campaign's top phrases / keywords. */
@@ -978,6 +1012,20 @@
     const words = (campaignProfile.keywords || []).slice(0, 4).map((k) => k.word);
     const parts = [...phrases, ...words.slice(0, 4 - phrases.length)];
     return parts.join(" OR ");
+  };
+
+  /* Returns N distinct query strings — one per top phrase plus one per top
+   * keyword — so the discoverer can run them in parallel and union the
+   * results. Subs that match multiple queries get a frequency-of-hits
+   * boost in scoreCandidate. */
+  Analysis.buildDiscoveryQuerySet = function (campaignProfile, n) {
+    n = n || 6;
+    const phrases = (campaignProfile.bigrams || []).slice(0, 4).map((b) => `"${b.phrase}"`);
+    const words = (campaignProfile.keywords || []).slice(0, 8).map((k) => k.word);
+    const out = [];
+    for (const p of phrases) { if (out.length < n) out.push(p); }
+    for (const w of words) { if (out.length < n) out.push(w); }
+    return out;
   };
 
   window.Analysis = Analysis;

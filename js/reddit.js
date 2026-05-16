@@ -400,6 +400,35 @@
       }));
   };
 
+  /* Site-wide post search. Used by candidate discovery to find which
+   * subreddits are *currently active* on a topic, not just which sub
+   * descriptions match the keyword. The set of distinct subreddit names
+   * returned by these post results often reveals niche communities the
+   * /subreddits/search endpoint never surfaces. */
+  Reddit.searchPosts = async function (query, opts) {
+    opts = opts || {};
+    const json = await fetchJson(`/search.json`, {
+      q: query,
+      limit: Math.min(opts.limit || 50, 100),
+      sort: opts.sort || "top",
+      t: opts.t || "month",
+      type: "link",
+      include_over_18: "off",
+      restrict_sr: "off",
+    });
+    const children = (json && json.data && json.data.children) || [];
+    return children
+      .filter((c) => c && c.kind === "t3" && c.data)
+      .map((c) => ({
+        id: c.data.id,
+        subreddit: c.data.subreddit,
+        title: c.data.title,
+        score: c.data.score,
+        num_comments: c.data.num_comments,
+        created_utc: c.data.created_utc,
+      }));
+  };
+
   Reddit.fetchSubredditAbout = async function (name) {
     const sub = Util.normalizeSubName(name);
     const json = await fetchJson(`/r/${sub}/about.json`, {});
