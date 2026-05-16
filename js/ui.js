@@ -132,8 +132,9 @@
     const card = document.getElementById("post-detail");
     const body = document.getElementById("post-detail-body");
     if (!card || !body) return;
+    const wasHidden = !!card.hidden;
     card.hidden = false;
-    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (wasHidden) card.scrollIntoView({ behavior: "smooth", block: "start" });
 
     const sent = Analysis.scoreSentiment(post.title + " " + (post.selftext || ""));
     const sentBadge = sent.score > 0.1
@@ -526,9 +527,14 @@
     const title = document.getElementById("campaign-detail-title");
     const body = document.getElementById("campaign-detail-body");
     if (!card) return;
+    /* Only scroll the detail card into view on the FIRST render after it
+     * was hidden — i.e. when the user is genuinely opening a campaign.
+     * Re-renders triggered by add/remove post or background refreshes
+     * should leave the user's current scroll position alone. */
+    const wasHidden = !!card.hidden;
     card.hidden = false;
     if (title) title.textContent = campaign.name;
-    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (wasHidden) card.scrollIntoView({ behavior: "smooth", block: "start" });
 
     const goalScorePct = campaign.goalScore ? Math.min(1, agg.totalScore / campaign.goalScore) : null;
     const goalCommentsPct = campaign.goalComments ? Math.min(1, agg.totalComments / campaign.goalComments) : null;
@@ -689,13 +695,32 @@
 
   /* ---------- Tabs ---------- */
 
+  /* Scroll the active tab into view *horizontally* within its strip,
+   * never touching window vertical scroll. The previous implementation
+   * called tab.scrollIntoView({ block: "nearest", behavior: "smooth" })
+   * which on iOS Safari can yank the entire page scroll because the
+   * tabs strip is position:sticky — a known Safari quirk. */
+  function scrollTabHorizontalIntoView(tab) {
+    const strip = tab && tab.parentElement;
+    if (!strip) return;
+    const tr = tab.getBoundingClientRect();
+    const sr = strip.getBoundingClientRect();
+    if (tr.left < sr.left) {
+      strip.scrollLeft += tr.left - sr.left - 8;
+    } else if (tr.right > sr.right) {
+      strip.scrollLeft += tr.right - sr.right + 8;
+    }
+  }
+
   UI.activateTab = function (name) {
+    let activeTab = null;
     document.querySelectorAll(".tab").forEach((t) => {
       const active = t.dataset.tab === name;
       t.classList.toggle("active", active);
       t.setAttribute("aria-selected", active ? "true" : "false");
-      if (active) t.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+      if (active) activeTab = t;
     });
+    if (activeTab) scrollTabHorizontalIntoView(activeTab);
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   };
 
