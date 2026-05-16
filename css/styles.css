@@ -1558,3 +1558,11 @@ footer {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+
+/* Discover card: arrange picker + strict toggle + button on one row, stack on mobile */
+#discover-card .targeting-picker { align-items: center; }
+#discover-card .discover-mode { margin: 0; }
+@media (max-width: 720px) {
+  #discover-card .discover-mode { width: 100%; justify-content: center; }
+}

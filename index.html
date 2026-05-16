@@ -237,6 +237,10 @@
         <div class="targeting-picker">
           <label class="group-label" for="discover-campaign">Campaign</label>
           <select id="discover-campaign"></select>
+          <div class="chart-mode discover-mode" role="tablist" aria-label="Discovery filter">
+            <button type="button" data-strict="1" class="active" role="tab" title="Drop celebrity / fandom / mega-generic subs and keep results inside the campaign's topical sphere.">Strict</button>
+            <button type="button" data-strict="0" role="tab" title="Show every match, including off-topic ones.">All</button>
+          </div>
           <button id="discover-run" class="btn small primary" type="button">Discover</button>
         </div>
         <div id="discover-status" class="meta" style="margin-top:8px;display:none"></div>

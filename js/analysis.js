@@ -989,6 +989,123 @@
   Analysis.DAY_NAMES = DAY_NAMES;
 
   /* ============================================================
+     13b. DISCOVERY LEXICONS
+     ----------------------------------------------------------
+     Words that pollute discovery (months, weekdays, generic verbs)
+     get filtered before being used as search queries OR as evidence
+     of theme match. CAMPAIGN_TERMS rewards subs whose descriptions
+     genuinely use civic/activist/policy vocabulary; OFFTOPIC_TERMS
+     penalises subs whose descriptions are dominated by celebrity,
+     beauty, gaming, sports, fandom, or pure-story content.
+
+     The lexicons are deliberately conservative — a single hit
+     doesn't decide a sub's fate. Boost / penalty kicks in at
+     >= 2 hits OR is combined with theme match.
+     ============================================================ */
+
+  const NON_TOPICAL_DISCOVERY_WORDS = new Set([
+    /* time / date */
+    "january","february","march","april","may","june","july","august",
+    "september","october","november","december",
+    "monday","tuesday","wednesday","thursday","friday","saturday","sunday",
+    "year","years","yearly","week","weeks","weekly","month","months","monthly",
+    "day","days","daily","today","tomorrow","yesterday","tonight","morning",
+    "evening","night","afternoon","weekend",
+    /* questions / answers */
+    "answer","answers","answered","ask","asks","asked","asking",
+    "question","questions","wonder","wondering","wondered","tried","trying","try",
+    /* generic placeholders */
+    "thing","things","way","ways","place","places","stuff","group","groups",
+    "person","persons","time","times","point","points","case","cases",
+    "lot","lots","kind","kinds","sort","sorts","example","examples","part",
+    /* speech verbs */
+    "said","says","told","tells","talk","talked","talking","talks",
+  ]);
+
+  const CAMPAIGN_TERMS = new Set([
+    /* ideology */
+    "progressive","progressives","progress","left","leftist","leftwing",
+    "liberal","liberals","democrat","democrats","democratic","democracy",
+    "socialist","socialists","socialism","socdem","communist","communism",
+    "anarchist","anarchism","anarcho","abolitionist","abolish","abolitionism",
+    "antifascist","antifascism","antifa","anticapitalist",
+    /* movement / civic action */
+    "movement","movements","activism","activist","activists","organize",
+    "organizing","organized","organizer","organizers","mobilize","mobilizing",
+    "mobilization","grassroots","resist","resistance","occupy","demonstrate",
+    "demonstration","demonstrations","demonstrator","demonstrators",
+    "march","marches","marching","protest","protests","protested","protester",
+    "protesters","rally","rallies","strike","strikes","striking","picket",
+    "picketing","picketed","boycott","boycotts","boycotting","boycotted",
+    "campaign","campaigns","campaigner","petition","petitions",
+    /* civic / electoral */
+    "vote","votes","voter","voters","voting","voted","ballot","ballots",
+    "election","elections","electoral","registration","civic","civics",
+    "constitutional","amendment","constituency","representative","senator",
+    "congress","congressional","parliament","parliamentary",
+    /* labor */
+    "labor","labour","union","unions","unionize","unionizing","unionized",
+    "worker","workers","working","employment","unemployment","wage","wages",
+    "minimum","livable","tenant","tenants","rent","renter","renters",
+    /* identity / justice */
+    "feminist","feminism","queer","lgbt","lgbtq","lgbtqia","transgender",
+    "intersectional","intersectionality","racial","racism","antiracist",
+    "antiracism","sexism","misogyny","homophobia","transphobia",
+    "marginalized","marginalised","oppress","oppressed","oppression",
+    "systemic","disenfranchised","disenfranchisement","accountability",
+    /* policy areas */
+    "healthcare","medicare","medicaid","welfare","housing","homelessness",
+    "climate","environmental","environment","ecology","green","ecosocialism",
+    "education","immigration","refugees","reproductive","abortion",
+    "policy","policies","reform","reforms","rights","justice","equity",
+    "equal","equality","inequality","injustice","corruption","corrupt",
+    /* anti */
+    "antiwar","anti-war","antimonopoly","antimperialist","anti-imperialist",
+    "dismantle","decolonize","decolonise",
+  ]);
+
+  const OFFTOPIC_TERMS = new Set([
+    /* celebrity / TV / film */
+    "celebrity","celebrities","celeb","celebs","star","stars","fame","famous",
+    "show","shows","airs","season","seasons","episode","episodes","series",
+    "drama","dramas","sitcom","reality","fanfic","fanfiction","fandom",
+    "cosplay","comic","comics","manga","anime","kpop","kdrama","webtoon",
+    "film","films","movie","movies","actor","actors","actress","hollywood",
+    "soap","soaps","wetv","tlc","mtv","disney",
+    /* beauty / fashion */
+    "nail","nails","manicure","pedicure","makeup","beauty","fashion",
+    "skincare","haircare","outfit","outfits","ootd","lipstick","perfume",
+    "mascara","eyeshadow","contour","glam","cosmetic","cosmetics",
+    /* gaming */
+    "gaming","gamer","gamers","videogame","videogames","console","playstation",
+    "xbox","nintendo","steam","mmo","fps","rpg","mmorpg","minecraft","fortnite",
+    "roblox","valorant","csgo","dota","warcraft","wow","esport","esports",
+    "twitch","streamer","speedrun",
+    /* sports */
+    "nfl","nba","mlb","nhl","fifa","soccer","football","basketball","baseball",
+    "hockey","tennis","golf","cricket","rugby","mma","ufc","boxing","wrestling",
+    /* hobbies / lifestyle / pets */
+    "recipe","recipes","cooking","baking","fitness","workout","gym","yoga",
+    "aquarium","gardening","manga","crochet","knitting","origami",
+    /* story / update aggregators */
+    "stories","story","update","updates","ouija","redditupdates",
+    "redditorupdates","talkstoryupdates","gossip","tea","spill",
+  ]);
+
+  function lexiconHits(text, lex) {
+    if (!text) return 0;
+    const tokens = String(text).toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [];
+    let n = 0;
+    for (const t of tokens) if (lex.has(t)) n++;
+    return n;
+  }
+
+  /* Used by the discovery layer; expose for unit tests / UI. */
+  Analysis.NON_TOPICAL_DISCOVERY_WORDS = NON_TOPICAL_DISCOVERY_WORDS;
+  Analysis.CAMPAIGN_TERMS = CAMPAIGN_TERMS;
+  Analysis.OFFTOPIC_TERMS = OFFTOPIC_TERMS;
+
+  /* ============================================================
      14. CANDIDATE DISCOVERY
      ------------------------------------------------------------
      Score brand-new subreddits (returned from /subreddits/search)
@@ -1004,8 +1121,20 @@
                   (candidate.public_description || "") + " " +
                   (candidate.display_name || "")).toLowerCase();
 
-    const camKeys = (campaignProfile.keywords || []).slice(0, 14).map((k) => k.word);
-    const camPhrases = (campaignProfile.bigrams || []).slice(0, 8).map((b) => b.phrase);
+    /* Filter campaign keywords/phrases used for *theme matching* to drop
+     * generic noise (months, weekdays, "answer", "thing", "year", …) so
+     * a sub doesn't get credit just because its description happens to
+     * contain calendar words. The full keyword set is kept for the
+     * separate keyword-cloud display elsewhere. */
+    const isTopical = (w) => !NON_TOPICAL_DISCOVERY_WORDS.has(w);
+    const phraseTopical = (p) => p.split(/\s+/).every(isTopical);
+
+    const camKeys = (campaignProfile.keywords || [])
+      .filter((k) => isTopical(k.word))
+      .slice(0, 14).map((k) => k.word);
+    const camPhrases = (campaignProfile.bigrams || [])
+      .filter((b) => phraseTopical(b.phrase))
+      .slice(0, 8).map((b) => b.phrase);
 
     let kwHits = 0, phHits = 0;
     const matchedKeys = [];
@@ -1034,20 +1163,45 @@
     const multiBoost = clamp01(queryHits / 4);
     const postBoost = clamp01(postHits / 8);
 
-    const composite = clamp01(
-      0.45 * themeMatch +
-      0.14 * popularity +
-      0.16 * engagement +
-      0.10 * multiBoost +
+    /* Lexicon-based topical alignment. CAMPAIGN_TERMS rewards subs that
+     * actually use civic/activist/policy vocabulary in their description;
+     * OFFTOPIC_TERMS penalises subs dominated by celebrity / beauty /
+     * gaming / fandom / pure-story content. Single hits are noise; the
+     * boost / penalty needs >= 2 hits to dominate. */
+    const sphereHits = lexiconHits(text, CAMPAIGN_TERMS);
+    const offtopicHits = lexiconHits(text, OFFTOPIC_TERMS);
+    const sphereBoost = clamp01(sphereHits / 3);     // 3 hits = full boost
+    const offtopicPenalty = clamp01(offtopicHits / 2); // 2 hits = full penalty
+
+    /* Mega-sub guard: when a sub has millions of subscribers but weak
+     * topical signal (no sphere hits, weak theme), don't let raw
+     * popularity carry it. Keeps r/AskReddit / r/conspiracy from
+     * dominating activist-campaign discovery. */
+    const popularityEffective = (themeMatch < 0.20 && sphereHits === 0)
+      ? popularity * 0.25
+      : popularity;
+
+    let raw =
+      0.30 * themeMatch +
+      0.10 * popularityEffective +
+      0.12 * engagement +
+      0.08 * multiBoost +
       0.10 * postBoost +
-      0.05 * safety
-    );
+      0.05 * safety +
+      0.25 * sphereBoost;
+    raw -= 0.30 * offtopicPenalty;
+    const composite = clamp01(raw);
     const score = Math.round(composite * 100);
 
     const reasons = [];
     if (matchedPhrases.length) reasons.push(`description matches <em>${matchedPhrases.map(htmlSafe).join(", ")}</em>`);
     if (matchedKeys.length) reasons.push(`description keyword overlap <em>${matchedKeys.slice(0, 6).map(htmlSafe).join(", ")}</em>`);
-    if (!matchedPhrases.length && !matchedKeys.length && !postHits) reasons.push(`<span class="meta">no direct keyword match — ranked on size + activity only</span>`);
+    if (!matchedPhrases.length && !matchedKeys.length && !postHits && !sphereHits) {
+      reasons.push(`<span class="meta">no direct keyword match — ranked on size + activity only</span>`);
+    }
+    if (sphereHits >= 2) reasons.push(`<span class="badge good">progressive-sphere description</span> · ${sphereHits} aligned terms`);
+    else if (sphereHits === 1) reasons.push(`<span class="meta">1 progressive-sphere term in description</span>`);
+    if (offtopicHits >= 2) reasons.push(`<span class="badge bad">off-topic flags</span> · description leans entertainment / lifestyle (${offtopicHits} terms)`);
     if (postHits) reasons.push(`<span class="badge info">${postHits} hot post${postHits === 1 ? "" : "s"}</span> mention campaign keywords this month`);
     if (queryHits >= 2) reasons.push(`appeared in <strong>${queryHits}</strong> of your search angles`);
     reasons.push(`<strong>${Util.fmtNum(subs)}</strong> subscribers`);
@@ -1060,6 +1214,7 @@
       themeMatch, popularity, engagement,
       matchedKeys, matchedPhrases,
       queryHits, postHits,
+      sphereHits, offtopicHits,
       reasons,
     };
   };
@@ -1081,6 +1236,8 @@
     const seen = new Set();
     const newOut = [];
     const alreadyOut = [];
+    const strict = opts.strict !== false; /* default strict */
+    let droppedOfftopic = 0, droppedWeak = 0, droppedMega = 0;
     for (const c of (rawSearchResults || [])) {
       if (!c || !c.display_name) continue;
       const name = String(c.display_name).toLowerCase();
@@ -1100,6 +1257,27 @@
         alreadyLoaded: exclude.has(name),
         ...scored,
       };
+
+      /* Strict-mode topical filters. Already-loaded subs always pass through
+       * to the second section so the user can see their existing set ranked. */
+      if (strict && !item.alreadyLoaded) {
+        const subs = c.subscribers || 0;
+        /* Off-topic dominates: drop. */
+        if (item.offtopicHits >= 2 && item.themeMatch < 0.30 && item.sphereHits === 0) {
+          droppedOfftopic++; continue;
+        }
+        /* No civic alignment AND weak theme AND not mined from posts: drop. */
+        if (item.sphereHits === 0 && item.themeMatch < 0.30 && item.postHits < 2) {
+          droppedWeak++; continue;
+        }
+        /* Mega-sub (>5M) without strong theme or civic alignment: drop —
+         * r/AskReddit / r/conspiracy / r/politics-adjacent giants only
+         * rank for being huge and aren't a useful expansion target. */
+        if (subs > 5000000 && item.themeMatch < 0.40 && item.sphereHits < 2) {
+          droppedMega++; continue;
+        }
+      }
+
       if (item.alreadyLoaded) alreadyOut.push(item);
       else newOut.push(item);
     }
@@ -1109,6 +1287,8 @@
       candidates: newOut.slice(0, opts.limit || 20),
       alreadyLoaded: alreadyOut.slice(0, 8),
       totalScanned: seen.size,
+      filtered: { offtopic: droppedOfftopic, weak: droppedWeak, mega: droppedMega },
+      strict: strict,
     };
   };
 
@@ -1122,12 +1302,20 @@
 
   /* Returns N distinct query strings — one per top phrase plus one per top
    * keyword — so the discoverer can run them in parallel and union the
-   * results. Subs that match multiple queries get a frequency-of-hits
-   * boost in scoreCandidate. */
+   * results. Words like "june", "answer", "thing", "today" are filtered
+   * out so the queries stay topical. Subs that match multiple queries
+   * get a frequency-of-hits boost in scoreCandidate. */
   Analysis.buildDiscoveryQuerySet = function (campaignProfile, n) {
     n = n || 6;
-    const phrases = (campaignProfile.bigrams || []).slice(0, 4).map((b) => `"${b.phrase}"`);
-    const words = (campaignProfile.keywords || []).slice(0, 8).map((k) => k.word);
+    const isTopical = (w) => !NON_TOPICAL_DISCOVERY_WORDS.has(w);
+    const phrases = (campaignProfile.bigrams || [])
+      .filter((b) => b.phrase.split(/\s+/).every(isTopical))
+      .slice(0, 4)
+      .map((b) => `"${b.phrase}"`);
+    const words = (campaignProfile.keywords || [])
+      .filter((k) => isTopical(k.word))
+      .slice(0, 8)
+      .map((k) => k.word);
     const out = [];
     for (const p of phrases) { if (out.length < n) out.push(p); }
     for (const w of words) { if (out.length < n) out.push(w); }
