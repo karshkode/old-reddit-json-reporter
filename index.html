@@ -257,6 +257,19 @@
           </div>
           <button id="discover-run" class="btn primary" type="button">Find subreddits</button>
         </div>
+        <div class="sphere-picker">
+          <span class="group-label">Add target spheres</span>
+          <select id="sphere-add-issue" aria-label="Add an issue sphere">
+            <option value="" disabled selected>+ Issue</option>
+          </select>
+          <select id="sphere-add-state" aria-label="Add a state sphere">
+            <option value="" disabled selected>+ State</option>
+          </select>
+          <select id="sphere-add-audience" aria-label="Add an audience sphere">
+            <option value="" disabled selected>+ Audience</option>
+          </select>
+        </div>
+        <div id="active-spheres" class="active-spheres"></div>
         <div id="discover-status" class="meta" style="margin-top:10px;display:none"></div>
         <div id="discover-results" class="targeting-list" style="margin-top:14px"></div>
       </div>

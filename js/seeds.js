@@ -92,57 +92,57 @@
    * Used for candidate AMAs, state legislative campaigns, district-level
    * organising. Manual selection only — not auto-detected. */
   Seeds.STATE_SPHERES = {
-    alabama:        ["Alabama", "Birmingham", "Huntsville"],
+    alabama:        ["Alabama", "Birmingham", "Huntsville", "Alabama_Politics"],
     alaska:         ["alaska", "anchorage"],
-    arizona:        ["arizona", "phoenix", "Tucson"],
-    arkansas:       ["Arkansas", "LittleRock"],
-    california:     ["California", "BayArea", "LosAngeles", "sandiego", "sacramento", "oakland"],
-    colorado:       ["Colorado", "Denver", "ColoradoSprings", "Boulder"],
-    connecticut:    ["Connecticut", "Hartford", "newhaven"],
+    arizona:        ["arizona", "phoenix", "Tucson", "arizonapolitics", "AZPolitics"],
+    arkansas:       ["Arkansas", "LittleRock", "ArkansasPolitics"],
+    california:     ["California", "BayArea", "LosAngeles", "sandiego", "sacramento", "oakland", "CaliforniaPolitics"],
+    colorado:       ["Colorado", "Denver", "ColoradoSprings", "Boulder", "ColoradoPolitics"],
+    connecticut:    ["Connecticut", "Hartford", "newhaven", "ConnecticutPolitics"],
     delaware:       ["Delaware", "WilmingtonDE"],
-    florida:        ["florida", "Miami", "Orlando", "Tampa", "JacksonvilleFL"],
-    georgia:        ["Georgia", "Atlanta", "Savannah"],
-    hawaii:         ["Hawaii", "Honolulu"],
+    florida:        ["florida", "Miami", "Orlando", "Tampa", "JacksonvilleFL", "FloridaPolitics"],
+    georgia:        ["Georgia", "Atlanta", "Savannah", "GeorgiaPolitics"],
+    hawaii:         ["Hawaii", "Honolulu", "HawaiiPolitics"],
     idaho:          ["Idaho", "Boise"],
-    illinois:       ["illinois", "chicago", "Springfield"],
-    indiana:        ["Indiana", "Indianapolis", "fortwayne"],
-    iowa:           ["Iowa", "DesMoines", "iowacity"],
+    illinois:       ["illinois", "chicago", "Springfield", "IllinoisPolitics"],
+    indiana:        ["Indiana", "Indianapolis", "fortwayne", "IndianaPolitics"],
+    iowa:           ["Iowa", "DesMoines", "iowacity", "IowaPolitics"],
     kansas:         ["kansas", "kansascity"],
-    kentucky:       ["Kentucky", "Louisville", "Lexington"],
-    louisiana:      ["Louisiana", "NewOrleans", "BatonRouge"],
+    kentucky:       ["Kentucky", "Louisville", "Lexington", "KentuckyPolitics"],
+    louisiana:      ["Louisiana", "NewOrleans", "BatonRouge", "LouisianaPolitics"],
     maine:          ["Maine", "Portland_ME"],
-    maryland:       ["maryland", "baltimore"],
-    massachusetts:  ["massachusetts", "boston", "Cambridge"],
-    michigan:       ["Michigan", "Detroit", "AnnArbor", "GrandRapids"],
-    minnesota:      ["minnesota", "minneapolis", "TwinCities"],
+    maryland:       ["maryland", "baltimore", "MarylandPolitics"],
+    massachusetts:  ["massachusetts", "boston", "Cambridge", "MassachusettsPolitics", "MAPoliticalCorner"],
+    michigan:       ["Michigan", "Detroit", "AnnArbor", "GrandRapids", "MichiganPolitics"],
+    minnesota:      ["minnesota", "minneapolis", "TwinCities", "MNpolitics", "MinnesotaPolitics"],
     mississippi:    ["mississippi", "Jackson_MS"],
-    missouri:       ["missouri", "StLouis", "kansascity"],
+    missouri:       ["missouri", "StLouis", "kansascity", "MissouriPolitics"],
     montana:        ["Montana", "billings"],
     nebraska:       ["Nebraska", "Omaha", "lincoln"],
     nevada:         ["Nevada", "vegas", "Reno"],
-    newhampshire:   ["newhampshire", "Manchester_NH"],
-    newjersey:      ["newjersey", "Newark", "JerseyCity"],
-    newmexico:      ["NewMexico", "Albuquerque", "SantaFe"],
-    newyork:        ["newyork", "nyc", "AskNYC", "Albany", "Buffalo", "rochesterny"],
-    northcarolina:  ["NorthCarolina", "raleigh", "Charlotte", "Asheville"],
+    newhampshire:   ["newhampshire", "Manchester_NH", "NHPolitics"],
+    newjersey:      ["newjersey", "Newark", "JerseyCity", "NJPolitics", "NewJerseyPolitics"],
+    newmexico:      ["NewMexico", "Albuquerque", "SantaFe", "NewMexicoPolitics"],
+    newyork:        ["newyork", "nyc", "AskNYC", "Albany", "Buffalo", "rochesterny", "NewYorkPolitics", "NYpolitics"],
+    northcarolina:  ["NorthCarolina", "raleigh", "Charlotte", "Asheville", "NorthCarolinaPolitics"],
     northdakota:    ["northdakota", "fargo"],
-    ohio:           ["Ohio", "cleveland", "cincinnati", "Columbus"],
-    oklahoma:       ["oklahoma", "OklahomaCity", "tulsa"],
-    oregon:         ["oregon", "Portland", "Eugene"],
-    pennsylvania:   ["pennsylvania", "philadelphia", "pittsburgh", "Harrisburg"],
+    ohio:           ["Ohio", "cleveland", "cincinnati", "Columbus", "OhioPolitics"],
+    oklahoma:       ["oklahoma", "OklahomaCity", "tulsa", "OklahomaPolitics"],
+    oregon:         ["oregon", "Portland", "Eugene", "OregonPolitics"],
+    pennsylvania:   ["pennsylvania", "philadelphia", "pittsburgh", "Harrisburg", "PennsylvaniaPolitics"],
     rhodeisland:    ["RhodeIsland", "Providence"],
-    southcarolina:  ["southcarolina", "Charleston", "Columbia"],
+    southcarolina:  ["southcarolina", "Charleston", "Columbia", "SouthCarolinaPolitics"],
     southdakota:    ["SouthDakota", "siouxfalls"],
-    tennessee:      ["Tennessee", "nashville", "memphis", "knoxville"],
-    texas:          ["texas", "Austin", "Houston", "Dallas", "SanAntonio", "fortworth"],
-    utah:           ["Utah", "SaltLakeCity"],
+    tennessee:      ["Tennessee", "nashville", "memphis", "knoxville", "TennesseePolitics"],
+    texas:          ["texas", "Austin", "Houston", "Dallas", "SanAntonio", "fortworth", "TexasPolitics"],
+    utah:           ["Utah", "SaltLakeCity", "UtahPolitics"],
     vermont:        ["vermont", "BurlingtonVT"],
-    virginia:       ["Virginia", "rva", "nova"],
-    washington:     ["Washington", "Seattle", "Spokane", "Tacoma"],
+    virginia:       ["Virginia", "rva", "nova", "VirginiaPolitics", "VAPolitics"],
+    washington:     ["Washington", "Seattle", "Spokane", "Tacoma", "WAPolitics", "WashingtonStatePolitics"],
     westvirginia:   ["WestVirginia", "Charleston_WV"],
-    wisconsin:      ["wisconsin", "milwaukee", "Madison"],
+    wisconsin:      ["wisconsin", "milwaukee", "Madison", "WisconsinPolitics"],
     wyoming:        ["wyoming", "cheyenne"],
-    dc:             ["washingtondc", "WashingtonDC"],
+    dc:             ["washingtondc", "WashingtonDC", "dcpolitics"],
   };
 
   /* ---------- Demographic spheres ---------- */
@@ -187,7 +187,62 @@
 
   /* Returns a flat, deduped list of canonical sub names from selected
    * sphere keys. */
-  Seeds.expand = function (sphereKeys) {
+  /* Human-readable labels for the picker dropdowns + chips. */
+  Seeds.ISSUE_LABELS = {
+    progressive:    "Progressive politics",
+    movement:       "Activism / movement",
+    healthcare:     "Healthcare",
+    labor:          "Labor / unions",
+    voting:         "Voting & elections",
+    climate:        "Climate",
+    reproductive:   "Reproductive rights",
+    immigration:    "Immigration",
+    education:      "Education",
+    housing:        "Housing",
+    palestine_gaza: "Palestine / Gaza",
+    racial_justice: "Racial justice",
+    media_news:     "Media & news",
+  };
+
+  Seeds.DEMOGRAPHIC_LABELS = {
+    lgbtq:        "LGBTQ+",
+    women:        "Women",
+    young_voters: "Young voters",
+    bipoc:        "BIPOC",
+    veterans:     "Veterans",
+    seniors:      "Seniors",
+  };
+
+  /* Pretty state names for the dropdown. Matches keys in STATE_SPHERES. */
+  Seeds.STATE_LABELS = {
+    alabama: "Alabama", alaska: "Alaska", arizona: "Arizona", arkansas: "Arkansas",
+    california: "California", colorado: "Colorado", connecticut: "Connecticut",
+    delaware: "Delaware", florida: "Florida", georgia: "Georgia", hawaii: "Hawaii",
+    idaho: "Idaho", illinois: "Illinois", indiana: "Indiana", iowa: "Iowa",
+    kansas: "Kansas", kentucky: "Kentucky", louisiana: "Louisiana", maine: "Maine",
+    maryland: "Maryland", massachusetts: "Massachusetts", michigan: "Michigan",
+    minnesota: "Minnesota", mississippi: "Mississippi", missouri: "Missouri",
+    montana: "Montana", nebraska: "Nebraska", nevada: "Nevada",
+    newhampshire: "New Hampshire", newjersey: "New Jersey", newmexico: "New Mexico",
+    newyork: "New York", northcarolina: "North Carolina", northdakota: "North Dakota",
+    ohio: "Ohio", oklahoma: "Oklahoma", oregon: "Oregon", pennsylvania: "Pennsylvania",
+    rhodeisland: "Rhode Island", southcarolina: "South Carolina", southdakota: "South Dakota",
+    tennessee: "Tennessee", texas: "Texas", utah: "Utah", vermont: "Vermont",
+    virginia: "Virginia", washington: "Washington", westvirginia: "West Virginia",
+    wisconsin: "Wisconsin", wyoming: "Wyoming", dc: "Washington DC",
+  };
+
+  /* One label-of helper for any sphere key (issue / state / demo).
+   * Returns a friendly name for use in chips and dropdowns. */
+  Seeds.labelOf = function (key) {
+    if (!key) return "";
+    if (Seeds.ISSUE_LABELS[key]) return Seeds.ISSUE_LABELS[key];
+    if (Seeds.DEMOGRAPHIC_LABELS[key]) return Seeds.DEMOGRAPHIC_LABELS[key];
+    if (Seeds.STATE_LABELS[key]) return Seeds.STATE_LABELS[key];
+    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+    Seeds.expand = function (sphereKeys) {
     const out = new Set();
     for (const key of (sphereKeys || [])) {
       const issue = Seeds.ISSUE_SPHERES[key] || [];
