@@ -182,6 +182,54 @@
     el.innerHTML = `<span class="left ${kind || ""}">${Util.escapeHtml(msg)}</span><span class="right">${right}<span>${new Date().toLocaleTimeString()}</span></span>`;
   };
 
+  /* Progress banner.
+   *   setProgress(percent, message)        — 0..100 fill width
+   *   setProgress(null, message)           — indeterminate animation
+   *   hideProgress()                       — fills to 100% then fades out
+   *
+   * The banner element is sticky just under the topbar+tabs and only
+   * visible during loads. Replaces the previous always-on fixed-bottom
+   * status bar so the page no longer looks like it has two footers
+   * stacking together on iOS. */
+  Util.setProgress = function (percent, message) {
+    const banner = document.getElementById("progress-bar");
+    if (!banner) return;
+    banner.hidden = false;
+    banner.removeAttribute("aria-hidden");
+    const fill = banner.querySelector(".progress-fill");
+    const text = banner.querySelector(".progress-text");
+    if (percent == null) {
+      banner.classList.add("indeterminate");
+      if (fill) fill.style.width = "";
+    } else {
+      banner.classList.remove("indeterminate");
+      if (fill) fill.style.width = Math.max(0, Math.min(100, percent)) + "%";
+    }
+    if (text && message != null) text.textContent = message;
+    /* Cancel any pending hide timer so a new tick stays visible. */
+    if (Util._progressHideT) {
+      clearTimeout(Util._progressHideT);
+      Util._progressHideT = null;
+    }
+  };
+
+  Util.hideProgress = function (finalMessage) {
+    const banner = document.getElementById("progress-bar");
+    if (!banner) return;
+    banner.classList.remove("indeterminate");
+    const fill = banner.querySelector(".progress-fill");
+    const text = banner.querySelector(".progress-text");
+    if (fill) fill.style.width = "100%";
+    if (text && finalMessage) text.textContent = finalMessage;
+    if (Util._progressHideT) clearTimeout(Util._progressHideT);
+    Util._progressHideT = setTimeout(() => {
+      banner.hidden = true;
+      banner.setAttribute("aria-hidden", "true");
+      if (fill) fill.style.width = "0%";
+      Util._progressHideT = null;
+    }, finalMessage ? 1200 : 600);
+  };
+
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* Detects Reddit mobile-share URLs of the form
