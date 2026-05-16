@@ -208,8 +208,25 @@
 
     UI.renderKeywords(Analysis.extractKeywords(posts, 30));
 const crossPosts = Analysis.detectCrossPosts(posts);
+    /* Tag each group with its absolute index so render-after-filter/page
+     * still resolves back to state.crossPosts[idx] from the click handler. */
+    crossPosts.forEach((g, i) => { g._origIndex = i; });
     state.crossPosts = crossPosts;
-    UI.renderCrossPosts(crossPosts);
+    let xpFiltered = crossPosts;
+    if (state.crossPostsSubFilter) {
+      const sub = state.crossPostsSubFilter.toLowerCase();
+      xpFiltered = xpFiltered.filter((g) => g.subs.includes(sub));
+    }
+    UI.renderCrossPosts(xpFiltered, {
+      page: state.crossPostsPage,
+      pageSize: state.crossPostsPageSize === "all" ? "all" : Number(state.crossPostsPageSize),
+    });
+    UI.renderPagination("crossposts-pagination", {
+      page: state.crossPostsPage,
+      totalItems: xpFiltered.length,
+      pageSize: state.crossPostsPageSize === "all" ? "all" : Number(state.crossPostsPageSize),
+      onChange: (newPage) => { state.crossPostsPage = newPage; rerenderAll(); },
+    });
     UI.renderRecommendations(Analysis.recommendations(agg, sentiment, posts));
     UI.renderNarrative(Analysis.narrative(agg, sentiment, Array.from(state.activeSubs)));
     UI.renderThemes(themes);

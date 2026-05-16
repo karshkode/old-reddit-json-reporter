@@ -79,11 +79,17 @@
 
   /* ---------- Posts table ---------- */
 
-  UI.renderPostsTable = function (posts, sortKey, sortDir, onRowClick) {
+  UI.renderPostsTable = function (posts, sortKey, sortDir, onRowClick, opts) {
     const tbody = document.getElementById("posts-tbody");
     const count = document.getElementById("posts-count");
     if (!tbody) return;
     if (count) count.textContent = posts.length;
+    /* Slice to the requested page if opts.pageSize is a number; "all" or
+     * undefined renders every row (legacy callers untouched). */
+    opts = opts || {};
+    const pageSize = opts.pageSize;
+    const page = Math.max(0, opts.page || 0);
+    const visible = (pageSize == null || pageSize === "all") ? posts : posts.slice(page * pageSize, (page + 1) * pageSize);
 
     document.querySelectorAll("#posts-table thead th").forEach((th) => {
       th.classList.remove("sorted-asc", "sorted-desc");
@@ -96,9 +102,13 @@
       tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No posts match the current filter.</div></td></tr>`;
       return;
     }
+    if (!visible.length) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No posts on this page — try Prev or change filters.</div></td></tr>`;
+      return;
+    }
 
     const frag = document.createDocumentFragment();
-    for (const p of posts) {
+    for (const p of visible) {
       const tr = document.createElement("tr");
       tr.dataset.id = p.id;
       tr.tabIndex = 0;
@@ -222,15 +232,30 @@
     el.innerHTML = words.map((w) => `<span class="kw">${Util.escapeHtml(w.word)}<span class="count">${w.count}</span></span>`).join("");
   };
 
-  UI.renderCrossPosts = function (groups) {
+  UI.renderCrossPosts = function (groups, opts) {
     const el = document.getElementById("crossposts");
     if (!el) return;
-    if (!groups.length) { el.innerHTML = '<div class="empty">No cross-posts detected in the loaded set.</div>'; return; }
-    el.innerHTML = groups.slice(0, 20).map((g, i) => {
+    opts = opts || {};
+    if (!groups.length) {
+      el.innerHTML = '<div class="empty">No cross-posts match the current filter.</div>';
+      return;
+    }
+    const pageSize = opts.pageSize;
+    const page = Math.max(0, opts.page || 0);
+    const visible = (pageSize == null || pageSize === "all") ? groups : groups.slice(page * pageSize, (page + 1) * pageSize);
+    if (!visible.length) {
+      el.innerHTML = '<div class="empty">No cross-posts on this page — try Prev or change filters.</div>';
+      return;
+    }
+    el.innerHTML = visible.map((g) => {
       const headline = g.kind === "url" ? truncate(g.key, 90) : truncate(g.posts[0].title, 110);
       /* Spread-tier badge: 2 subs = info, 3-4 subs = warn, 5+ subs = good. */
       const spread = g.subs.length;
       const tier = spread >= 5 ? "good" : spread >= 3 ? "warn" : "info";
+      /* `_origIndex` is set by the caller so + Make campaign can resolve
+       * back to the absolute position in state.crossPosts even when the
+       * displayed list is filtered/paginated. */
+      const cpIndex = g._origIndex != null ? g._origIndex : 0;
       return `
         <div class="crosspost-row" data-spread="${spread}">
           <div class="crosspost-head">
@@ -242,7 +267,7 @@
             <button class="btn small primary"
                     type="button"
                     data-action="make-campaign-from-crosspost"
-                    data-cp-index="${i}"
+                    data-cp-index="${cpIndex}"
                     aria-label="Convert this cross-post group into a new campaign">+ Make campaign</button>
           </div>
         </div>
@@ -703,6 +728,42 @@
     if (!s) return "";
     return s.length > n ? s.slice(0, n) + "…" : s;
   }
+
+  /* Pagination control: renders Prev / page-info / Next inside `container`.
+   * Hidden when totalItems <= pageSize (or pageSize === "all"). Wires a
+   * fresh el.onclick on every render so we don't leak listeners. */
+  UI.renderPagination = function (container, opts) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    const page = Math.max(0, (opts && opts.page) || 0);
+    const total = Math.max(0, (opts && opts.totalItems) || 0);
+    const size = opts && opts.pageSize;
+    const onChange = opts && typeof opts.onChange === "function" ? opts.onChange : function () {};
+
+    if (size === "all" || size == null || total <= size) {
+      el.hidden = true;
+      el.innerHTML = "";
+      el.onclick = null;
+      return;
+    }
+    el.hidden = false;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    const safePage = Math.min(page, totalPages - 1);
+    const start = safePage * size + 1;
+    const end = Math.min(total, (safePage + 1) * size);
+    el.innerHTML = `
+      <button class="btn small" type="button" data-page-action="prev" ${safePage === 0 ? "disabled" : ""} aria-label="Previous page">« Prev</button>
+      <span class="pagination-info">Page <strong>${safePage + 1}</strong> of ${totalPages} · ${start}–${end} of ${Util.fmtNum(total)}</span>
+      <button class="btn small" type="button" data-page-action="next" ${safePage >= totalPages - 1 ? "disabled" : ""} aria-label="Next page">Next »</button>
+    `;
+    el.onclick = function (e) {
+      const btn = e.target && e.target.closest && e.target.closest("[data-page-action]");
+      if (!btn || btn.disabled) return;
+      e.preventDefault();
+      const next = btn.dataset.pageAction === "next" ? safePage + 1 : safePage - 1;
+      onChange(Math.max(0, Math.min(totalPages - 1, next)));
+    };
+  };
 
   window.UI = UI;
 })();
