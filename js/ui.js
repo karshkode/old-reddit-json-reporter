@@ -2,6 +2,8 @@
 (function () {
   const UI = {};
 
+  /* ---------- Subreddit chips ---------- */
+
   UI.renderSubChips = function (subs, active, onToggle, onRemove) {
     const container = document.getElementById("subreddit-chips");
     if (!container) return;
@@ -22,14 +24,13 @@
         }
       });
       chip.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onToggle(s);
-        }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(s); }
       });
       container.appendChild(chip);
     }
   };
+
+  /* ---------- KPI row ---------- */
 
   UI.renderKpis = function (agg) {
     const row = document.getElementById("kpi-row");
@@ -50,6 +51,8 @@
       </div>
     `).join("");
   };
+
+  /* ---------- Posts table ---------- */
 
   UI.renderPostsTable = function (posts, sortKey, sortDir, onRowClick) {
     const tbody = document.getElementById("posts-tbody");
@@ -98,6 +101,8 @@
     tbody.appendChild(frag);
   };
 
+  /* ---------- Post detail ---------- */
+
   UI.renderPostDetail = function (post, comments) {
     const card = document.getElementById("post-detail");
     const body = document.getElementById("post-detail-body");
@@ -113,6 +118,7 @@
 
     const commentSent = Analysis.aggregateSentiment(comments.map((c) => ({ title: c.body, selftext: "" })));
     const topComments = comments.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
+    const tq = Analysis.titleQuality(post.title);
 
     body.innerHTML = `
       <div class="post-detail-grid">
@@ -123,7 +129,11 @@
             ${post.flair ? ` · <span class="tag flair">${Util.escapeHtml(post.flair)}</span>` : ""}
             · ${sentBadge}
           </div>
-          ${post.selftext ? `<div style="white-space:pre-wrap;font-size:13px;color:var(--text-dim);max-height:240px;overflow:auto;background:var(--bg-elev-2);padding:10px;border-radius:8px;word-break:break-word;">${Util.escapeHtml(post.selftext.slice(0, 4000))}</div>` : ""}
+
+          ${renderTitleQualityBlock(tq)}
+
+          ${post.selftext ? `<div style="white-space:pre-wrap;font-size:13px;color:var(--text-dim);max-height:240px;overflow:auto;background:var(--bg-elev-2);padding:10px;border-radius:8px;word-break:break-word;margin-top:10px">${Util.escapeHtml(post.selftext.slice(0, 4000))}</div>` : ""}
+
           <h4 style="margin:14px 0 6px;font-size:13px">Top comments (${comments.length})</h4>
           <div class="comment-list">
             ${comments.length ? topComments.map((c) => `
@@ -153,10 +163,33 @@
     `;
   };
 
+  function renderTitleQualityBlock(tq) {
+    const band = tq.band || "okay";
+    const cls = band === "excellent" ? "good" : band === "good" ? "info" : band === "okay" ? "warn" : "bad";
+    const factors = tq.factors.map((f) =>
+      `<li class="qf ${f.ok ? "ok" : "bad"}"><span>${Util.escapeHtml(f.label)}</span><span class="delta">${f.delta > 0 ? "+" : ""}${f.delta}</span></li>`
+    ).join("");
+    return `
+      <div class="quality-block">
+        <div class="quality-head">
+          <div>
+            <strong>Title quality</strong>
+            <span class="badge ${cls}">${tq.score} · ${band}</span>
+          </div>
+          <div class="meta">${tq.length} chars · ${tq.words} words</div>
+        </div>
+        <div class="quality-bar"><span style="width:${tq.score}%"></span></div>
+        <ul class="quality-factors">${factors}</ul>
+      </div>
+    `;
+  }
+
   UI.hidePostDetail = function () {
     const card = document.getElementById("post-detail");
     if (card) card.hidden = true;
   };
+
+  /* ---------- Keywords / cross-posts / recommendations ---------- */
 
   UI.renderKeywords = function (words) {
     const el = document.getElementById("keywords");
@@ -188,6 +221,125 @@
     const el = document.getElementById("ai-summary");
     if (el) el.innerHTML = html;
   };
+
+  /* ---------- Themes ---------- */
+
+  UI.renderThemes = function (themes) {
+    const el = document.getElementById("themes");
+    if (!el) return;
+    if (!themes || !themes.length) {
+      el.innerHTML = '<div class="empty">Not enough variety to identify themes.</div>';
+      return;
+    }
+    el.innerHTML = themes.slice(0, 14).map((t) => {
+      const sentClass = t.sentiment.average > 0.1 ? "good" : t.sentiment.average < -0.1 ? "bad" : "info";
+      const sentLabel = t.sentiment.average > 0.1 ? "positive" : t.sentiment.average < -0.1 ? "negative" : "neutral";
+      const examples = t.examples.slice(0, 2).map((p) =>
+        `<a href="${Util.escapeHtml(p.permalink)}" target="_blank" rel="noopener" title="${Util.escapeHtml(p.title || "")}">${Util.escapeHtml(truncate(p.title || "", 60))}</a>`
+      ).join(" · ");
+      return `
+        <div class="theme-row">
+          <div class="theme-head">
+            <span class="theme-term">${t.kind === "phrase" ? `"${Util.escapeHtml(t.term)}"` : Util.escapeHtml(t.term)}</span>
+            <span class="badge ${sentClass}">${sentLabel}</span>
+            <span class="meta">${t.count} posts · ${Util.fmtNum(t.totalScore)} pts · ${Util.fmtNum(t.totalComments)} comments · ${t.subSpread} sub${t.subSpread > 1 ? "s" : ""}</span>
+          </div>
+          <div class="theme-meta">avg ${Util.fmtNum(t.avgScore)} score · top in r/${Util.escapeHtml(t.topSub || "—")} · ${examples}</div>
+        </div>
+      `;
+    }).join("");
+  };
+
+  /* ---------- Subreddit profiles ---------- */
+
+  UI.renderSubProfiles = function (profiles) {
+    const el = document.getElementById("sub-profiles");
+    if (!el) return;
+    const list = Object.values(profiles || {});
+    if (!list.length) { el.innerHTML = '<div class="empty">Load at least one subreddit to see profiles.</div>'; return; }
+    list.sort((a, b) => b.totalScore - a.totalScore);
+    el.innerHTML = list.map((p) => {
+      const sentClass = p.sentiment.average > 0.1 ? "good" : p.sentiment.average < -0.1 ? "bad" : "info";
+      const sentLabel = p.sentiment.average > 0.1 ? "positive" : p.sentiment.average < -0.1 ? "negative" : "neutral";
+      const recCls = p.reception === "warm" ? "good" : p.reception === "healthy" ? "info" : p.reception === "mixed" ? "warn" : p.reception === "contentious" ? "bad" : "info";
+      const themes = (p.themes || []).slice(0, 5).map((t) => `<span class="kw">${t.kind === "phrase" ? `"${Util.escapeHtml(t.term)}"` : Util.escapeHtml(t.term)}<span class="count">${t.count}</span></span>`).join("");
+      const keys = (p.keywords || []).slice(0, 8).map((k) => `<span class="tag">${Util.escapeHtml(k.word)}</span>`).join(" ");
+      return `
+        <div class="profile-card">
+          <div class="profile-head">
+            <h3>r/${Util.escapeHtml(p.subreddit || p.label)}</h3>
+            <div class="profile-badges">
+              <span class="badge ${sentClass}">${sentLabel}</span>
+              <span class="badge ${recCls}">${p.reception}</span>
+              <span class="badge info">${p.style}</span>
+            </div>
+          </div>
+          <div class="profile-stats">
+            <div><span class="label">Posts</span><strong>${Util.fmtNum(p.count)}</strong></div>
+            <div><span class="label">Median score</span><strong>${Util.fmtNum(p.medianScore)}</strong></div>
+            <div><span class="label">Avg comments</span><strong>${Util.fmtNum(p.avgComments)}</strong></div>
+            <div><span class="label">UV ratio</span><strong>${p.avgUpvoteRatio == null ? "—" : Util.fmtPct(p.avgUpvoteRatio)}</strong></div>
+            <div><span class="label">Best hour</span><strong>${p.bestHour >= 0 ? String(p.bestHour).padStart(2, "0") + ":00" : "—"}</strong></div>
+            <div><span class="label">Best day</span><strong>${Analysis.DAY_NAMES[p.bestDow].slice(0, 3)}</strong></div>
+          </div>
+          ${themes ? `<div class="profile-line"><span class="profile-label">Themes</span><div class="keyword-cloud">${themes}</div></div>` : ""}
+          ${keys ? `<div class="profile-line"><span class="profile-label">Top words</span><div>${keys}</div></div>` : ""}
+        </div>
+      `;
+    }).join("");
+  };
+
+  /* ---------- Targeting recommendations ---------- */
+
+  UI.renderTargeting = function (campaign, targets, container, opts) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    opts = opts || {};
+    if (!campaign) {
+      el.innerHTML = '<div class="empty">Pick a campaign to see targeting recommendations.</div>';
+      return;
+    }
+    if (!targets || !targets.length) {
+      el.innerHTML = `<div class="empty">Load more subreddits in the dashboard to compute targeting fits for "${Util.escapeHtml(campaign.name)}". Targeting compares the campaign's themes/sentiment against each loaded sub.</div>`;
+      return;
+    }
+    const head = opts.heading
+      ? `<div class="meta" style="margin-bottom:8px">Best loaded subreddits for <strong>${Util.escapeHtml(campaign.name)}</strong>, ranked by theme overlap, sentiment alignment, audience reception, and activity.</div>`
+      : "";
+    el.innerHTML = head + targets.map((t, i) => {
+      const cls = t.score >= 70 ? "good" : t.score >= 50 ? "info" : t.score >= 30 ? "warn" : "bad";
+      const reasonsHtml = t.reasons.map((r) => `<li>${r}</li>`).join("");
+      const segments = `
+        <div class="meter">
+          ${meterRow("Themes", t.themeJaccard, "var(--accent)")}
+          ${meterRow("Sentiment", t.sentMatch, "var(--info)")}
+          ${meterRow("Reception", t.reception, "var(--good)")}
+          ${meterRow("Activity", t.activity, "var(--warn)")}
+        </div>
+      `;
+      return `
+        <div class="target-row${t.alreadyTargeted ? " already" : ""}">
+          <div class="target-head">
+            <div>
+              <span class="rank">#${i + 1}</span>
+              <strong>r/${Util.escapeHtml(t.subreddit)}</strong>
+              <span class="badge ${cls}">fit ${t.score}</span>
+            </div>
+            <div class="target-meta">${Util.fmtNum(t.profile.count)} posts · ${Util.fmtNum(t.profile.totalScore)} pts</div>
+          </div>
+          ${segments}
+          <ul class="target-reasons">${reasonsHtml}</ul>
+        </div>
+      `;
+    }).join("");
+  };
+
+  function meterRow(label, value, color) {
+    const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+    return `<div class="meter-row"><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
+  }
+
+  /* ---------- Campaign list ---------- */
 
   UI.renderCampaignList = function (campaigns, summaries, onOpen) {
     const el = document.getElementById("campaign-list");
@@ -221,7 +373,9 @@
     }
   };
 
-  UI.renderCampaignDetail = function (campaign, agg) {
+  /* ---------- Campaign detail (extended with deep analysis) ---------- */
+
+  UI.renderCampaignDetail = function (campaign, agg, deep) {
     const card = document.getElementById("campaign-detail");
     const title = document.getElementById("campaign-detail-title");
     const body = document.getElementById("campaign-detail-body");
@@ -232,7 +386,6 @@
 
     const goalScorePct = campaign.goalScore ? Math.min(1, agg.totalScore / campaign.goalScore) : null;
     const goalCommentsPct = campaign.goalComments ? Math.min(1, agg.totalComments / campaign.goalComments) : null;
-
     const subList = agg.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(", ") || "—";
 
     const postsList = agg.posts.length ? `
@@ -257,6 +410,8 @@
       ? `<div class="meta" style="color:var(--warn);margin-top:6px;font-size:12px">Could not resolve: ${agg.missing.map((id) => `<code>${Util.escapeHtml(id)}</code>`).join(", ")}</div>`
       : "";
 
+    const deepHtml = deep ? renderCampaignDeepAnalysis(deep) : "";
+
     body.innerHTML = `
       <div class="kpis">
         <div class="kpi"><div class="label">Posts tracked</div><div class="value">${campaign.postIds.length}</div><div class="sub">${agg.posts.length} resolved</div></div>
@@ -269,14 +424,109 @@
       ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${missingNote}
+      ${deepHtml}
       ${postsList}
     `;
   };
+
+  function renderCampaignDeepAnalysis(deep) {
+    if (!deep) return "";
+    const { profile, perSub, comparison, targets, narrative } = deep;
+    if (!profile || profile.count === 0) return "";
+
+    const sentClass = profile.sentiment.average > 0.1 ? "good" : profile.sentiment.average < -0.1 ? "bad" : "info";
+    const sentLabel = profile.sentiment.average > 0.1 ? "positive" : profile.sentiment.average < -0.1 ? "negative" : "neutral";
+
+    const themesHtml = (profile.themes || []).slice(0, 8).map((t) => `<span class="kw">${t.kind === "phrase" ? `"${Util.escapeHtml(t.term)}"` : Util.escapeHtml(t.term)}<span class="count">${t.count}</span></span>`).join("");
+
+    const perSubRows = perSub && perSub.length ? `
+      <table class="mini-table">
+        <thead><tr><th>Subreddit</th><th class="num">Posts</th><th class="num">Score</th><th class="num">Comments</th><th class="num">Avg score</th><th class="num">UV %</th></tr></thead>
+        <tbody>
+          ${perSub.map((r) => `
+            <tr>
+              <td>r/${Util.escapeHtml(r.subreddit)}</td>
+              <td class="num">${Util.fmtNum(r.count)}</td>
+              <td class="num">${Util.fmtNum(r.totalScore)}</td>
+              <td class="num">${Util.fmtNum(r.totalComments)}</td>
+              <td class="num">${Util.fmtNum(r.avgScore)}</td>
+              <td class="num">${r.avgUpvoteRatio == null ? "—" : Util.fmtPct(r.avgUpvoteRatio)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    ` : "";
+
+    const compHtml = comparison ? `
+      <div class="deep-compare">
+        <ul class="reco-list">${comparison.insights.map((i) => `<li>${i}</li>`).join("")}</ul>
+        <div class="compare-grid">
+          ${miniStat("Top avg score", Util.fmtNum(comparison.top.avgScore), Util.fmtNum(comparison.bottom.avgScore))}
+          ${miniStat("Title length", Math.round(comparison.top.avgLen) + " ch", Math.round(comparison.bottom.avgLen) + " ch")}
+          ${miniStat("Sentiment", comparison.top.avgSent.toFixed(2), comparison.bottom.avgSent.toFixed(2))}
+          ${miniStat("Hour (UTC)", comparison.top.avgHour == null ? "—" : pad2(Math.round(comparison.top.avgHour)) + ":00", comparison.bottom.avgHour == null ? "—" : pad2(Math.round(comparison.bottom.avgHour)) + ":00")}
+        </div>
+      </div>
+    ` : "";
+
+    return `
+      <div class="deep-section">
+        <h3 class="deep-h">Deep analysis</h3>
+        ${narrative ? `<div class="prose">${narrative}</div>` : ""}
+
+        <div class="deep-grid">
+          <div class="deep-card">
+            <h4>Profile</h4>
+            <div class="profile-badges">
+              <span class="badge ${sentClass}">${sentLabel}</span>
+              <span class="badge info">${profile.style}</span>
+              <span class="badge ${profile.reception === "warm" ? "good" : profile.reception === "healthy" ? "info" : profile.reception === "mixed" ? "warn" : profile.reception === "contentious" ? "bad" : "info"}">${profile.reception}</span>
+            </div>
+            <div class="profile-stats">
+              <div><span class="label">Avg score</span><strong>${Util.fmtNum(profile.avgScore)}</strong></div>
+              <div><span class="label">Median score</span><strong>${Util.fmtNum(profile.medianScore)}</strong></div>
+              <div><span class="label">Avg comments</span><strong>${Util.fmtNum(profile.avgComments)}</strong></div>
+              <div><span class="label">UV ratio</span><strong>${profile.avgUpvoteRatio == null ? "—" : Util.fmtPct(profile.avgUpvoteRatio)}</strong></div>
+              <div><span class="label">Best hour</span><strong>${profile.bestHour >= 0 ? String(profile.bestHour).padStart(2, "0") + ":00" : "—"}</strong></div>
+              <div><span class="label">Best day</span><strong>${Analysis.DAY_NAMES[profile.bestDow].slice(0, 3)}</strong></div>
+            </div>
+            ${themesHtml ? `<div class="profile-line"><span class="profile-label">Themes</span><div class="keyword-cloud">${themesHtml}</div></div>` : ""}
+          </div>
+
+          <div class="deep-card">
+            <h4>Performance by subreddit</h4>
+            ${perSubRows || '<div class="empty">Single-subreddit campaign — add cross-posts in other subs to compare.</div>'}
+          </div>
+
+          <div class="deep-card span-2">
+            <h4>What separates winners from losers</h4>
+            ${compHtml || '<div class="empty">Need at least 4 posts to compute top-vs-bottom comparison.</div>'}
+          </div>
+
+          <div class="deep-card span-2">
+            <h4>Where to target next</h4>
+            <div id="campaign-detail-targets"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+
+  function miniStat(label, top, bottom) {
+    return `<div class="mini-stat">
+      <span class="meta">${Util.escapeHtml(label)}</span>
+      <span><strong style="color:var(--good)">${Util.escapeHtml(String(top))}</strong> <span class="meta">vs</span> <strong style="color:var(--bad)">${Util.escapeHtml(String(bottom))}</strong></span>
+    </div>`;
+  }
 
   UI.hideCampaignDetail = function () {
     const card = document.getElementById("campaign-detail");
     if (card) card.hidden = true;
   };
+
+  /* ---------- Tabs ---------- */
 
   UI.activateTab = function (name) {
     document.querySelectorAll(".tab").forEach((t) => {
