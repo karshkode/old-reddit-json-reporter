@@ -103,6 +103,41 @@
     return mirror[i];
   };
 
+  /* Append post IDs to an existing campaign, deduping against the
+   * existing list. Returns { campaign, added } where `added` is the
+   * count of IDs that were actually new. */
+  Campaigns.addPostIds = function (id, idsToAdd) {
+    ensureMirror();
+    const i = mirror.findIndex((c) => c.id === id);
+    if (i < 0) return null;
+    const existing = new Set(mirror[i].postIds);
+    const merged = mirror[i].postIds.slice();
+    let added = 0;
+    for (const newId of (idsToAdd || []).map(String).filter(Boolean)) {
+      if (!existing.has(newId)) {
+        existing.add(newId);
+        merged.push(newId);
+        added++;
+      }
+    }
+    mirror[i] = Object.assign({}, mirror[i], { postIds: merged });
+    persist();
+    return { campaign: mirror[i], added };
+  };
+
+  /* Remove post IDs from a campaign. Returns { campaign, removed }. */
+  Campaigns.removePostIds = function (id, idsToRemove) {
+    ensureMirror();
+    const i = mirror.findIndex((c) => c.id === id);
+    if (i < 0) return null;
+    const removeSet = new Set((idsToRemove || []).map(String));
+    const filtered = mirror[i].postIds.filter((pid) => !removeSet.has(pid));
+    const removed = mirror[i].postIds.length - filtered.length;
+    mirror[i] = Object.assign({}, mirror[i], { postIds: filtered });
+    persist();
+    return { campaign: mirror[i], removed };
+  };
+
   /* Fetch live aggregated data for a campaign.
    *
    * If the caller passes options.fromPosts (typically the dashboard's

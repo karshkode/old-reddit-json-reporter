@@ -897,6 +897,148 @@
       refreshAllCampaignSummaries();
     });
 
+    /* Inline add-posts form + per-row remove button inside the campaign
+     * detail panel. We use event delegation on the body so the handlers
+     * survive every re-render. */
+    const campaignDetailBody = document.getElementById("campaign-detail-body");
+
+    if (campaignDetailBody) {
+      /* Live paste preview under the add-posts textarea. */
+      campaignDetailBody.addEventListener("input", (e) => {
+        const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
+        if (!ta) return;
+        const form = ta.closest(".add-posts-form");
+        const prev = form && form.querySelector('[data-role="add-posts-preview"]');
+        if (!prev) return;
+        const refs = Util.parsePostRefs(ta.value);
+        if (!refs.ids.length && !refs.shares.length) {
+          prev.hidden = true; prev.innerHTML = ""; return;
+        }
+        prev.hidden = false;
+        const idChips = refs.ids.slice(0, 60).map((id) =>
+          `<span class="kw"><code>${Util.escapeHtml(id)}</code></span>`
+        ).join("");
+        const shareChips = refs.shares.slice(0, 30).map((sh) =>
+          `<span class="kw share" title="${Util.escapeHtml(sh.url)} — will be resolved on Add"><code>r/${Util.escapeHtml(sh.sub)}/s/${Util.escapeHtml(sh.token)}</code></span>`
+        ).join("");
+        const head = [];
+        if (refs.ids.length) head.push(`<strong>${refs.ids.length}</strong> ID${refs.ids.length === 1 ? "" : "s"} ready`);
+        if (refs.shares.length) head.push(`<span style="color:var(--warn)">${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"} — will resolve on Add</span>`);
+        prev.innerHTML = `<div class="meta">${head.join(" · ")}</div>${idChips}${shareChips}`;
+      });
+
+      campaignDetailBody.addEventListener("paste", (e) => {
+        const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
+        if (!ta) return;
+        setTimeout(() => ta.dispatchEvent(new Event("input", { bubbles: true })), 0);
+      });
+
+      /* Click delegation: Add posts / Remove from campaign. */
+      campaignDetailBody.addEventListener("click", async (e) => {
+        const addBtn = e.target.closest && e.target.closest('[data-action="add-posts"]');
+        const rmBtn = e.target.closest && e.target.closest('[data-action="remove-post"]');
+
+        if (addBtn) {
+          e.preventDefault();
+          await handleAddPostsToOpenCampaign(addBtn);
+          return;
+        }
+        if (rmBtn) {
+          e.preventDefault();
+          handleRemovePostFromOpenCampaign(rmBtn);
+          return;
+        }
+      });
+    }
+
+    async function handleAddPostsToOpenCampaign(btn) {
+      const form = btn.closest(".add-posts-form");
+      const ta = form && form.querySelector('[data-role="add-posts-textarea"]');
+      const prev = form && form.querySelector('[data-role="add-posts-preview"]');
+      if (!form || !ta) return;
+      const campaignId = form.dataset.campaignId || state.openCampaignId;
+      if (!campaignId) { Util.toast("No active campaign.", "error"); return; }
+
+      try {
+        const refs = Util.parsePostRefs(ta.value);
+        let allIds = refs.ids.slice();
+        let resolveFailed = [];
+
+        if (!refs.ids.length && !refs.shares.length) {
+          Util.toast("Paste a Reddit URL, share link, or post ID first.", "error");
+          return;
+        }
+
+        if (refs.shares.length) {
+          btn.disabled = true;
+          btn.dataset.originalText = btn.textContent;
+          btn.textContent = `Resolving ${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"}…`;
+          const urls = refs.shares.map((sh) => sh.url);
+          const { resolved, failed } = await Reddit.resolveShareUrls(urls);
+          for (const u of urls) {
+            if (resolved[u]) allIds.push(resolved[u]);
+          }
+          resolveFailed = failed;
+          allIds = Util.uniqBy(allIds, (x) => x);
+          console.log(`[addPostsToCampaign] resolved ${Object.keys(resolved).length}/${urls.length} share URLs; ${failed.length} failed`);
+        }
+
+        if (!allIds.length) {
+          Util.toast(refs.shares.length
+            ? "All share URLs failed to resolve. Try a different Data source."
+            : "No valid post IDs found.", "error");
+          return;
+        }
+
+        const result = Campaigns.addPostIds(campaignId, allIds);
+        if (!result) { Util.toast("Campaign not found.", "error"); return; }
+
+        if (resolveFailed.length) {
+          Util.toast(`Added ${result.added} post${result.added === 1 ? "" : "s"} (${resolveFailed.length} share URL${resolveFailed.length === 1 ? "" : "s"} failed)`, "error");
+        } else if (result.added === 0) {
+          Util.toast("Those posts are already in the campaign.", "ok");
+        } else {
+          Util.toast(`Added ${result.added} post${result.added === 1 ? "" : "s"} to "${result.campaign.name}".`, "ok");
+        }
+
+        ta.value = "";
+        if (prev) { prev.hidden = true; prev.innerHTML = ""; }
+
+        /* Re-render the campaign detail with fresh aggregated data and
+         * refresh the list-card on the side. */
+        await openCampaign(result.campaign);
+        refreshAllCampaignSummaries().catch(() => {});
+      } catch (err) {
+        console.error("[addPostsToCampaign] failed:", err);
+        Util.toast(`Couldn't add posts: ${(err && err.message) || err}`, "error");
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          if (btn.dataset.originalText) {
+            btn.textContent = btn.dataset.originalText;
+            delete btn.dataset.originalText;
+          }
+        }
+      }
+    }
+
+    function handleRemovePostFromOpenCampaign(btn) {
+      const id = btn.dataset.id;
+      if (!id) return;
+      const campaignId = state.openCampaignId;
+      if (!campaignId) return;
+      const result = Campaigns.removePostIds(campaignId, [id]);
+      if (!result) return;
+      Util.toast(`Removed post ${id}.`, "ok");
+      /* Optimistically hide the row immediately for snappy feedback. */
+      const row = btn.closest(".campaign-post-row");
+      if (row) row.style.display = "none";
+      /* Then re-render fully to update KPIs / progress bars / deep analysis. */
+      openCampaign(result.campaign).catch(() => {});
+      refreshAllCampaignSummaries().catch(() => {});
+    }
+
+
     /* Targeting selectors (AI tab + Campaigns tab) */
     const targetingAi = document.getElementById("targeting-campaign");
     if (targetingAi) {

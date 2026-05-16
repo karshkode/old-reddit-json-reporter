@@ -470,17 +470,18 @@
     const postsList = agg.posts.length ? `
       <div class="campaign-posts" style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
         ${agg.posts.map((p) => `
-          <a href="${Util.escapeHtml(p.permalink)}" target="_blank" rel="noopener" class="campaign-post-row" style="display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-elev-2);text-decoration:none;color:inherit;flex-wrap:wrap;align-items:center">
-            <div style="min-width:0;flex:1 1 60%">
-              <div style="font-weight:600;font-size:13px;line-height:1.3;word-break:break-word">${Util.escapeHtml((p.title || "").slice(0, 140))}</div>
-              <div style="color:var(--text-mute);font-size:12px;margin-top:2px">r/${Util.escapeHtml(p.subreddit)} · <code>${Util.escapeHtml(p.id)}</code> · ${Util.escapeHtml(Util.relTime(p.created_utc))}</div>
+          <div class="campaign-post-row">
+            <a href="${Util.escapeHtml(p.permalink)}" target="_blank" rel="noopener" class="campaign-post-link">
+              <div class="cpr-title">${Util.escapeHtml((p.title || "").slice(0, 140))}</div>
+              <div class="cpr-meta">r/${Util.escapeHtml(p.subreddit)} · <code>${Util.escapeHtml(p.id)}</code> · ${Util.escapeHtml(Util.relTime(p.created_utc))}</div>
+            </a>
+            <div class="cpr-stats">
+              <strong class="cpr-score">▲ ${Util.fmtNum(p.score)}</strong>
+              <span>💬 ${Util.fmtNum(p.num_comments)}</span>
+              ${p.upvote_ratio != null ? `<span>${Util.fmtPct(p.upvote_ratio)}</span>` : ""}
             </div>
-            <div style="font-size:12px;color:var(--text-dim);text-align:right;white-space:nowrap">
-              <strong style="color:var(--accent-2);font-size:14px">▲ ${Util.fmtNum(p.score)}</strong>
-              · 💬 ${Util.fmtNum(p.num_comments)}
-              ${p.upvote_ratio != null ? ` · ${Util.fmtPct(p.upvote_ratio)}` : ""}
-            </div>
-          </a>
+            <button class="cpr-remove" type="button" data-action="remove-post" data-id="${Util.escapeHtml(p.id)}" title="Remove from campaign" aria-label="Remove from campaign">×</button>
+          </div>
         `).join("")}
       </div>
     ` : '<div class="empty" style="margin-top:12px">No posts found yet — fetch failed or IDs are invalid.</div>';
@@ -503,6 +504,19 @@
       ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${missingNote}
+
+      <div class="add-posts-form" data-campaign-id="${Util.escapeHtml(campaign.id)}">
+        <div class="add-posts-head">
+          <strong>Add more posts</strong>
+          <span class="hint">paste reddit URLs, share links, or bare IDs — extracts on Add</span>
+        </div>
+        <textarea data-role="add-posts-textarea" rows="2" placeholder="https://www.reddit.com/r/X/comments/abc1234/title/&#10;https://www.reddit.com/r/Y/s/AbCdEf1234"></textarea>
+        <div class="add-posts-row">
+          <div class="paste-preview" data-role="add-posts-preview" hidden></div>
+          <button class="btn small primary" type="button" data-action="add-posts">Add posts</button>
+        </div>
+      </div>
+
       ${deepHtml}
       ${postsList}
     `;
