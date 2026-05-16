@@ -161,6 +161,49 @@
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /* Detects Reddit mobile-share URLs of the form
+   *   https://www.reddit.com/r/<sub>/s/<token>
+   * where <token> is an opaque short code (NOT a post ID) that Reddit
+   * 301-redirects to the canonical /comments/<id>/<title>/ URL. The token
+   * length and case-mix differ from post IDs, so they need a separate
+   * extractor and an async redirect-following step to resolve to a real ID.
+   */
+  const SHARE_RE = /(?:https?:\/\/)?(?:www\.|old\.|new\.)?reddit\.com\/r\/([A-Za-z0-9_]{2,30})\/s\/([A-Za-z0-9]{6,20})/gi;
+
+  Util.SHARE_URL_RE = SHARE_RE;
+
+  Util.isShareUrl = function (s) {
+    if (!s) return false;
+    SHARE_RE.lastIndex = 0;
+    return SHARE_RE.test(String(s));
+  };
+
+  /* Like parseIdList but returns {ids, shares} so the caller can decide
+   * whether to perform the (async) share-URL resolution step. parseIdList
+   * remains unchanged for backwards compat. */
+  Util.parsePostRefs = function (text) {
+    if (!text) return { ids: [], shares: [] };
+    const t = String(text);
+    const shares = [];
+    const seenShare = new Set();
+    SHARE_RE.lastIndex = 0;
+    let m;
+    while ((m = SHARE_RE.exec(t)) !== null) {
+      const sub = m[1];
+      const token = m[2];
+      const key = sub.toLowerCase() + "/" + token;
+      if (seenShare.has(key)) continue;
+      seenShare.add(key);
+      const url = (m[0].startsWith("http") ? m[0] : "https://www.reddit.com/r/" + sub + "/s/" + token);
+      shares.push({ url, sub: sub.toLowerCase(), token });
+    }
+    /* Strip share URLs out of the text so the downstream parseIdList
+     * doesn't accidentally pick up the sub or token as a bare ID. */
+    const stripped = t.replace(SHARE_RE, " ");
+    const ids = Util.parseIdList(stripped);
+    return { ids, shares };
+  };
+
   /* Concurrency-limited parallel map. Spawns at most `n` workers and
    * resolves with an array aligned to `items` (errors caught into
    * { __error } objects so a single failure doesn't reject the batch). */

@@ -366,6 +366,44 @@
     card.hidden = false;
     state.openCampaignId = campaign.id;
 
+    /* Auto-repair: if the campaign was saved with raw mobile-share URLs in
+     * its postIds (older code paths did this), resolve them now and rewrite
+     * the stored campaign. Future opens will then hit the fast path. */
+    const shareEntries = (campaign.postIds || []).filter((s) => Util.isShareUrl(s));
+    if (shareEntries.length) {
+      try {
+        body.innerHTML = `<div class="empty">Repairing ${shareEntries.length} mobile-share URL${shareEntries.length === 1 ? "" : "s"} (one-time)…<div class="hint" style="margin-top:6px">Following Reddit redirects to extract canonical post IDs.</div></div>`;
+        Util.setStatus(`Resolving ${shareEntries.length} share URL${shareEntries.length === 1 ? "" : "s"}…`, "");
+        const { resolved, failed } = await Reddit.resolveShareUrls(shareEntries);
+        const newPostIds = [];
+        const seen = new Set();
+        let fixed = 0;
+        for (const old of campaign.postIds) {
+          const resolvedId = Util.isShareUrl(old) ? resolved[old] : old;
+          if (resolvedId && !seen.has(resolvedId)) {
+            seen.add(resolvedId);
+            newPostIds.push(resolvedId);
+            if (Util.isShareUrl(old)) fixed++;
+          } else if (!resolvedId && Util.isShareUrl(old)) {
+            /* Keep the original share URL so the user can see what failed
+             * in the missing list and try again later. */
+            newPostIds.push(old);
+          }
+        }
+        Campaigns.update(campaign.id, { postIds: newPostIds });
+        campaign = Campaigns.get(campaign.id);
+        if (failed.length) {
+          Util.toast(`Repaired ${fixed} of ${shareEntries.length} share URLs (${failed.length} failed). The rest stay flagged in the missing list — tap Refresh to try again.`, "error");
+        } else {
+          Util.toast(`Repaired ${fixed} share URL${fixed === 1 ? "" : "s"}.`, "ok");
+        }
+        console.log(`[openCampaign] repaired ${fixed}/${shareEntries.length} share URLs in "${campaign.name}"`);
+      } catch (err) {
+        console.warn(`[openCampaign] share-URL repair failed:`, err && err.message);
+        Util.toast(`Couldn't repair share URLs: ${(err && err.message) || err}`, "error");
+      }
+    }
+
     /* Instant first paint using whatever we already have locally. */
     let localAgg = null;
     try {
@@ -658,8 +696,23 @@
     const campaignIdsTa = document.getElementById("campaign-post-ids");
     if (campaignIdsTa) {
       const update = () => {
-        const ids = Util.parseIdList(campaignIdsTa.value);
-        renderPastePreview("campaign-post-ids-preview", ids, { max: 80 });
+        const refs = Util.parsePostRefs(campaignIdsTa.value);
+        const el = document.getElementById("campaign-post-ids-preview");
+        if (!el) return;
+        if (!refs.ids.length && !refs.shares.length) {
+          el.hidden = true; el.innerHTML = ""; return;
+        }
+        el.hidden = false;
+        const idChips = refs.ids.slice(0, 80).map((id) =>
+          `<span class="kw"><code>${Util.escapeHtml(id)}</code></span>`
+        ).join("");
+        const shareChips = refs.shares.slice(0, 40).map((s) =>
+          `<span class="kw share" title="${Util.escapeHtml(s.url)} — will be resolved on Save"><code>r/${Util.escapeHtml(s.sub)}/s/${Util.escapeHtml(s.token)}</code></span>`
+        ).join("");
+        const headParts = [];
+        if (refs.ids.length) headParts.push(`<strong>${refs.ids.length}</strong> ID${refs.ids.length === 1 ? "" : "s"} ready`);
+        if (refs.shares.length) headParts.push(`<span style="color:var(--warn)">${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"} — will be resolved on Save</span>`);
+        el.innerHTML = `<div class="meta">${headParts.join(" · ")}</div>${idChips}${shareChips}`;
       };
       campaignIdsTa.addEventListener("input", update);
       campaignIdsTa.addEventListener("paste", () => setTimeout(update, 0));
@@ -711,35 +764,72 @@
      * iOS Safari edge case where form submit doesn't fire. */
     async function handleCampaignSave(e) {
       if (e && e.preventDefault) e.preventDefault();
+      const saveBtnEl = document.querySelector("#campaign-form button[type=submit]");
       try {
         const name = (document.getElementById("campaign-name").value || "").trim();
         if (!name) { Util.toast("Campaign needs a name", "error"); return; }
         const goalScore = document.getElementById("campaign-goal-score").value;
         const goalComments = document.getElementById("campaign-goal-comments").value;
         const rawIds = document.getElementById("campaign-post-ids").value;
-        const ids = Util.parseIdList(rawIds);
 
-        const c = Campaigns.add({ name, goalScore, goalComments, postIds: ids });
+        /* parsePostRefs splits the input into clean IDs and Reddit
+         * mobile-share URLs (/r/<sub>/s/<token>). The shares need an
+         * async redirect-following round-trip to extract the real ID. */
+        const refs = Util.parsePostRefs(rawIds);
+        let allIds = refs.ids.slice();
+        let resolveFailed = [];
 
-        if (Campaigns.persistErrorMessage()) {
+        if (refs.shares.length) {
+          /* Visible progress while we resolve. */
+          if (saveBtnEl) {
+            saveBtnEl.disabled = true;
+            saveBtnEl.dataset.originalText = saveBtnEl.textContent;
+            saveBtnEl.textContent = `Resolving ${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"}…`;
+          }
+          Util.setStatus(`Resolving ${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"} via redirects…`, "");
+          console.log(`[handleCampaignSave] resolving ${refs.shares.length} share URLs`);
+
+          const urls = refs.shares.map((s) => s.url);
+          const { resolved, failed } = await Reddit.resolveShareUrls(urls);
+          for (const u of urls) {
+            if (resolved[u]) allIds.push(resolved[u]);
+          }
+          resolveFailed = failed;
+          allIds = Util.uniqBy(allIds, (x) => x);
+
+          if (saveBtnEl) {
+            saveBtnEl.disabled = false;
+            if (saveBtnEl.dataset.originalText) saveBtnEl.textContent = saveBtnEl.dataset.originalText;
+          }
+          console.log(`[handleCampaignSave] resolved ${Object.keys(resolved).length}/${urls.length} share URLs; ${failed.length} failed`);
+        }
+
+        if (!allIds.length) {
+          Util.toast(refs.shares.length
+            ? "All share URLs failed to resolve. Check the URLs or try a different Data source."
+            : "No valid post IDs found in the input.", "error");
+          Util.setStatus("Save aborted — no valid IDs.", "err");
+          return;
+        }
+
+        const c = Campaigns.add({ name, goalScore, goalComments, postIds: allIds });
+
+        if (resolveFailed.length) {
+          Util.toast(`Saved "${c.name}" with ${allIds.length} ID${allIds.length === 1 ? "" : "s"} (${resolveFailed.length} share URL${resolveFailed.length === 1 ? "" : "s"} failed to resolve)`, "error");
+        } else if (Campaigns.persistErrorMessage()) {
           Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
         } else {
           Util.toast(`Saved "${c.name}" (${c.postIds.length} post${c.postIds.length === 1 ? "" : "s"})`, "ok");
         }
+        Util.setStatus(`Saved "${c.name}" — ${c.postIds.length} ID${c.postIds.length === 1 ? "" : "s"}`, "ok");
 
         document.getElementById("campaign-form").reset();
         const ppEl = document.getElementById("campaign-post-ids-preview");
         if (ppEl) { ppEl.hidden = true; ppEl.innerHTML = ""; }
 
-        /* Render the new entry instantly so the user sees it; refresh
-         * targeting selectors with the new campaign included. */
         UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
         populateTargetingSelectors();
 
-        /* Background fetch of post data. We don't await it so the UI
-         * stays responsive; openCampaign below shows a skeleton while it
-         * resolves. Any per-campaign fetch error is caught inside the
-         * helper. */
         refreshAllCampaignSummaries().catch((err) => {
           console.warn("refreshAllCampaignSummaries failed:", err);
         });
@@ -748,6 +838,14 @@
       } catch (err) {
         console.error("Couldn't save campaign:", err);
         Util.toast(`Couldn't save campaign: ${(err && err.message) || err}`, "error");
+      } finally {
+        if (saveBtnEl) {
+          saveBtnEl.disabled = false;
+          if (saveBtnEl.dataset.originalText) {
+            saveBtnEl.textContent = saveBtnEl.dataset.originalText;
+            delete saveBtnEl.dataset.originalText;
+          }
+        }
       }
     }
 
