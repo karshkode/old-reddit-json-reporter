@@ -93,6 +93,10 @@
   </section>
 
   <main>
+    <div id="progress-bar" class="progress-banner" hidden aria-hidden="true" aria-live="polite" role="status">
+      <div class="progress-track"><div class="progress-fill"></div></div>
+      <div class="progress-text">Working…</div>
+    </div>
     <section class="kpis" id="kpi-row" aria-label="Headline metrics"></section>
 
     <nav class="tabs" role="tablist" aria-label="Sections">
@@ -302,10 +306,10 @@
 
   </main>
 
-  <div id="status-bar" class="status-bar" aria-live="polite"></div>
   <div id="toast" class="toast" hidden></div>
 
   <footer>
+    <div id="status-bar" class="status-bar" aria-live="polite"></div>
     <p>Live data from <code>www.reddit.com/r/&lt;sub&gt;.json</code> via your browser. Reddit blocks anonymous browser CORS, so requests route through a public CORS proxy (selectable in the top bar). No server, no tracking. Static site for GitHub Pages.</p>
   </footer>
 

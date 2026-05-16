@@ -207,6 +207,7 @@
     if (!state.activeSubs.size) {
       state.posts = [];
       Util.setStatus("No active subreddits selected.", "err");
+      Util.hideProgress();
       hideBanner();
       rerenderAll();
       return;
@@ -222,6 +223,7 @@
     state.posts = [];
     state.rendering.light = true;
     Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… 0/${subs.length}`, "", "via " + describeTransport());
+    Util.setProgress(0, `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…  0 / ${subs.length}`);
     rerenderLight();
 
     /* Up to 3 subreddits in flight at once. More than that and the public
@@ -252,11 +254,13 @@
         completed++;
         if (state.fetchToken === myToken) {
           state.posts = Util.uniqBy(collected, (p) => p.id);
+          const pct = (completed / subs.length) * 100;
           Util.setStatus(
             `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… ${completed}/${subs.length}`,
             errors ? "err" : "",
             "via " + describeTransport()
           );
+          Util.setProgress(pct, `Loaded r/${sub}  ·  ${completed} / ${subs.length}  ·  ${state.posts.length} posts so far`);
           rerenderLight();
         }
       }
@@ -270,6 +274,7 @@
     state.posts = Util.uniqBy(collected, (p) => p.id);
     state.lastTransport = Reddit._lastTransport || state.lastTransport;
     state.rendering.light = false;
+    Util.hideProgress(`Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}`);
 
     const totalMs = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
     console.log(`[refreshData] complete: ${state.posts.length} unique posts in ${totalMs}ms (errors=${errors})`);
@@ -1191,6 +1196,11 @@
         if (discoverBtn) { discoverBtn.disabled = true; discoverBtn.textContent = "Searching…"; }
         setDiscoverStatus(`Running ${queries.length} angle${queries.length === 1 ? "" : "s"}: ${queries.join(" · ").slice(0, 100)}…`);
         discoverResults.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
+        /* 4 phases: subreddit search, post mining, catalog seeding, scoring.
+         * Allocate weights so the bar feels natural. */
+        const PHASE_WEIGHTS = { search: 0.40, posts: 0.25, catalog: 0.25, score: 0.10 };
+        let progressPct = 2;
+        Util.setProgress(progressPct, `Searching Reddit · 0 / ${queries.length} angles`);
 
         const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -1199,6 +1209,7 @@
          *    in so the recommender can boost cross-query matches. */
         const subResults = new Map();   // canonical -> { candidate, hits }
         const queryHitsByName = {};
+        let queriesDone = 0;
         await Util.pmap(queries, 2, async (q) => {
           try {
             const r = await Reddit.searchSubreddits(q, { limit: 12 });
@@ -1211,6 +1222,10 @@
             }
           } catch (e) {
             console.warn(`[discover] sub-search "${q}" failed:`, e && e.message);
+          } finally {
+            queriesDone++;
+            progressPct = 2 + PHASE_WEIGHTS.search * 100 * (queriesDone / queries.length);
+            Util.setProgress(progressPct, `Searching Reddit · ${queriesDone} / ${queries.length} angles · ${subResults.size} subs found`);
           }
         });
 
@@ -1221,6 +1236,8 @@
         const postQuery = (profile.keywords || []).slice(0, 4).map((k) => k.word).join(" ");
         const postHitsByName = {};
         let postHitsTotal = 0;
+        progressPct = 2 + PHASE_WEIGHTS.search * 100;
+        Util.setProgress(progressPct, `Mining recent hot posts for sub mentions…`);
         if (postQuery) {
           try {
             const posts = await Reddit.searchPosts(postQuery, { limit: 75, sort: "top", t: "month" });
@@ -1240,6 +1257,8 @@
               .filter((k) => !subResults.has(k))
               .sort((a, b) => (subFromPosts.get(b) || 0) - (subFromPosts.get(a) || 0))
               .slice(0, 12);
+            let aboutDone = 0;
+            const aboutTotal = newSubs.length || 1;
             await Util.pmap(newSubs, 3, async (sub) => {
               try {
                 const about = await Reddit.fetchSubredditAbout(sub);
@@ -1248,6 +1267,11 @@
                   if (!subResults.has(k)) subResults.set(k, { candidate: about, hits: 0 });
                 }
               } catch (_) {}
+              finally {
+                aboutDone++;
+                progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100 * 0.5 + PHASE_WEIGHTS.posts * 100 * 0.5 * (aboutDone / aboutTotal);
+                Util.setProgress(progressPct, `Looked up r/${sub} · ${aboutDone} / ${aboutTotal} subs from posts`);
+              }
             });
           } catch (e) {
             console.warn(`[discover] post-search failed:`, e && e.message);
@@ -1262,11 +1286,16 @@
          *    that strict mode never drops a known-good catalog member. */
         const detectedSpheres = (window.Seeds && Seeds.detectSpheres(profile)) || [];
         let sphereSeedAttempted = 0, sphereSeedFetched = 0;
+        progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100;
+        Util.setProgress(progressPct, detectedSpheres.length
+          ? `Loading sphere catalog · ${detectedSpheres.length} sphere${detectedSpheres.length === 1 ? "" : "s"} detected (${detectedSpheres.slice(0, 3).join(", ")})`
+          : `No matching spheres detected · skipping catalog`);
         if (detectedSpheres.length && window.Seeds) {
           const seedNames = Seeds.expand(detectedSpheres)
             .filter((sub) => !subResults.has(String(sub).toLowerCase()))
             .slice(0, 24);
           sphereSeedAttempted = seedNames.length;
+          let seedDone = 0;
           await Util.pmap(seedNames, 3, async (sub) => {
             try {
               const about = await Reddit.fetchSubredditAbout(sub);
@@ -1278,6 +1307,11 @@
                 }
               }
             } catch (_) { /* ignore — sub may be private or proxy fail */ }
+            finally {
+              seedDone++;
+              progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100 + PHASE_WEIGHTS.catalog * 100 * (seedDone / Math.max(1, sphereSeedAttempted));
+              Util.setProgress(progressPct, `Loading catalog · ${seedDone} / ${sphereSeedAttempted} seed sub${sphereSeedAttempted === 1 ? "" : "s"} (${sphereSeedFetched} new)`);
+            }
           });
         }
 
@@ -1287,6 +1321,7 @@
           ...Array.from(state.activeSubs),
         ].map((s) => String(s).toLowerCase()));
 
+        Util.setProgress(null, `Scoring ${subResults.size} candidate sub${subResults.size === 1 ? "" : "s"}…`);
         const result = Analysis.discoverCandidates(
           Array.from(subResults.values()).map((v) => v.candidate),
           profile,
@@ -1306,6 +1341,7 @@
         console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${detectedSpheres.length} spheres (${sphereSeedFetched}/${sphereSeedAttempted} seeds fetched) · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · ${droppedTotal} dropped by ${result.strict ? "strict" : "loose"} filter (offtopic=${f.offtopic} weak=${f.weak} mega=${f.mega}) · spheres=${detectedSpheres.join(",") || "—"} (${dur}ms)`);
 
         UI.renderDiscoveryCandidates(result, discoverResults);
+        Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
 
         const sphereTail = detectedSpheres.length
           ? ` · detected sphere${detectedSpheres.length === 1 ? "" : "s"}: <em>${detectedSpheres.slice(0, 4).map(Util.escapeHtml).join(", ")}</em>${detectedSpheres.length > 4 ? ` +${detectedSpheres.length - 4} more` : ""}`
@@ -1324,9 +1360,10 @@
       } catch (err) {
         console.warn("[discover] failed:", err && err.message);
         setDiscoverStatus(`Discovery failed: ${(err && err.message) || err}`, "err");
+        Util.hideProgress();
         discoverResults.innerHTML = "";
       } finally {
-        if (discoverBtn) { discoverBtn.disabled = false; discoverBtn.textContent = "Discover"; }
+        if (discoverBtn) { discoverBtn.disabled = false; discoverBtn.textContent = "Find subreddits"; }
       }
     }
     if (discoverBtn) discoverBtn.addEventListener("click", runDiscover);
