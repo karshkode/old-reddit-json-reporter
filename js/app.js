@@ -34,6 +34,14 @@
      * data-cp-index in the rendered cross-post rows so the
      * "+ Make campaign" button can resolve back to its group. */
     crossPosts: [],
+    /* Posts table pagination + sub filter (Posts tab). */
+    postsPage: 0,
+    postsPageSize: 25,
+    postsSubFilter: "",
+    /* Cross-posts pagination + sub filter (Campaigns tab). */
+    crossPostsPage: 0,
+    crossPostsPageSize: 10,
+    crossPostsSubFilter: "",
     /* Manually-chosen sphere keys to seed Discover with, on top of
      * Seeds.detectSpheres()'s auto-detection. Stored in localStorage
      * under "rj.activeSpheres". */
@@ -135,6 +143,10 @@
         (p.flair || "").toLowerCase().includes(q)
       );
     }
+    if (state.postsSubFilter) {
+      const sub = state.postsSubFilter.toLowerCase();
+      list = list.filter((p) => (p.subreddit || "").toLowerCase() === sub);
+    }
     list = list.slice().sort((a, b) => {
       const k = state.sortKey;
       const va = a[k]; const vb = b[k];
@@ -148,6 +160,37 @@
 
   /* ---------- Render pipeline ---------- */
 
+  /* One-stop render of the Posts table + its pagination strip. Both
+   * rerenderLight and rerenderAll funnel through this so pagination is
+   * honoured on every update — the previous code only passed page/
+   * pageSize opts in rerenderAll, so any rerenderLight (per-page
+   * streaming during refresh, dropdown change, sort flip, etc.)
+   * silently re-rendered the entire list regardless of "Per page". */
+  function renderPostsView() {
+    const posts = filteredPosts();
+    const pageSize = state.postsPageSize === "all" ? "all" : Number(state.postsPageSize) || 25;
+    /* Clamp page index in case filters shrank the list below the
+     * current page. UI.renderPagination already clamps for display,
+     * but we keep state.postsPage honest so the next user click is
+     * from a valid base. */
+    if (pageSize !== "all") {
+      const totalPages = Math.max(1, Math.ceil(posts.length / pageSize));
+      if (state.postsPage > totalPages - 1) state.postsPage = totalPages - 1;
+      if (state.postsPage < 0) state.postsPage = 0;
+    }
+    UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail, {
+      page: state.postsPage,
+      pageSize,
+    });
+    UI.renderPagination("posts-pagination", {
+      page: state.postsPage,
+      totalItems: posts.length,
+      pageSize,
+      onChange: (newPage) => { state.postsPage = newPage; renderPostsView(); },
+    });
+    return posts;
+  }
+
   /* Lightweight render: KPIs + posts table only. Used during in-progress
    * batch fetches so the user sees data accumulate without paying the
    * per-update cost of redrawing 8 Chart.js canvases and recomputing
@@ -156,7 +199,7 @@
     const posts = filteredPosts();
     const agg = Analysis.aggregate(posts);
     UI.renderKpis(agg);
-    UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
+    renderPostsView();
   }
 
   function rerenderAll() {
@@ -184,7 +227,8 @@
     }
 
     UI.renderKpis(agg);
-    UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
+    renderPostsView();
+    refreshSubFilterDropdowns();
 
     if (window.Chart) {
       const timelineData = Analysis.bucketByTimePerSub(posts, { window: state.timelineWindow });
@@ -776,7 +820,30 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     });
   }
 
-    function bind() {
+    /* Keep both per-tab sub-filter dropdowns synced with the currently
+   * loaded subreddits. Preserves the user's selection if their picked
+   * sub is still loaded. */
+  function refreshSubFilterDropdowns() {
+    const subs = Array.from(state.activeSubs).sort();
+    function fill(id, current) {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const want = current || "";
+      while (sel.options.length > 1) sel.remove(1);
+      for (const sub of subs) {
+        const opt = document.createElement("option");
+        opt.value = sub;
+        opt.textContent = "r/" + sub;
+        sel.appendChild(opt);
+      }
+      if (want && subs.includes(want)) sel.value = want;
+      else sel.value = "";
+    }
+    fill("posts-sub-filter", state.postsSubFilter);
+    fill("crossposts-sub-filter", state.crossPostsSubFilter);
+  }
+
+  function bind() {
     const transportSelect = document.getElementById("transport-select");
     const transportSelectMobile = document.getElementById("transport-select-mobile");
     populateTransportSelect(transportSelect);
@@ -861,6 +928,7 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     postIdInput.addEventListener("input", (e) => {
       const ids = Util.parseIdList(e.target.value);
       state.postIdFilter = ids;
+      state.postsPage = 0;
       renderPastePreview("post-id-filter-preview", ids, { short: true, max: 30 });
       debouncedFilter();
     });
@@ -896,6 +964,9 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     }
     document.getElementById("search-input").addEventListener("input", (e) => {
       state.searchQuery = e.target.value.trim();
+      state.postsPage = 0;
+      const tabSearch = document.getElementById("posts-title-search");
+      if (tabSearch && tabSearch.value !== e.target.value) tabSearch.value = e.target.value;
       debouncedFilter();
     });
 
@@ -1005,6 +1076,7 @@ const crossPosts = Analysis.detectCrossPosts(posts);
         const k = th.dataset.sort;
         if (state.sortKey === k) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
         else { state.sortKey = k; state.sortDir = (k === "title" || k === "author" || k === "id" || k === "subreddit") ? "asc" : "desc"; }
+        state.postsPage = 0;
         rerenderAll();
         syncMobileSort();
       });
@@ -1351,6 +1423,48 @@ const crossPosts = Analysis.detectCrossPosts(posts);
         if (isMobile()) setControlsExpanded(false);
       });
     };
+    /* Posts tab — title search input (mirrors the global search input). */
+    const postsTitleSearch = document.getElementById("posts-title-search");
+    if (postsTitleSearch) {
+      const globalSearch = document.getElementById("search-input");
+      if (globalSearch) postsTitleSearch.value = globalSearch.value || "";
+      const debouncedTabSearch = Util.debounce(() => { rerenderLight(); }, 200);
+      postsTitleSearch.addEventListener("input", (e) => {
+        state.searchQuery = e.target.value.trim();
+        state.postsPage = 0;
+        if (globalSearch && globalSearch.value !== e.target.value) globalSearch.value = e.target.value;
+        debouncedTabSearch();
+      });
+    }
+
+    /* Posts tab — sub filter + per-page. */
+    const postsSubSel = document.getElementById("posts-sub-filter");
+    if (postsSubSel) postsSubSel.addEventListener("change", (e) => {
+      state.postsSubFilter = e.target.value || "";
+      state.postsPage = 0;
+      rerenderLight();
+    });
+    const postsPageSizeSel = document.getElementById("posts-page-size");
+    if (postsPageSizeSel) postsPageSizeSel.addEventListener("change", (e) => {
+      state.postsPageSize = e.target.value === "all" ? "all" : Number(e.target.value) || 25;
+      state.postsPage = 0;
+      rerenderLight();
+    });
+
+    /* Cross-posts (Campaigns tab) — sub filter + per-page. */
+    const xpSubSel = document.getElementById("crossposts-sub-filter");
+    if (xpSubSel) xpSubSel.addEventListener("change", (e) => {
+      state.crossPostsSubFilter = e.target.value || "";
+      state.crossPostsPage = 0;
+      rerenderAll();
+    });
+    const xpPageSizeSel = document.getElementById("crossposts-page-size");
+    if (xpPageSizeSel) xpPageSizeSel.addEventListener("change", (e) => {
+      state.crossPostsPageSize = e.target.value === "all" ? "all" : Number(e.target.value) || 10;
+      state.crossPostsPage = 0;
+      rerenderAll();
+    });
+
     closeOnSelect(document.getElementById("listing-select"));
     closeOnSelect(document.getElementById("time-select"));
     closeOnSelect(document.getElementById("limit-select"));

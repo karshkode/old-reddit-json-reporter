@@ -2041,3 +2041,68 @@ footer {
   .sort-row.posts-controls,
   .crossposts-controls { gap: 6px; }
 }
+
+/* =====================================================================
+   MOBILE OVERFLOW SAFEGUARDS — keep selects + cards inside viewport
+   ===================================================================== */
+
+/* Native <select> on iOS expands to its widest option's text. With
+ * long campaign names ("Cross-post: 'A $1.7B Fraud on the American…'")
+ * this can blow the parent flex container past 100% width. Cap every
+ * native select to the available column width. */
+select { max-width: 100%; min-width: 0; }
+
+/* Discover hero + Posts controls: belt-and-suspenders, allow shrinking */
+.hero-card { overflow: hidden; }
+.hero-card * { min-width: 0; }
+.targeting-picker > select,
+.targeting-picker > .targeting-picker-select { max-width: 100%; }
+
+/* Stack the hero picker controls vertically on phones so the campaign
+ * dropdown always gets a full-width row instead of competing with the
+ * Relevant/All toggle and the Find subreddits button. */
+@media (max-width: 720px) {
+  .hero-card .targeting-picker { flex-direction: column; align-items: stretch; }
+  .hero-card .targeting-picker > * { width: 100%; flex: 0 0 auto; }
+  .hero-card .targeting-picker .chart-mode { justify-content: center; }
+}
+
+/* Posts tab: each control block on its own line on narrow screens */
+@media (max-width: 720px) {
+  .sort-row.posts-controls,
+  .crossposts-controls {
+    grid-template-columns: 1fr;
+  }
+  .sort-row.posts-controls > input[type="search"],
+  .sort-row.posts-controls > select,
+  .crossposts-controls > select {
+    width: 100%;
+    flex: 0 0 100%;
+  }
+}
+
+/* Posts-tab title search input — compose into the controls row */
+#posts-title-search {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  min-height: 32px;
+  outline: none;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+#posts-title-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18);
+}
+@media (max-width: 720px) {
+  #posts-title-search { font-size: 16px; padding: 8px 10px; min-height: 38px; }
+}
+
+/* Posts cards on mobile: kill any stray overflow */
+@media (max-width: 720px) {
+  #posts-table tbody tr { width: 100%; max-width: 100%; box-sizing: border-box; word-break: break-word; }
+}
