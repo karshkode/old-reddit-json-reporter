@@ -1855,3 +1855,25 @@ footer {
   }
   .progress-text { font-size: 11px; }
 }
+
+/* Cross-post row layout — head + meta + actions stacked */
+.crosspost-row .crosspost-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.crosspost-row .crosspost-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.crosspost-row .crosspost-actions button[disabled] {
+  opacity: 0.55;
+  cursor: default;
+  background: var(--bg-elev-2);
+  color: var(--good);
+  border-color: var(--good);
+}

@@ -226,13 +226,26 @@
     const el = document.getElementById("crossposts");
     if (!el) return;
     if (!groups.length) { el.innerHTML = '<div class="empty">No cross-posts detected in the loaded set.</div>'; return; }
-    el.innerHTML = groups.slice(0, 20).map((g) => `
-      <div class="crosspost-row">
-        <strong>${Util.escapeHtml(g.kind === "url" ? truncate(g.key, 90) : truncate(g.posts[0].title, 110))}</strong>
-        <span class="badge info">${g.posts.length} posts</span>
-        <div class="subs">${g.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(" · ")} · ${Util.fmtNum(g.totalScore)} pts · ${Util.fmtNum(g.totalComments)} comments</div>
-      </div>
-    `).join("");
+    el.innerHTML = groups.slice(0, 20).map((g, i) => {
+      const headline = g.kind === "url" ? truncate(g.key, 90) : truncate(g.posts[0].title, 110);
+      const ids = g.posts.map((p) => p.id);
+      return `
+        <div class="crosspost-row">
+          <div class="crosspost-head">
+            <strong>${Util.escapeHtml(headline)}</strong>
+            <span class="badge info">${g.posts.length} posts</span>
+          </div>
+          <div class="subs">${g.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(" · ")} · ${Util.fmtNum(g.totalScore)} pts · ${Util.fmtNum(g.totalComments)} comments</div>
+          <div class="crosspost-actions">
+            <button class="btn small primary"
+                    type="button"
+                    data-action="make-campaign-from-crosspost"
+                    data-cp-index="${i}"
+                    aria-label="Convert this cross-post group into a new campaign">+ Make campaign</button>
+          </div>
+        </div>
+      `;
+    }).join("");
   };
 
   UI.renderRecommendations = function (lines) {
