@@ -196,8 +196,6 @@
     UI.renderSubProfiles(state.subProfiles);
 
     /* Refresh both targeting playgrounds whenever the dataset changes. */
-    refreshTargeting("ai");
-    refreshTargeting("campaigns");
   }
 
   /* ---------- Data fetch ---------- */
@@ -340,8 +338,6 @@
       state.campaignSummaries = {};
       UI.renderCampaignList([], {}, openCampaign);
       populateTargetingSelectors();
-      refreshTargeting("ai");
-      refreshTargeting("campaigns");
       return;
     }
     const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -377,8 +373,6 @@
     state.campaignSummaries = summaries;
     UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
     populateTargetingSelectors();
-    refreshTargeting("ai");
-    refreshTargeting("campaigns");
 
     const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
     console.log(`[campaigns] refreshed ${list.length} in ${dur}ms`);
@@ -556,7 +550,7 @@
 
   function populateTargetingSelectors() {
     const campaigns = Campaigns.list();
-    for (const id of ["targeting-campaign", "campaigns-targeting-campaign", "discover-campaign"]) {
+    for (const id of ["discover-campaign"]) {
       const el = document.getElementById(id);
       if (!el) continue;
       const previous = el.value;
@@ -1074,22 +1068,6 @@
       refreshAllCampaignSummaries().catch(() => {});
     }
 
-
-    /* Targeting selectors (AI tab + Campaigns tab) */
-    const targetingAi = document.getElementById("targeting-campaign");
-    if (targetingAi) {
-      targetingAi.addEventListener("change", () => {
-        state.targetingFor.ai = targetingAi.value;
-        refreshTargeting("ai");
-      });
-    }
-    const targetingCamp = document.getElementById("campaigns-targeting-campaign");
-    if (targetingCamp) {
-      targetingCamp.addEventListener("change", () => {
-        state.targetingFor.campaigns = targetingCamp.value;
-        refreshTargeting("campaigns");
-      });
-    }
 
     /* Close filters drawer when user finishes a filter action on mobile */
     const closeOnSelect = (el) => {
