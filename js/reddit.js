@@ -366,5 +366,78 @@
 
   Reddit.normalizePost = normalizePost;
 
+  /* ============================================================
+   * SHARE URL RESOLUTION
+   * ----------------------------------------------------------
+   * Reddit mobile-share links look like
+   *   https://www.reddit.com/r/<sub>/s/<token>
+   * where <token> is opaque and 301-redirects to the canonical
+   *   /r/<sub>/comments/<id>/<title>/
+   * URL. We need the real <id> to populate /by_id. The CORS proxy
+   * follows the redirect transparently and returns the destination
+   * page; we then grep the first occurrence of "comments/<id>" out
+   * of the body. That's reliable in practice because Reddit's HTML
+   * embeds the canonical URL in <link rel="canonical">, og:url, and
+   * the JSON blob, all very near the top of the document.
+   * ============================================================ */
+
+  Reddit.resolveShareUrl = async function (shareUrl) {
+    const transports = transportsToTry();
+    let lastErr;
+    for (const t of transports) {
+      const target = t.build(shareUrl);
+      const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+      const tid = ctrl ? setTimeout(() => ctrl.abort(), 10000) : null;
+      try {
+        const res = await fetch(target, {
+          method: "GET",
+          credentials: "omit",
+          headers: { Accept: "text/html, */*;q=0.5" },
+          signal: ctrl && ctrl.signal,
+        });
+        if (!res.ok) { lastErr = new Error("HTTP " + res.status + " via " + t.name); continue; }
+        const text = await res.text();
+        if (looksLikeBlockedHtml(text)) {
+          /* Reddit's "Blocked" interstitial has no canonical comments link.
+           * Fall through to the next proxy. */
+          lastErr = new Error("Reddit blocked page via " + t.name);
+          continue;
+        }
+        const m = text.match(/comments\/([a-z0-9]{4,12})/i);
+        if (m) {
+          Reddit._lastTransport = t.name;
+          return m[1].toLowerCase();
+        }
+        lastErr = new Error("no canonical id in response via " + t.name);
+      } catch (e) {
+        if (e && e.name === "AbortError") lastErr = new Error("timeout via " + t.name);
+        else lastErr = new Error((e && e.message ? e.message : String(e)) + " via " + t.name);
+      } finally {
+        if (tid) clearTimeout(tid);
+      }
+    }
+    throw lastErr || new Error("All proxies failed for share URL");
+  };
+
+  /* Resolve many share URLs concurrently. Returns
+   *   { resolved: { url: id, ... }, failed: [{url, message}, ...] }
+   * so the UI can render partial success without rejecting. Concurrency
+   * 4 — share URL resolution downloads ~500KB of HTML each, so going
+   * higher chews memory on phones. */
+  Reddit.resolveShareUrls = async function (urls) {
+    const cleaned = Util.uniqBy((urls || []).map(String).filter(Boolean), (x) => x);
+    const resolved = {};
+    const failed = [];
+    await Util.pmap(cleaned, 4, async (u) => {
+      try {
+        const id = await Reddit.resolveShareUrl(u);
+        resolved[u] = id;
+      } catch (e) {
+        failed.push({ url: u, message: (e && e.message) || String(e) });
+      }
+    });
+    return { resolved, failed };
+  };
+
   window.Reddit = Reddit;
 })();

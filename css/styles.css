@@ -1302,3 +1302,11 @@ footer {
   padding: 2px 6px;
   font-size: 10px;
 }
+
+/* Share-URL chip in the paste preview — distinguishes the "needs to be
+ * resolved on Save" state from already-clean ID chips. */
+.paste-preview .kw.share {
+  background: rgba(251, 191, 36, 0.10);
+  border-color: rgba(251, 191, 36, 0.45);
+  color: var(--warn);
+}
