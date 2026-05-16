@@ -149,6 +149,21 @@
     const sentiment = Analysis.aggregateSentiment(posts);
     const themes = Analysis.themes(posts);
     state.subProfiles = Analysis.subredditProfiles(posts);
+    /* Attach an engagement-trend slope per sub so recommendTargets can
+     * fold "trending up / down / flat" into its composite score. */
+    if (state.subProfiles && Object.keys(state.subProfiles).length) {
+      const bySub = {};
+      for (const p of posts) {
+        const k = (p.subreddit || "").toLowerCase();
+        if (!k) continue;
+        (bySub[k] = bySub[k] || []).push(p);
+      }
+      for (const [k, list] of Object.entries(bySub)) {
+        if (state.subProfiles[k]) {
+          state.subProfiles[k]._trend = Analysis.engagementTrend(list);
+        }
+      }
+    }
 
     UI.renderKpis(agg);
     UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
@@ -532,7 +547,7 @@
 
   function populateTargetingSelectors() {
     const campaigns = Campaigns.list();
-    for (const id of ["targeting-campaign", "campaigns-targeting-campaign"]) {
+    for (const id of ["targeting-campaign", "campaigns-targeting-campaign", "discover-campaign"]) {
       const el = document.getElementById(id);
       if (!el) continue;
       const previous = el.value;
@@ -908,6 +923,93 @@
     closeOnSelect(document.getElementById("listing-select"));
     closeOnSelect(document.getElementById("time-select"));
     closeOnSelect(document.getElementById("limit-select"));
+
+    /* ------ Discover similar subreddits ------ */
+    const discoverBtn = document.getElementById("discover-run");
+    const discoverSel = document.getElementById("discover-campaign");
+    const discoverResults = document.getElementById("discover-results");
+    const discoverStatus = document.getElementById("discover-status");
+
+    function setDiscoverStatus(text, kind) {
+      if (!discoverStatus) return;
+      discoverStatus.style.display = text ? "block" : "none";
+      discoverStatus.className = "meta " + (kind || "");
+      discoverStatus.textContent = text || "";
+    }
+
+    async function runDiscover() {
+      try {
+        if (!discoverSel || !discoverSel.value) {
+          setDiscoverStatus("Pick a campaign first.", "err");
+          return;
+        }
+        const campaign = Campaigns.get(discoverSel.value);
+        if (!campaign) { setDiscoverStatus("Campaign not found.", "err"); return; }
+
+        const summary = state.campaignSummaries[campaign.id];
+        if (!summary || !summary.posts || !summary.posts.length) {
+          setDiscoverStatus(`"${campaign.name}" has no resolved posts. Open it on the Campaigns tab and tap Refresh first.`, "err");
+          discoverResults.innerHTML = "";
+          return;
+        }
+        const profile = Analysis.campaignProfile(summary.posts, campaign);
+        const query = Analysis.buildDiscoveryQuery(profile);
+        if (!query) {
+          setDiscoverStatus("Not enough campaign content to derive a search query.", "err");
+          return;
+        }
+
+        if (discoverBtn) { discoverBtn.disabled = true; discoverBtn.textContent = "Searching…"; }
+        setDiscoverStatus(`Searching Reddit for subs matching: ${query.slice(0, 80)}…`);
+        discoverResults.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
+
+        const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
+        const results = await Reddit.searchSubreddits(query, { limit: 25, sort: "relevance" });
+        const exclude = new Set([
+          ...(profile.subreddits || []),
+          ...Array.from(state.activeSubs),
+        ].map((s) => String(s).toLowerCase()));
+        const candidates = Analysis.discoverCandidates(results, profile, {
+          excludeNames: Array.from(exclude),
+          minSubs: 100,
+          limit: 12,
+        });
+        const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
+        console.log(`[discover] ${campaign.name}: ${results.length} hits, ${candidates.length} after scoring (${dur}ms)`);
+
+        UI.renderDiscoveryCandidates(candidates, discoverResults);
+        setDiscoverStatus(`Found ${candidates.length} candidate sub${candidates.length === 1 ? "" : "s"} not already in your dashboard or campaign.`, "ok");
+      } catch (err) {
+        console.warn("[discover] failed:", err && err.message);
+        setDiscoverStatus(`Discovery failed: ${(err && err.message) || err}`, "err");
+        discoverResults.innerHTML = "";
+      } finally {
+        if (discoverBtn) { discoverBtn.disabled = false; discoverBtn.textContent = "Discover"; }
+      }
+    }
+    if (discoverBtn) discoverBtn.addEventListener("click", runDiscover);
+
+    /* "+ Add to dashboard" buttons inside discover-results: event delegation
+     * so we don't need to re-bind on every render. */
+    if (discoverResults) {
+      discoverResults.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest && e.target.closest('[data-action="add"]');
+        if (!btn) return;
+        const name = btn.dataset.name;
+        if (!name) return;
+        const norm = Util.normalizeSubName(name);
+        if (!state.knownSubs.includes(norm)) state.knownSubs.push(norm);
+        state.activeSubs.add(norm);
+        persist();
+        renderChips();
+        Util.toast(`Added r/${norm} — fetching…`, "ok");
+        const row = btn.closest(".target-row");
+        if (row) row.classList.add("already");
+        btn.disabled = true;
+        btn.textContent = "Added ✓";
+        refreshData();
+      });
+    }
   }
 
   function renderChips() {
