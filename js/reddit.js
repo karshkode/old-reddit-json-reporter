@@ -240,9 +240,21 @@
       const json = await fetchJson(`/r/${sub}/${listing}.json`, params);
       const children = (json && json.data && json.data.children) || [];
       if (!children.length) break;
+      const newOnThisPage = [];
       for (const c of children) {
-        if (c && c.kind === "t3" && c.data) out.push(normalizePost(c.data));
+        if (c && c.kind === "t3" && c.data) {
+          const post = normalizePost(c.data);
+          out.push(post);
+          newOnThisPage.push(post);
+        }
         if (out.length >= target) break;
+      }
+      /* Fire opts.onPage(posts) so callers can stream UI updates as
+       * each page lands instead of waiting for the whole sub to
+       * paginate. Used by the progress bar to stay in step with the
+       * actual post count, not just the sub-completion count. */
+      if (newOnThisPage.length && typeof opts.onPage === "function") {
+        try { opts.onPage(newOnThisPage); } catch (_) {}
       }
       after = json && json.data && json.data.after;
       if (!after) break;
