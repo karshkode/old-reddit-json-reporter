@@ -1252,3 +1252,53 @@ footer {
   .meter-row { grid-template-columns: 70px 1fr 24px; }
   .target-row { padding: 10px 12px; }
 }
+
+/* =====================================================================
+   PASTE PREVIEW — live "Detected N posts" chips under post-ID inputs
+   ===================================================================== */
+
+.paste-preview {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+.paste-preview .meta {
+  width: 100%;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.paste-preview .kw {
+  background: rgba(52, 211, 153, 0.10);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--good);
+}
+.paste-preview .kw code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 11px;
+  color: inherit;
+}
+.paste-preview.tiny {
+  margin-top: 4px;
+  gap: 4px;
+}
+.paste-preview.tiny .meta {
+  width: auto;
+  margin-bottom: 0;
+  margin-right: 6px;
+}
+.paste-preview.tiny .kw {
+  padding: 2px 6px;
+  font-size: 10px;
+}

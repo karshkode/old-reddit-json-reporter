@@ -483,10 +483,46 @@
     });
 
     const debouncedFilter = Util.debounce(() => { rerenderAll(); }, 200);
-    document.getElementById("post-id-filter").addEventListener("input", (e) => {
-      state.postIdFilter = Util.parseIdList(e.target.value);
+    function renderPastePreview(targetId, ids, opts) {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      opts = opts || {};
+      if (!ids || !ids.length) {
+        el.hidden = true;
+        el.innerHTML = "";
+        return;
+      }
+      el.hidden = false;
+      const chips = ids.slice(0, opts.max || 80).map((id) => `<span class="kw"><code>${Util.escapeHtml(id)}</code></span>`).join("");
+      const moreNote = ids.length > (opts.max || 80) ? ` <span class="meta">(+${ids.length - (opts.max || 80)} more)</span>` : "";
+      const heading = opts.short
+        ? `<span class="meta">${ids.length} ID${ids.length === 1 ? "" : "s"} detected</span>`
+        : `<div class="meta">Detected ${ids.length} post ID${ids.length === 1 ? "" : "s"} from your paste</div>`;
+      el.innerHTML = heading + chips + moreNote;
+    }
+
+    const postIdInput = document.getElementById("post-id-filter");
+    postIdInput.addEventListener("input", (e) => {
+      const ids = Util.parseIdList(e.target.value);
+      state.postIdFilter = ids;
+      renderPastePreview("post-id-filter-preview", ids, { short: true, max: 30 });
       debouncedFilter();
     });
+    postIdInput.addEventListener("paste", () => {
+      // The input event fires *after* paste in modern browsers but on some
+      // mobile keyboards it lags; this guarantees a refresh on next tick.
+      setTimeout(() => postIdInput.dispatchEvent(new Event("input")), 0);
+    });
+
+    const campaignIdsTa = document.getElementById("campaign-post-ids");
+    if (campaignIdsTa) {
+      const update = () => {
+        const ids = Util.parseIdList(campaignIdsTa.value);
+        renderPastePreview("campaign-post-ids-preview", ids, { max: 80 });
+      };
+      campaignIdsTa.addEventListener("input", update);
+      campaignIdsTa.addEventListener("paste", () => setTimeout(update, 0));
+    }
     document.getElementById("search-input").addEventListener("input", (e) => {
       state.searchQuery = e.target.value.trim();
       debouncedFilter();
@@ -527,19 +563,68 @@
 
     document.getElementById("close-detail").addEventListener("click", UI.hidePostDetail);
 
-    document.getElementById("campaign-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const name = document.getElementById("campaign-name").value.trim();
-      const goalScore = document.getElementById("campaign-goal-score").value;
-      const goalComments = document.getElementById("campaign-goal-comments").value;
-      const ids = Util.parseIdList(document.getElementById("campaign-post-ids").value);
-      if (!name) return Util.toast("Campaign needs a name", "error");
-      const c = Campaigns.add({ name, goalScore, goalComments, postIds: ids });
-      Util.toast(`Saved "${c.name}"`, "ok");
-      document.getElementById("campaign-form").reset();
-      await refreshAllCampaignSummaries();
-      openCampaign(c);
-    });
+    /* Submit handler is wrapped in try/catch and renders the campaign list
+     * immediately after add, *before* any await, so a slow Reddit fetch
+     * cannot leave the user staring at a frozen form. We also bind a click
+     * handler on the Save button as a belt-and-suspenders fallback for any
+     * iOS Safari edge case where form submit doesn't fire. */
+    async function handleCampaignSave(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      try {
+        const name = (document.getElementById("campaign-name").value || "").trim();
+        if (!name) { Util.toast("Campaign needs a name", "error"); return; }
+        const goalScore = document.getElementById("campaign-goal-score").value;
+        const goalComments = document.getElementById("campaign-goal-comments").value;
+        const rawIds = document.getElementById("campaign-post-ids").value;
+        const ids = Util.parseIdList(rawIds);
+
+        const c = Campaigns.add({ name, goalScore, goalComments, postIds: ids });
+
+        if (Campaigns.persistErrorMessage()) {
+          Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
+        } else {
+          Util.toast(`Saved "${c.name}" (${c.postIds.length} post${c.postIds.length === 1 ? "" : "s"})`, "ok");
+        }
+
+        document.getElementById("campaign-form").reset();
+        const ppEl = document.getElementById("campaign-post-ids-preview");
+        if (ppEl) { ppEl.hidden = true; ppEl.innerHTML = ""; }
+
+        /* Render the new entry instantly so the user sees it; refresh
+         * targeting selectors with the new campaign included. */
+        UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
+        populateTargetingSelectors();
+
+        /* Background fetch of post data. We don't await it so the UI
+         * stays responsive; openCampaign below shows a skeleton while it
+         * resolves. Any per-campaign fetch error is caught inside the
+         * helper. */
+        refreshAllCampaignSummaries().catch((err) => {
+          console.warn("refreshAllCampaignSummaries failed:", err);
+        });
+
+        openCampaign(c);
+      } catch (err) {
+        console.error("Couldn't save campaign:", err);
+        Util.toast(`Couldn't save campaign: ${(err && err.message) || err}`, "error");
+      }
+    }
+
+    const campaignForm = document.getElementById("campaign-form");
+    if (campaignForm) campaignForm.addEventListener("submit", handleCampaignSave);
+    const saveBtn = campaignForm && campaignForm.querySelector('button[type="submit"]');
+    if (saveBtn) {
+      saveBtn.addEventListener("click", (e) => {
+        /* If the form is already going to submit, this no-ops; if for some
+         * reason it isn't (broken form association on iOS), fire the same
+         * handler from the click. */
+        if (campaignForm && typeof campaignForm.requestSubmit === "function") {
+          // requestSubmit honors HTML5 validation
+        } else {
+          handleCampaignSave(e);
+        }
+      });
+    }
 
     document.getElementById("campaign-close").addEventListener("click", UI.hideCampaignDetail);
     document.getElementById("campaign-refresh").addEventListener("click", () => {
@@ -606,6 +691,28 @@
     );
   }
 
+  function checkStorageAvailability() {
+    if (typeof Campaigns === "undefined" || !Campaigns.canPersist) return;
+    if (Campaigns.canPersist()) return;
+    showStorageBanner();
+  }
+
+  function showStorageBanner() {
+    const main = document.querySelector("main");
+    if (!main) return;
+    if (document.getElementById("storage-banner")) return;
+    const banner = document.createElement("div");
+    banner.id = "storage-banner";
+    banner.className = "banner warn";
+    banner.innerHTML = `
+      <strong>Browser storage is unavailable.</strong>
+      Campaigns and settings will only last for this page session and won't survive a reload.
+      This usually means iOS Safari <em>Private Browsing</em> is on, the site is in a webview, or cookies are blocked for reddit.com / this site.
+      <span class="hint">Switch off Private Browsing or allow site data, then reload. Saving still works inside the current tab.</span>
+    `;
+    main.insertBefore(banner, main.firstChild);
+  }
+
   function init() {
     loadPersisted();
     bind();
@@ -613,6 +720,7 @@
     rerenderAll();
     refreshData();
     refreshAllCampaignSummaries();
+    checkStorageAvailability();
   }
 
   if (document.readyState === "loading") {
