@@ -834,6 +834,112 @@
      13. TIME BUCKETING (existing API kept stable)
      ============================================================ */
 
+  /* Adaptive time bucketing with per-subreddit breakdown.
+   *
+   * Picks a bucket size from a "nice" interval list so that the time
+   * range of the loaded posts is split into ~30-40 buckets. This makes
+   * the chart look right whether the data spans 6 hours or 6 months.
+   *
+   * Returns:
+   *   {
+   *     keys:    ["MM-DD HH:00", "MM-DD HH:00", ...],   labels in local TZ
+   *     total:   [n, n, n, ...]                          combined posts/bucket
+   *     bySub:   { sub: [n, n, n, ...] }                 per-sub series
+   *     subs:    [sub, sub, ...]                         ordered by total volume
+   *     bucketS: bucket width in seconds                 (for the chart subtitle)
+   *     bucketLabel: human-readable bucket size          ("1 hour", "6 hours", "1 day")
+   *   }
+   */
+  Analysis.bucketByTimePerSub = function (posts, opts) {
+    opts = opts || {};
+    const targetBuckets = opts.targetBuckets || 32;
+
+    if (!posts || !posts.length) {
+      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour" };
+    }
+
+    let minT = Infinity, maxT = -Infinity;
+    for (const p of posts) {
+      if (!p.created_utc) continue;
+      if (p.created_utc < minT) minT = p.created_utc;
+      if (p.created_utc > maxT) maxT = p.created_utc;
+    }
+    if (!Number.isFinite(minT)) {
+      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour" };
+    }
+
+    const NICE = [
+      [60,         "1 min"],
+      [300,        "5 min"],
+      [900,        "15 min"],
+      [1800,       "30 min"],
+      [3600,       "1 hour"],
+      [7200,       "2 hours"],
+      [21600,      "6 hours"],
+      [43200,      "12 hours"],
+      [86400,      "1 day"],
+      [86400 * 2,  "2 days"],
+      [86400 * 7,  "1 week"],
+      [86400 * 14, "2 weeks"],
+      [86400 * 30, "1 month"],
+    ];
+    const rangeS = Math.max(60, maxT - minT);
+    const idealS = rangeS / targetBuckets;
+    let bucketS = NICE[NICE.length - 1][0];
+    let bucketLabel = NICE[NICE.length - 1][1];
+    for (const [s, lbl] of NICE) {
+      if (s >= idealS) { bucketS = s; bucketLabel = lbl; break; }
+    }
+
+    const buckets = new Map();
+    const subTotals = {};
+    for (const p of posts) {
+      if (!p.created_utc) continue;
+      const start = Math.floor(p.created_utc / bucketS) * bucketS;
+      const sub = (p.subreddit || "").toLowerCase();
+      if (!sub) continue;
+      if (!buckets.has(start)) buckets.set(start, {});
+      const b = buckets.get(start);
+      b[sub] = (b[sub] || 0) + 1;
+      subTotals[sub] = (subTotals[sub] || 0) + 1;
+    }
+
+    /* Pad out empty buckets so the chart's x-axis is uniformly spaced
+     * (otherwise gaps in posting time would compress visually). */
+    const startBucket = Math.floor(minT / bucketS) * bucketS;
+    const endBucket = Math.floor(maxT / bucketS) * bucketS;
+    const allKeys = [];
+    for (let t = startBucket; t <= endBucket; t += bucketS) allKeys.push(t);
+
+    const subs = Object.keys(subTotals).sort((a, b) => subTotals[b] - subTotals[a]);
+    const bySub = {};
+    for (const sub of subs) {
+      bySub[sub] = allKeys.map((t) => (buckets.get(t) || {})[sub] || 0);
+    }
+    const total = allKeys.map((t) => {
+      const b = buckets.get(t);
+      if (!b) return 0;
+      let n = 0;
+      for (const k in b) n += b[k];
+      return n;
+    });
+    const keys = allKeys.map((t) => formatBucketLabel(new Date(t * 1000), bucketS));
+
+    return { keys, total, bySub, subs, bucketS, bucketLabel };
+  };
+
+  function formatBucketLabel(d, bucketS) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    if (bucketS < 3600) return mm + "-" + dd + " " + hh + ":" + mi;
+    if (bucketS < 86400) return mm + "-" + dd + " " + hh + ":00";
+    if (bucketS < 86400 * 7) return mm + "-" + dd;
+    return yyyy + "-" + mm + "-" + dd;
+  }
+
   Analysis.bucketByHour = function (posts) {
     /* Bucket at LOCAL hour boundaries so a post made at "10pm local"
      * shares a bucket with other 10pm-local posts regardless of where

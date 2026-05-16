@@ -105,8 +105,16 @@
 
     <section id="tab-overview" class="tab-panel active" role="tabpanel">
       <div class="grid two">
-        <div class="card">
-          <header class="card-header"><h2>Posts over time</h2><span class="hint">Submissions per hour</span></header>
+        <div class="card" id="timeline-card">
+          <header class="card-header">
+            <h2>Posts over time</h2>
+            <span class="hint" id="timeline-hint">Submissions per bucket · per subreddit</span>
+          </header>
+          <div class="chart-mode" role="tablist" aria-label="Posts-over-time mode">
+            <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
+            <button type="button" data-mode="stacked" role="tab">Stacked</button>
+            <button type="button" data-mode="total" role="tab">Total</button>
+          </div>
           <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
         </div>
         <div class="card">
