@@ -1203,7 +1203,34 @@
           }
         }
 
-        /* 3. Score & split into "new" vs "already in dashboard". */
+        /* 3. Catalog seeding. Auto-detect issue / demographic spheres from
+         *    the campaign keywords and pull their curated sub-list into
+         *    the candidate pool. This guarantees that a healthcare
+         *    campaign always considers r/MedicareForAll / r/healthcare
+         *    even when Reddit's /subreddits/search misses them, and
+         *    that strict mode never drops a known-good catalog member. */
+        const detectedSpheres = (window.Seeds && Seeds.detectSpheres(profile)) || [];
+        let sphereSeedAttempted = 0, sphereSeedFetched = 0;
+        if (detectedSpheres.length && window.Seeds) {
+          const seedNames = Seeds.expand(detectedSpheres)
+            .filter((sub) => !subResults.has(String(sub).toLowerCase()))
+            .slice(0, 24);
+          sphereSeedAttempted = seedNames.length;
+          await Util.pmap(seedNames, 3, async (sub) => {
+            try {
+              const about = await Reddit.fetchSubredditAbout(sub);
+              if (about && about.display_name) {
+                const k = about.display_name.toLowerCase();
+                if (!subResults.has(k)) {
+                  subResults.set(k, { candidate: about, hits: 0 });
+                  sphereSeedFetched++;
+                }
+              }
+            } catch (_) { /* ignore — sub may be private or proxy fail */ }
+          });
+        }
+
+        /* 4. Score & split into "new" vs "already in dashboard". */
         const exclude = new Set([
           ...(profile.subreddits || []),
           ...Array.from(state.activeSubs),
@@ -1225,17 +1252,24 @@
         const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
         const f = result.filtered || { offtopic: 0, weak: 0, mega: 0 };
         const droppedTotal = f.offtopic + f.weak + f.mega;
-        console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · ${droppedTotal} dropped by ${result.strict ? "strict" : "loose"} filter (offtopic=${f.offtopic} weak=${f.weak} mega=${f.mega}) (${dur}ms)`);
+        console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${detectedSpheres.length} spheres (${sphereSeedFetched}/${sphereSeedAttempted} seeds fetched) · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · ${droppedTotal} dropped by ${result.strict ? "strict" : "loose"} filter (offtopic=${f.offtopic} weak=${f.weak} mega=${f.mega}) · spheres=${detectedSpheres.join(",") || "—"} (${dur}ms)`);
 
         UI.renderDiscoveryCandidates(result, discoverResults);
 
+        const sphereTail = detectedSpheres.length
+          ? ` · detected sphere${detectedSpheres.length === 1 ? "" : "s"}: <em>${detectedSpheres.slice(0, 4).map(Util.escapeHtml).join(", ")}</em>${detectedSpheres.length > 4 ? ` +${detectedSpheres.length - 4} more` : ""}`
+          : "";
         const filterTail = result.strict && droppedTotal
-          ? ` · filtered out ${droppedTotal} off-topic / generic sub${droppedTotal === 1 ? "" : "s"} (toggle to All to see them)`
+          ? ` · filtered ${droppedTotal} off-topic / generic sub${droppedTotal === 1 ? "" : "s"} (toggle All to see them)`
           : "";
         const status = result.candidates.length
-          ? `Found ${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} matching this campaign — plus ${result.alreadyLoaded.length} of your existing subs that also rank highly${filterTail}.`
-          : `Scanned ${result.totalScanned} sub${result.totalScanned === 1 ? "" : "s"} — every topical match is already in your dashboard${filterTail}. Try toggling to All, removing a filter chip, or running Discover on a campaign with broader themes.`;
-        setDiscoverStatus(status, result.candidates.length ? "ok" : "warn");
+          ? `Found <strong>${result.candidates.length}</strong> new sub${result.candidates.length === 1 ? "" : "s"} matching this campaign — plus ${result.alreadyLoaded.length} of your existing subs that also rank highly${sphereTail}${filterTail}.`
+          : `Scanned ${result.totalScanned} sub${result.totalScanned === 1 ? "" : "s"} — every topical match is already in your dashboard${filterTail}${sphereTail}. Try toggling All, removing a filter chip, or running Discover on a campaign with broader themes.`;
+        if (discoverStatus) {
+          discoverStatus.style.display = "block";
+          discoverStatus.className = "meta " + (result.candidates.length ? "ok" : "warn");
+          discoverStatus.innerHTML = status;
+        }
       } catch (err) {
         console.warn("[discover] failed:", err && err.message);
         setDiscoverStatus(`Discovery failed: ${(err && err.message) || err}`, "err");
