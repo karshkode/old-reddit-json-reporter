@@ -778,6 +778,31 @@
     /* Collapsible cards. Any element with [data-collapsible] gets a
      * chevron in its card-header; click toggles .collapsed. Cards with
      * [data-collapsed-default] start hidden so first-load is calm. */
+    /* Card-help "?" tooltip. CSS handles desktop hover; this handler
+     * adds tap-to-toggle on mobile and dismisses any open help when the
+     * user taps elsewhere. Hover-tooltips on touch devices also briefly
+     * stick around because of :focus, which we want. */
+    document.body.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest && e.target.closest(".card-help");
+      if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.querySelectorAll(".card-help.help-open").forEach((b) => {
+          if (b !== btn) b.classList.remove("help-open");
+        });
+        btn.classList.toggle("help-open");
+        return;
+      }
+      /* Click outside any help button closes them all */
+      document.querySelectorAll(".card-help.help-open").forEach((b) => b.classList.remove("help-open"));
+    });
+    /* Escape also closes help popovers */
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        document.querySelectorAll(".card-help.help-open").forEach((b) => b.classList.remove("help-open"));
+      }
+    });
+
     document.querySelectorAll("[data-collapsible]").forEach((card) => {
       if (card.hasAttribute("data-collapsed-default")) card.classList.add("collapsed");
       const header = card.querySelector(".card-header");

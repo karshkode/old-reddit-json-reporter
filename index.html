@@ -105,7 +105,7 @@
     <section id="tab-overview" class="tab-panel active" role="tabpanel">
       <div class="card narrative-card" data-collapsible data-collapsed-default>
         <header class="card-header">
-          <h2>What this data is telling you</h2>
+          <h2>What this data is telling you</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="A short plain-English summary of what&#x27;s happening across your loaded subs. Generated locally from your data — no remote AI.">?</button>
           <span class="hint">Plain-English summary · tap to expand</span>
         </header>
         <div id="ai-summary" class="prose"></div>
@@ -114,7 +114,7 @@
       <div class="grid two">
         <div class="card span-2" id="timeline-card">
           <header class="card-header">
-            <h2>When posts go up</h2>
+            <h2>When posts go up</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Submission volume over time. Use the window buttons (1d / 3d / 7d / 30d / 90d / All) to zoom — &#x27;1d&#x27; gives hourly buckets. &#x27;Per sub&#x27; shows one line per subreddit; &#x27;Stacked&#x27; shows combined volume; &#x27;Density&#x27; normalises each sub to its own peak so cadence shapes overlay without volume bias.">?</button>
             <span class="hint" id="timeline-hint">Tap a window to zoom — 1d gives hourly buckets</span>
           </header>
           <div class="chart-controls">
@@ -136,28 +136,28 @@
           <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Score vs comments</h2><span class="hint">Each dot is a post — top-right = best</span></header>
+          <header class="card-header"><h2>Score vs comments</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Each dot is one post. Higher dots = more upvotes; rightward dots = more discussion. Posts in the top-right corner are the breakouts in your loaded data.">?</button><span class="hint">Each dot is a post — top-right = best</span></header>
           <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Each subreddit, side by side</h2><span class="hint">Total upvotes &amp; comments per sub</span></header>
+          <header class="card-header"><h2>Each subreddit, side by side</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Total upvotes (orange) and comments (blue) per subreddit. Quickly tells you which sub is driving the headline numbers.">?</button><span class="hint">Total upvotes &amp; comments per sub</span></header>
           <div class="chart-wrap"><canvas id="chart-sub-compare"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>How well posts did</h2><span class="hint">Most posts cluster on the left; the few stars sit on the right</span></header>
+          <header class="card-header"><h2>How well posts did</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Distribution of upvote scores. Most posts cluster on the left (low scores), a few stars spike on the right. The shape tells you whether your data is dominated by a few hits or broadly active.">?</button><span class="hint">Most posts cluster on the left; the few stars sit on the right</span></header>
           <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
         </div>
 
         <div class="card">
-          <header class="card-header"><h2>Are titles upbeat or critical?</h2><span class="hint">Counted from positive vs negative words</span></header>
+          <header class="card-header"><h2>Are titles upbeat or critical?</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Counts upbeat words vs critical words across post titles. The lexicon is tuned for civic / activist vocabulary — words like &#x27;strike&#x27;, &#x27;organize&#x27;, &#x27;rally&#x27; read as positive.">?</button><span class="hint">Counted from positive vs negative words</span></header>
           <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Words coming up most</h2><span class="hint">Common filler words filtered out</span></header>
+          <header class="card-header"><h2>Words coming up most</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="The most-used words across post titles. Common filler words (&#x27;the&#x27;, &#x27;and&#x27;, months, weekdays, generic verbs) are filtered out so what&#x27;s left is genuinely topical.">?</button><span class="hint">Common filler words filtered out</span></header>
           <div id="keywords" class="keyword-cloud"></div>
         </div>
         <div class="card span-2" data-collapsible data-collapsed-default>
-          <header class="card-header"><h2>Quick takeaways</h2><span class="hint">Plain-English suggestions from your data · tap to expand</span></header>
+          <header class="card-header"><h2>Quick takeaways</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Plain-English suggestions automatically derived from your data — best posting times, audience reception, score-to-comment ratios, top performers.">?</button><span class="hint">Plain-English suggestions from your data · tap to expand</span></header>
           <ul id="recommendations" class="reco-list"></ul>
         </div>
       </div>
@@ -166,25 +166,25 @@
     <section id="tab-trends" class="tab-panel" role="tabpanel">
       <div class="grid two">
         <div class="card">
-          <header class="card-header"><h2>When posts do best</h2><span class="hint">Average upvotes per hour · your local time</span></header>
+          <header class="card-header"><h2>When posts do best</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Average upvotes by hour of day in your local timezone. The bars peak when your audience is most receptive — schedule new posts around the highest bars.">?</button><span class="hint">Average upvotes per hour · your local time</span></header>
           <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Busiest days of the week</h2><span class="hint">Number of posts per weekday</span></header>
+          <header class="card-header"><h2>Busiest days of the week</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="How many posts get made each weekday across the loaded data. Useful for picking when to launch a campaign.">?</button><span class="hint">Number of posts per weekday</span></header>
           <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
         </div>
         <div class="card span-2">
-          <header class="card-header"><h2>How recent posts are doing</h2><span class="hint">Score &amp; comments on the latest posts</span></header>
+          <header class="card-header"><h2>How recent posts are doing</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Score and comments on the most recent posts. Watch this for trending content and campaign-worthy moments.">?</button><span class="hint">Score &amp; comments on the latest posts</span></header>
           <div class="chart-wrap tall"><canvas id="chart-velocity"></canvas></div>
         </div>
 
         <div class="card span-2" data-collapsible data-collapsed-default>
-          <header class="card-header"><h2>Topics that keep coming up</h2><span class="hint">Tap to expand</span></header>
+          <header class="card-header"><h2>Topics that keep coming up</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Recurring themes detected across post titles, with sentiment and engagement per theme. Phrase themes (like &#x27;general strike&#x27;) are surfaced separately from single-word themes.">?</button><span class="hint">Tap to expand</span></header>
           <div id="themes" class="theme-list"></div>
         </div>
 
         <div class="card span-2" data-collapsible data-collapsed-default>
-          <header class="card-header"><h2>What each subreddit looks like</h2><span class="hint">Tap to expand · audience &amp; posting style</span></header>
+          <header class="card-header"><h2>What each subreddit looks like</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="An audience fingerprint per loaded sub — engagement style (shareable / discussion / mixed), reception (warm / healthy / mixed / contentious), best posting hour, top themes, and key vocabulary.">?</button><span class="hint">Tap to expand · audience &amp; posting style</span></header>
           <div id="sub-profiles" class="profile-list"></div>
         </div>
       </div>
@@ -193,7 +193,7 @@
     <section id="tab-posts" class="tab-panel" role="tabpanel">
       <div class="card">
         <header class="card-header">
-          <h2>Posts (<span id="posts-count">0</span>)</h2>
+          <h2>Posts (<span id="posts-count">0</span>)</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Every loaded post sorted by your chosen column. Tap a row to open the post detail with comments, sentiment, and a title-quality breakdown.">?</button>
           <span class="hint">Tap a row for details &amp; comments</span>
         </header>
         <div class="sort-row">
@@ -228,7 +228,7 @@
 
       <div class="card" id="post-detail" hidden>
         <header class="card-header">
-          <h2>Post detail</h2>
+          <h2>Post detail</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Full breakdown of one post — top comments, sentiment, awards, upvote ratio, view count if available, and a title-quality score with per-factor reasons.">?</button>
           <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
         </header>
         <div id="post-detail-body"></div>
@@ -240,7 +240,7 @@
       <div class="card hero-card" id="discover-card">
         <header class="card-header">
           <div>
-            <h2>Find new subreddits for a campaign</h2>
+            <h2>Find new subreddits for a campaign</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Pick a saved campaign and we&#x27;ll look up Reddit subs whose audience matches its themes. Combines a curated catalog of progressive-sphere subs (healthcare, voting, labor, climate, state spheres, etc.) with live Reddit search and post-mining.">?</button>
             <span class="hint">Pick a campaign — we look up subs whose audience matches</span>
           </div>
         </header>
@@ -260,11 +260,11 @@
       <!-- Saved + New campaigns side-by-side -->
       <div class="grid two campaigns-row">
         <div class="card">
-          <header class="card-header"><h2>Your campaigns</h2><span class="hint">Tap one to open</span></header>
+          <header class="card-header"><h2>Your campaigns</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Your saved campaigns. Tap one to open. They&#x27;re stored in your browser only — clearing your browser data wipes them.">?</button><span class="hint">Tap one to open</span></header>
           <div id="campaign-list" class="campaign-list"></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Start a new campaign</h2><span class="hint">Track a list of cross-posts toward a goal</span></header>
+          <header class="card-header"><h2>Start a new campaign</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Track a list of cross-posts toward a goal. Paste full Reddit URLs (including iOS share-sheet links) — we extract the IDs automatically. Goals are optional.">?</button><span class="hint">Track a list of cross-posts toward a goal</span></header>
           <form id="campaign-form" class="form-grid">
             <label class="full">Name <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required /></label>
             <label>Goal upvotes <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" inputmode="numeric" /></label>
@@ -295,7 +295,7 @@
 
       <!-- Cross-post detection — campaign-relevant signal across loaded subs -->
       <div class="card" data-collapsible data-collapsed-default>
-        <header class="card-header"><h2>The same post in multiple subreddits</h2><span class="hint">Tap to expand · spotted across your loaded data</span></header>
+        <header class="card-header"><h2>The same post in multiple subreddits</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="When the same title or URL appears in more than one sub, we group them here. Useful for spotting what&#x27;s resonating broadly across audiences.">?</button><span class="hint">Tap to expand · spotted across your loaded data</span></header>
         <div id="crossposts" class="crosspost-list"></div>
       </div>
     </section>
