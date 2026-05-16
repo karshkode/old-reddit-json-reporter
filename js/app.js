@@ -27,7 +27,8 @@
     lastErrors: [],
     /* deep analysis caches */
     subProfiles: {},
-    timelineMode: "lines",  /* lines | stacked | total — Posts-over-time chart mode */
+    timelineMode: "lines",  /* lines | stacked | density | total */
+    timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
     discoverStrict: true,    /* drop off-topic / generic subs in the discovery card */
     targetingFor: {
       ai: null,         // selected campaign id for the AI Insights playground
@@ -171,13 +172,15 @@
     UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
 
     if (window.Chart) {
-      const timelineData = Analysis.bucketByTimePerSub(posts);
+      const timelineData = Analysis.bucketByTimePerSub(posts, { window: state.timelineWindow });
       Charts.timeline("chart-timeline", timelineData, { mode: state.timelineMode });
       const hintEl = document.getElementById("timeline-hint");
       if (hintEl) {
         const subsCount = timelineData.subs.length;
-        const modeLabel = state.timelineMode === "total" ? "Total · all subs combined" : state.timelineMode === "stacked" ? "Stacked area · per subreddit" : "Per subreddit · overlay";
-        hintEl.textContent = `${modeLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}`;
+        const modeLabel = state.timelineMode === "total" ? "All subs combined" : state.timelineMode === "stacked" ? "Stacked by sub" : state.timelineMode === "density" ? "Each sub at its own peak (%)" : "One line per sub";
+        const winLabel = state.timelineWindow === "all" ? "all loaded data" : state.timelineWindow === "auto" ? `auto window (${timelineData.windowLabel})` : `last ${state.timelineWindow}`;
+        const droppedNote = timelineData.droppedCount ? ` · ${timelineData.droppedCount} older post${timelineData.droppedCount === 1 ? "" : "s"} hidden` : "";
+        hintEl.textContent = `${modeLabel} · ${winLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}${droppedNote}`;
       }
       Charts.scatter("chart-scatter", posts);
       Charts.subCompare("chart-sub-compare", agg);
@@ -744,17 +747,62 @@
       tab.addEventListener("click", () => UI.activateTab(tab.dataset.tab));
     });
 
-    /* Posts-over-time mode toggle */
-    document.querySelectorAll("#timeline-card .chart-mode button").forEach((btn) => {
+    /* Posts-over-time mode toggle (Per sub / Stacked / Density / Total) */
+    document.querySelectorAll("#timeline-card .chart-mode:not(.chart-window) button").forEach((btn) => {
       btn.addEventListener("click", () => {
         const m = btn.dataset.mode;
         if (!m || m === state.timelineMode) return;
         state.timelineMode = m;
-        document.querySelectorAll("#timeline-card .chart-mode button").forEach((b) => {
+        document.querySelectorAll("#timeline-card .chart-mode:not(.chart-window) button").forEach((b) => {
           b.classList.toggle("active", b === btn);
           b.setAttribute("aria-selected", b === btn ? "true" : "false");
         });
         rerenderAll();
+      });
+    });
+
+    /* Posts-over-time window picker (1d / 3d / 7d / 30d / 90d / All) */
+    document.querySelectorAll("#timeline-card .chart-window button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const w = btn.dataset.window;
+        if (!w || w === state.timelineWindow) return;
+        state.timelineWindow = w;
+        document.querySelectorAll("#timeline-card .chart-window button").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+        rerenderAll();
+      });
+    });
+
+    /* Collapsible cards. Any element with [data-collapsible] gets a
+     * chevron in its card-header; click toggles .collapsed. Cards with
+     * [data-collapsed-default] start hidden so first-load is calm. */
+    document.querySelectorAll("[data-collapsible]").forEach((card) => {
+      if (card.hasAttribute("data-collapsed-default")) card.classList.add("collapsed");
+      const header = card.querySelector(".card-header");
+      if (!header) return;
+      header.classList.add("collapsible-toggle");
+      header.setAttribute("role", "button");
+      header.setAttribute("tabindex", "0");
+      header.setAttribute("aria-expanded", card.classList.contains("collapsed") ? "false" : "true");
+      const chevron = document.createElement("span");
+      chevron.className = "card-chevron";
+      chevron.setAttribute("aria-hidden", "true");
+      chevron.textContent = "⌃";
+      header.appendChild(chevron);
+      function toggle() {
+        const willCollapse = !card.classList.contains("collapsed");
+        card.classList.toggle("collapsed", willCollapse);
+        header.setAttribute("aria-expanded", willCollapse ? "false" : "true");
+      }
+      header.addEventListener("click", (e) => {
+        /* Don't toggle when the user clicked an internal link / button. */
+        if (e.target.closest("button, a, input, select, textarea, label")) return;
+        toggle();
+      });
+      header.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
       });
     });
 

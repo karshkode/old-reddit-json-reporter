@@ -1624,3 +1624,60 @@ footer {
   .hero-card .targeting-picker { padding: 10px; }
   .hero-card #discover-run { width: 100%; }
 }
+
+/* =====================================================================
+   NON-TECHNICAL UX — collapsible cards, bigger charts, hour buckets
+   ===================================================================== */
+
+/* Collapsible cards: chevron in header, hide everything below when collapsed */
+.card[data-collapsible] .card-header { cursor: pointer; user-select: none; }
+.card[data-collapsible] .card-header:hover h2 { color: var(--accent-2); }
+.card[data-collapsible] .card-header .card-chevron {
+  margin-left: auto;
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-mute);
+  transition: transform 0.18s ease, color 0.18s ease;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}
+.card[data-collapsible].collapsed .card-chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.card[data-collapsible].collapsed > *:not(.card-header) { display: none; }
+.card[data-collapsible].collapsed .card-header { padding-bottom: 0; border-bottom: 0; margin-bottom: 0; }
+.card[data-collapsible].collapsed { padding-bottom: 12px; }
+
+/* Bigger chart heights — Posts over time gets the most room */
+#timeline-card .chart-wrap { height: 280px; }
+.chart-wrap { height: 240px; }
+.chart-wrap.tall { height: 300px; }
+
+@media (max-width: 720px) {
+  #timeline-card .chart-wrap { height: 220px; }
+  .chart-wrap { height: 200px; }
+  .chart-wrap.tall { height: 220px; }
+  .card[data-collapsible] .card-header h2 { font-size: 13px; }
+}
+
+/* Chart-controls: stack mode + window pickers neatly */
+#timeline-card .chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+#timeline-card .chart-controls .chart-mode { margin: 0; }
+#timeline-card .chart-window button { padding: 5px 10px; font-size: 11px; }
+@media (max-width: 720px) {
+  #timeline-card .chart-controls { gap: 6px; }
+  #timeline-card .chart-mode { font-size: 10px; }
+  #timeline-card .chart-mode button { padding: 5px 9px; font-size: 11px; }
+}

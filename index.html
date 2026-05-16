@@ -103,50 +103,61 @@
     </nav>
 
     <section id="tab-overview" class="tab-panel active" role="tabpanel">
-      <div class="card narrative-card">
+      <div class="card narrative-card" data-collapsible data-collapsed-default>
         <header class="card-header">
           <h2>What this data is telling you</h2>
-          <span class="hint">Auto-generated narrative · refreshes with the loaded data</span>
+          <span class="hint">Plain-English summary · tap to expand</span>
         </header>
         <div id="ai-summary" class="prose"></div>
       </div>
 
       <div class="grid two">
-        <div class="card" id="timeline-card">
+        <div class="card span-2" id="timeline-card">
           <header class="card-header">
-            <h2>Posts over time</h2>
-            <span class="hint" id="timeline-hint">Submissions per bucket · per subreddit</span>
+            <h2>When posts go up</h2>
+            <span class="hint" id="timeline-hint">Tap a window to zoom — 1d gives hourly buckets</span>
           </header>
-          <div class="chart-mode" role="tablist" aria-label="Posts-over-time mode">
-            <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
-            <button type="button" data-mode="stacked" role="tab">Stacked</button>
-            <button type="button" data-mode="total" role="tab">Total</button>
+          <div class="chart-controls">
+            <div class="chart-mode" role="tablist" aria-label="Posts-over-time mode">
+              <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
+              <button type="button" data-mode="stacked" role="tab">Stacked</button>
+              <button type="button" data-mode="density" role="tab" title="Each sub normalised to its own peak — compare cadence shapes without volume-bias.">Density</button>
+              <button type="button" data-mode="total" role="tab">Total</button>
+            </div>
+            <div class="chart-mode chart-window" role="tablist" aria-label="Time window">
+              <button type="button" data-window="1d" role="tab" title="Last 24 hours · hourly buckets">1d</button>
+              <button type="button" data-window="3d" role="tab" title="Last 3 days · 2-hour buckets">3d</button>
+              <button type="button" data-window="7d" class="active" role="tab" title="Last 7 days · 6-hour buckets">7d</button>
+              <button type="button" data-window="30d" role="tab" title="Last 30 days">30d</button>
+              <button type="button" data-window="90d" role="tab">90d</button>
+              <button type="button" data-window="all" role="tab" title="All loaded data — wide buckets">All</button>
+            </div>
           </div>
           <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Score vs comments</h2><span class="hint">Engagement scatter</span></header>
+          <header class="card-header"><h2>Score vs comments</h2><span class="hint">Each dot is a post — top-right = best</span></header>
           <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Subreddit comparison</h2><span class="hint">Totals across selected subs</span></header>
+          <header class="card-header"><h2>Each subreddit, side by side</h2><span class="hint">Total upvotes &amp; comments per sub</span></header>
           <div class="chart-wrap"><canvas id="chart-sub-compare"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Score distribution</h2><span class="hint">How posts performed</span></header>
+          <header class="card-header"><h2>How well posts did</h2><span class="hint">Most posts cluster on the left; the few stars sit on the right</span></header>
           <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
         </div>
 
         <div class="card">
-          <header class="card-header"><h2>Title sentiment</h2><span class="hint">Lexicon-based · pos · neu · neg</span></header>
+          <header class="card-header"><h2>Are titles upbeat or critical?</h2><span class="hint">Counted from positive vs negative words</span></header>
           <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Top keywords</h2><span class="hint">Stopword-filtered frequency</span></header>
+          <header class="card-header"><h2>Words coming up most</h2><span class="hint">Common filler words filtered out</span></header>
           <div id="keywords" class="keyword-cloud"></div>
         </div>
-        <div class="card span-2">
-          <header class="card-header"><h2>Recommendations</h2><span class="hint">Heuristics drawn from the loaded dataset</span></header>
+        <div class="card span-2" data-collapsible data-collapsed-default>
+          <header class="card-header"><h2>Quick takeaways</h2><span class="hint">Plain-English suggestions from your data · tap to expand</span></header>
           <ul id="recommendations" class="reco-list"></ul>
         </div>
       </div>
@@ -155,25 +166,25 @@
     <section id="tab-trends" class="tab-panel" role="tabpanel">
       <div class="grid two">
         <div class="card">
-          <header class="card-header"><h2>Best posting times</h2><span class="hint">Avg score by hour · local time</span></header>
+          <header class="card-header"><h2>When posts do best</h2><span class="hint">Average upvotes per hour · your local time</span></header>
           <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>Day-of-week activity</h2><span class="hint">Submissions by weekday</span></header>
+          <header class="card-header"><h2>Busiest days of the week</h2><span class="hint">Number of posts per weekday</span></header>
           <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
         </div>
         <div class="card span-2">
-          <header class="card-header"><h2>Engagement velocity</h2><span class="hint">Score &amp; comments accumulation per post (newest)</span></header>
+          <header class="card-header"><h2>How recent posts are doing</h2><span class="hint">Score &amp; comments on the latest posts</span></header>
           <div class="chart-wrap tall"><canvas id="chart-velocity"></canvas></div>
         </div>
 
-        <div class="card span-2">
-          <header class="card-header"><h2>Themes</h2><span class="hint">Recurring topics with sentiment &amp; engagement</span></header>
+        <div class="card span-2" data-collapsible data-collapsed-default>
+          <header class="card-header"><h2>Topics that keep coming up</h2><span class="hint">Tap to expand</span></header>
           <div id="themes" class="theme-list"></div>
         </div>
 
-        <div class="card span-2">
-          <header class="card-header"><h2>Subreddit profiles</h2><span class="hint">Audience fingerprint per loaded sub</span></header>
+        <div class="card span-2" data-collapsible data-collapsed-default>
+          <header class="card-header"><h2>What each subreddit looks like</h2><span class="hint">Tap to expand · audience &amp; posting style</span></header>
           <div id="sub-profiles" class="profile-list"></div>
         </div>
       </div>
@@ -229,8 +240,8 @@
       <div class="card hero-card" id="discover-card">
         <header class="card-header">
           <div>
-            <h2>Discover audiences for a campaign</h2>
-            <span class="hint">Pick a campaign — we'll rank progressive-sphere subs by themes, posting time, engagement &amp; reception</span>
+            <h2>Find new subreddits for a campaign</h2>
+            <span class="hint">Pick a campaign — we look up subs whose audience matches</span>
           </div>
         </header>
         <div class="targeting-picker">
@@ -240,7 +251,7 @@
             <button type="button" data-strict="1" class="active" role="tab" title="Catalog members + relaxed filter — recommended.">Relevant</button>
             <button type="button" data-strict="0" role="tab" title="Show every match, including off-topic ones.">All</button>
           </div>
-          <button id="discover-run" class="btn primary" type="button">Discover</button>
+          <button id="discover-run" class="btn primary" type="button">Find subreddits</button>
         </div>
         <div id="discover-status" class="meta" style="margin-top:10px;display:none"></div>
         <div id="discover-results" class="targeting-list" style="margin-top:14px"></div>
@@ -249,11 +260,11 @@
       <!-- Saved + New campaigns side-by-side -->
       <div class="grid two campaigns-row">
         <div class="card">
-          <header class="card-header"><h2>Saved campaigns</h2><span class="hint">Stored in your browser · tap to open</span></header>
+          <header class="card-header"><h2>Your campaigns</h2><span class="hint">Tap one to open</span></header>
           <div id="campaign-list" class="campaign-list"></div>
         </div>
         <div class="card">
-          <header class="card-header"><h2>New campaign</h2><span class="hint">Track cross-posts toward a goal</span></header>
+          <header class="card-header"><h2>Start a new campaign</h2><span class="hint">Track a list of cross-posts toward a goal</span></header>
           <form id="campaign-form" class="form-grid">
             <label class="full">Name <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required /></label>
             <label>Goal upvotes <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" inputmode="numeric" /></label>
@@ -283,8 +294,8 @@
       </div>
 
       <!-- Cross-post detection — campaign-relevant signal across loaded subs -->
-      <div class="card">
-        <header class="card-header"><h2>Cross-posts in your loaded data</h2><span class="hint">Same titles or URLs appearing in multiple subs</span></header>
+      <div class="card" data-collapsible data-collapsed-default>
+        <header class="card-header"><h2>The same post in multiple subreddits</h2><span class="hint">Tap to expand · spotted across your loaded data</span></header>
         <div id="crossposts" class="crosspost-list"></div>
       </div>
     </section>
