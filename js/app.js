@@ -30,6 +30,10 @@
     timelineMode: "lines",  /* lines | stacked | density | total */
     timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
     discoverStrict: true,    /* drop off-topic / generic subs in the discovery card */
+    /* Last-rendered Analysis.detectCrossPosts result, keyed by
+     * data-cp-index in the rendered cross-post rows so the
+     * "+ Make campaign" button can resolve back to its group. */
+    crossPosts: [],
     targetingFor: {
       ai: null,         // selected campaign id for the AI Insights playground
       campaigns: null,  // selected campaign id for the Campaigns tab card
@@ -192,7 +196,9 @@
     }
 
     UI.renderKeywords(Analysis.extractKeywords(posts, 30));
-    UI.renderCrossPosts(Analysis.detectCrossPosts(posts));
+const crossPosts = Analysis.detectCrossPosts(posts);
+    state.crossPosts = crossPosts;
+    UI.renderCrossPosts(crossPosts);
     UI.renderRecommendations(Analysis.recommendations(agg, sentiment, posts));
     UI.renderNarrative(Analysis.narrative(agg, sentiment, Array.from(state.activeSubs)));
     UI.renderThemes(themes);
@@ -1040,7 +1046,53 @@
       refreshAllCampaignSummaries();
     });
 
-    /* Inline add-posts form + per-row remove button inside the campaign
+    /* "+ Make campaign" buttons inside the cross-posts card.
+     * Each button carries data-cp-index referring to state.crossPosts.
+     * Clicking it: derives a default name from the group's title or URL,
+     * collects the post IDs, calls Campaigns.add, switches to the
+     * Campaigns tab, and opens the new campaign in the detail panel. */
+    const crosspostsEl = document.getElementById("crossposts");
+    if (crosspostsEl) {
+      crosspostsEl.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest && e.target.closest('[data-action="make-campaign-from-crosspost"]');
+        if (!btn) return;
+        e.preventDefault();
+        const idx = parseInt(btn.dataset.cpIndex || "-1", 10);
+        const group = state.crossPosts && state.crossPosts[idx];
+        if (!group) {
+          Util.toast("Cross-post data not available — try refreshing.", "error");
+          return;
+        }
+        const titleSrc = group.kind === "url" ? group.key : (group.posts[0] && group.posts[0].title) || "Cross-post";
+        const trimmed = String(titleSrc).slice(0, 60).trim();
+        const name = `Cross-post: ${trimmed}${trimmed.length === 60 ? "…" : ""}`;
+        const postIds = group.posts.map((p) => p.id).filter(Boolean);
+
+        try {
+          const c = Campaigns.add({ name, postIds });
+          if (Campaigns.persistErrorMessage()) {
+            Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
+          } else {
+            Util.toast(`Created campaign with ${postIds.length} post${postIds.length === 1 ? "" : "s"} from ${group.subs.length} subs`, "ok");
+          }
+          /* Visual confirmation on the button so the user sees it stuck. */
+          btn.disabled = true;
+          btn.dataset.originalText = btn.textContent;
+          btn.textContent = "Created ✓";
+          UI.activateTab("campaigns");
+          UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
+          populateTargetingSelectors();
+          refreshAllCampaignSummaries().catch((err) => console.warn("[crosspost->campaign] summary refresh failed:", err && err.message));
+          openCampaign(c);
+          console.log(`[crosspost->campaign] "${name}" with ${postIds.length} ids in ${group.subs.length} subs`);
+        } catch (err) {
+          console.error("[crosspost->campaign] failed:", err);
+          Util.toast(`Couldn't create campaign: ${(err && err.message) || err}`, "error");
+        }
+      });
+    }
+
+        /* Inline add-posts form + per-row remove button inside the campaign
      * detail panel. We use event delegation on the body so the handlers
      * survive every re-render. */
     const campaignDetailBody = document.getElementById("campaign-detail-body");
