@@ -232,6 +232,41 @@
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /* Build a pre-filled Reddit compose URL for cross-posting an existing
+   * post into a different subreddit. Reddit's /submit page accepts:
+   *   ?title=…
+   *   ?selftext=true&text=…   for self/text posts (markdown supported)
+   *   ?selftext=false&url=…   for link posts
+   *
+   * Self-post body is the original post's `selftext` (markdown). We cap
+   * the body to 30,000 chars to stay well within practical URL-length
+   * limits on iOS Safari and other mobile browsers.
+   *
+   * Returns a string URL or null if `sub` / `post` aren't usable. */
+  Util.buildSubmitUrl = function (sub, post) {
+    if (!sub || !post) return null;
+    const subName = String(sub).replace(/^\/?r\//i, "").trim();
+    if (!subName) return null;
+    const enc = encodeURIComponent;
+    /* Reddit caps titles at 300 chars. */
+    const title = String(post.title || "").slice(0, 300);
+    const params = ["title=" + enc(title)];
+    /* Treat the post as a self/text post if Reddit marked it so OR if
+     * the link URL points back at the post itself (Reddit posts a
+     * /comments/... permalink as `url` for self posts). */
+    const isSelf = post.is_self || (post.url && /\/comments\//.test(post.url));
+    if (isSelf) {
+      const raw = String(post.selftext || "");
+      const text = raw.length > 30000 ? raw.slice(0, 30000) : raw;
+      params.push("selftext=true");
+      if (text) params.push("text=" + enc(text));
+    } else if (post.url) {
+      params.push("selftext=false");
+      params.push("url=" + enc(post.url));
+    }
+    return "https://www.reddit.com/r/" + enc(subName) + "/submit?" + params.join("&");
+  };
+
   /* Detects Reddit mobile-share URLs of the form
    *   https://www.reddit.com/r/<sub>/s/<token>
    * where <token> is an opaque short code (NOT a post ID) that Reddit

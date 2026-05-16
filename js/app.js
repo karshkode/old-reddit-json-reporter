@@ -1427,7 +1427,15 @@ const crossPosts = Analysis.detectCrossPosts(posts);
         const droppedTotal = f.offtopic + f.weak + f.mega;
         console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${detectedSpheres.length} spheres (${sphereSeedFetched}/${sphereSeedAttempted} seeds fetched) · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · ${droppedTotal} dropped by ${result.strict ? "strict" : "loose"} filter (offtopic=${f.offtopic} weak=${f.weak} mega=${f.mega}) · spheres=${detectedSpheres.join(",") || "—"} (${dur}ms)`);
 
-        UI.renderDiscoveryCandidates(result, discoverResults);
+const bestCampaignPost = (summary.posts || [])
+          .slice()
+          .sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
+        const campaignSubs = new Set((profile.subreddits || []).map((s) => String(s).toLowerCase()));
+        UI.renderDiscoveryCandidates(result, discoverResults, {
+          campaign,
+          bestCampaignPost,
+          campaignSubs,
+        });
         Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
 
         const sphereTail = detectedSpheres.length
