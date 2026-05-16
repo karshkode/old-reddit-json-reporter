@@ -48,13 +48,39 @@
     return String(s).trim().replace(/^\/?r\//i, "").replace(/\/$/, "").toLowerCase();
   };
 
+  /* Accept Reddit post IDs in any of these forms (mixed in one paste):
+   *   1abcd2e
+   *   t3_1abcd2e
+   *   https://www.reddit.com/r/sub/comments/1abcd2e/some-title/
+   *   https://old.reddit.com/r/sub/comments/1abcd2e/
+   *   https://redd.it/1abcd2e
+   *   /r/sub/comments/1abcd2e/
+   * Tokens are split on commas / semicolons / whitespace. */
   Util.parseIdList = function (text) {
     if (!text) return [];
-    return String(text)
-      .split(/[\s,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((s) => s.replace(/^t3_/, ""));
+    const out = [];
+    const seen = new Set();
+    for (const raw of String(text).split(/[\s,;]+/)) {
+      const tok = raw.trim();
+      if (!tok) continue;
+      let id = null;
+      const mComments = tok.match(/comments\/([a-z0-9]{4,12})/i);
+      if (mComments) id = mComments[1];
+      else {
+        const mShort = tok.match(/redd\.it\/([a-z0-9]{4,12})/i);
+        if (mShort) id = mShort[1];
+        else {
+          const cleaned = tok.replace(/^t3_/i, "").replace(/[^a-z0-9]/gi, "");
+          if (/^[a-z0-9]{4,12}$/i.test(cleaned)) id = cleaned;
+        }
+      }
+      if (!id) continue;
+      const k = id.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(k);
+    }
+    return out;
   };
 
   Util.debounce = function (fn, ms) {

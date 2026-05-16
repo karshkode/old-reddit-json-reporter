@@ -1,63 +1,109 @@
 /* Campaign manager.
  *
  * A campaign = { id, name, goalScore, goalComments, postIds[], createdAt }.
- * Stored in localStorage so users can reopen the report and keep their lists.
  *
- * Aggregation pulls live post data via Reddit.fetchPostsByIds, then sums the
- * score/comment/award totals and reports goal progress.
+ * Storage strategy: maintain an in-memory mirror as the source of truth for
+ * the page session, and try to persist it to localStorage. If persistence
+ * fails (iOS Safari Private Browsing, "Block All Cookies", quota exceeded,
+ * embedded WebView with storage disabled), the in-memory list still works
+ * inside this tab and `Campaigns.persistError` records why.
+ *
+ * This guards against the previous failure mode where `localStorage.setItem`
+ * threw synchronously and silently inside `Campaigns.add`, destroying any
+ * record of the just-created campaign.
  */
 (function () {
   const KEY = "rj.campaigns";
   const Campaigns = {};
 
-  function load() {
+  let mirror = null;
+  let persistError = null;
+
+  function loadFromStorage() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
-    } catch (_) { return []; }
+    } catch (e) {
+      persistError = e && e.message ? e.message : String(e);
+      return [];
+    }
   }
 
-  function save(list) {
-    localStorage.setItem(KEY, JSON.stringify(list));
+  function ensureMirror() {
+    if (mirror === null) mirror = loadFromStorage();
+    return mirror;
   }
 
-  Campaigns.list = function () { return load(); };
+  function persist() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(mirror));
+      persistError = null;
+      return true;
+    } catch (e) {
+      persistError = e && e.message ? e.message : String(e);
+      return false;
+    }
+  }
+
+  Campaigns.canPersist = function () {
+    /* Probe localStorage with a short throwaway key. Catches:
+     * - Private Browsing on older Safari (throws)
+     * - Cookies blocked / storage disabled (throws SecurityError)
+     * - Quota exceeded
+     */
+    try {
+      const k = "rj.probe." + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem(k, "1");
+      const ok = localStorage.getItem(k) === "1";
+      localStorage.removeItem(k);
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  Campaigns.persistErrorMessage = function () { return persistError; };
+
+  Campaigns.list = function () { return ensureMirror().slice(); };
 
   Campaigns.add = function (data) {
-    const list = load();
+    ensureMirror();
     const id = Math.random().toString(36).slice(2, 10);
     const c = {
       id,
-      name: String(data.name || "Untitled campaign"),
-      goalScore: Number(data.goalScore) || 0,
-      goalComments: Number(data.goalComments) || 0,
-      postIds: Util.uniqBy((data.postIds || []).map(String), (x) => x),
+      name: String(data && data.name || "Untitled campaign"),
+      goalScore: Number(data && data.goalScore) || 0,
+      goalComments: Number(data && data.goalComments) || 0,
+      postIds: Util.uniqBy(((data && data.postIds) || []).map(String), (x) => x),
       createdAt: Date.now(),
     };
-    list.push(c);
-    save(list);
+    mirror.push(c);
+    persist();
     return c;
   };
 
   Campaigns.remove = function (id) {
-    save(load().filter((c) => c.id !== id));
+    ensureMirror();
+    mirror = mirror.filter((c) => c.id !== id);
+    persist();
   };
 
   Campaigns.get = function (id) {
-    return load().find((c) => c.id === id) || null;
+    return ensureMirror().find((c) => c.id === id) || null;
   };
 
   Campaigns.update = function (id, patch) {
-    const list = load();
-    const i = list.findIndex((c) => c.id === id);
+    ensureMirror();
+    const i = mirror.findIndex((c) => c.id === id);
     if (i < 0) return null;
-    list[i] = Object.assign({}, list[i], patch);
-    save(list);
-    return list[i];
+    mirror[i] = Object.assign({}, mirror[i], patch);
+    persist();
+    return mirror[i];
   };
 
+  /* Fetch live aggregated data for a campaign via Reddit /by_id. */
   Campaigns.fetchAggregated = async function (campaign) {
     const posts = await Reddit.fetchPostsByIds(campaign.postIds);
     const totalScore = posts.reduce((a, b) => a + (b.score || 0), 0);
@@ -72,6 +118,21 @@
       progressScore: campaign.goalScore ? Math.min(1, totalScore / campaign.goalScore) : null,
       progressComments: campaign.goalComments ? Math.min(1, totalComments / campaign.goalComments) : null,
     };
+  };
+
+  /* Manual import / export — useful when storage is broken so the user
+   * can copy their campaigns to a note app or another device. */
+  Campaigns.exportJson = function () {
+    return JSON.stringify(ensureMirror(), null, 2);
+  };
+  Campaigns.importJson = function (text) {
+    try {
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error("expected an array");
+      mirror = parsed;
+      persist();
+      return true;
+    } catch (_) { return false; }
   };
 
   window.Campaigns = Campaigns;
