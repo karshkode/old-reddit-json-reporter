@@ -1877,3 +1877,20 @@ footer {
   color: var(--good);
   border-color: var(--good);
 }
+
+
+/* Cross-post row spread tiers — wider spread gets a subtle accent tint */
+.crosspost-row[data-spread="3"],
+.crosspost-row[data-spread="4"] {
+  border-left: 3px solid var(--warn);
+  padding-left: 9px;
+}
+.crosspost-row[data-spread="5"],
+.crosspost-row[data-spread="6"],
+.crosspost-row[data-spread="7"],
+.crosspost-row[data-spread="8"],
+.crosspost-row[data-spread="9"] {
+  border-left: 3px solid var(--good);
+  padding-left: 9px;
+  background: rgba(52, 211, 153, 0.04);
+}

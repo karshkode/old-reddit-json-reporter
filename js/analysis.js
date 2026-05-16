@@ -742,8 +742,19 @@
     consider(byTitle, "title");
     consider(byUrl, "url");
     const seen = new Set();
+    /* Sort:
+     *   1) spread (number of distinct subs the content is in) DESC
+     *      — content cross-posted to 5 subs ranks above content with
+     *      bigger raw upvotes but only on 2 subs, since it's the
+     *      better signal of a deliberate cross-post campaign.
+     *   2) totalScore DESC as the tie-breaker within the same spread.
+     */
     return groups
-      .sort((a, b) => b.totalScore - a.totalScore)
+      .sort((a, b) => {
+        const ds = b.subs.length - a.subs.length;
+        if (ds !== 0) return ds;
+        return b.totalScore - a.totalScore;
+      })
       .filter((g) => {
         const sig = g.posts.map((p) => p.id).sort().join(",");
         if (seen.has(sig)) return false;
