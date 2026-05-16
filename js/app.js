@@ -843,6 +843,240 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     fill("crossposts-sub-filter", state.crossPostsSubFilter);
   }
 
+  /* ============================================================
+   * Cross-device session sync (campaigns, subs, spheres, prefs).
+   * Three flows wired here:
+   *   - Copy share link  -> base64url-encoded payload in URL fragment
+   *   - Download JSON    -> .json file via Blob
+   *   - Import           -> paste string OR pick file; merge or replace
+   * Plus an init-time check: if location.hash carries a session=...
+   * payload, we offer to import it via a banner above the dashboard.
+   * ============================================================ */
+  function setSyncStatus(msg, kind) {
+    const el = document.getElementById("sync-status");
+    if (!el) return;
+    el.className = "meta " + (kind || "");
+    el.textContent = msg || "";
+  }
+
+  function setImportStatus(msg, kind) {
+    const el = document.getElementById("sync-import-status");
+    if (!el) return;
+    if (!msg) { el.hidden = true; el.textContent = ""; return; }
+    el.hidden = false;
+    el.className = "meta " + (kind || "");
+    el.textContent = msg;
+  }
+
+  /* Best-effort clipboard write — falls back to a hidden textarea if
+   * the Async Clipboard API isn't available (e.g. http://localhost in
+   * some browsers). */
+  async function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function downloadBlob(filename, text, mime) {
+    const blob = new Blob([text], { type: mime || "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 200);
+  }
+
+  function showSessionImportBanner(decoded, encoded) {
+    const main = document.querySelector("main");
+    if (!main) return;
+    /* If we already have one displayed, replace its contents. */
+    let banner = document.getElementById("sync-import-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "sync-import-banner";
+      banner.className = "banner info sync-banner";
+      main.insertBefore(banner, main.firstChild);
+    }
+    const ts = decoded.ts ? new Date(decoded.ts).toLocaleString() : "unknown";
+    const cn = (decoded.campaigns || []).length;
+    const sn = ((decoded.subs && decoded.subs.active) || []).length;
+    banner.innerHTML = `
+      <strong>Found a shared session in this URL.</strong>
+      ${cn} campaign${cn === 1 ? "" : "s"} · ${sn} active sub${sn === 1 ? "" : "s"} · saved ${Util.escapeHtml(ts)}.
+      <div class="sync-banner-actions">
+        <button class="btn small primary" data-action="sync-import-merge">Merge into mine</button>
+        <button class="btn small" data-action="sync-import-replace">Replace mine</button>
+        <button class="btn small ghost" data-action="sync-import-cancel">Dismiss</button>
+      </div>
+    `;
+    function done() {
+      banner.remove();
+      /* Strip the session= fragment so a reload doesn't re-prompt. */
+      try {
+        const url = new URL(location.href);
+        url.hash = url.hash.replace(/(?:^|[#&])session=[^&]+/, "").replace(/^#&/, "#").replace(/^#$/, "");
+        history.replaceState(null, "", url.pathname + url.search + (url.hash || ""));
+      } catch (_) {}
+    }
+    banner.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest && e.target.closest("[data-action]");
+      if (!btn) return;
+      e.preventDefault();
+      const action = btn.dataset.action;
+      try {
+        if (action === "sync-import-merge" || action === "sync-import-replace") {
+          const stats = Sync.applyPayload(decoded, { mode: action === "sync-import-merge" ? "merge" : "replace" });
+          done();
+          /* Force-reload state from storage and refresh everything. */
+          loadPersisted();
+          renderChips();
+          rerenderAll();
+          refreshAllCampaignSummaries();
+          if (action === "sync-import-replace") refreshData(true);
+          Util.toast(`Imported ${stats.campaignsAdded} campaign${stats.campaignsAdded === 1 ? "" : "s"} (${stats.mode}).`, "ok");
+        } else if (action === "sync-import-cancel") {
+          done();
+          Util.toast("Session import dismissed.", "ok");
+        }
+      } catch (err) {
+        console.warn("[sync] import banner action failed:", err && err.message);
+        Util.toast(`Couldn't import session: ${(err && err.message) || err}`, "error");
+      }
+    });
+  }
+
+  function wireSyncSession() {
+    if (typeof Sync === "undefined") return;
+
+    /* On init: if URL has a session payload, surface a banner. */
+    try {
+      const found = Sync.parseHashPayload();
+      if (found && found.payload) {
+        showSessionImportBanner(found.payload, found.encoded);
+      }
+    } catch (err) {
+      console.warn("[sync] hash parse failed:", err && err.message);
+    }
+
+    const linkBtn = document.getElementById("sync-copy-link");
+    const jsonBtn = document.getElementById("sync-export-json");
+    const showImportBtn = document.getElementById("sync-show-import");
+    const panel = document.getElementById("sync-import-panel");
+    const ta = document.getElementById("sync-import-text");
+    const fileInput = document.getElementById("sync-import-file");
+    const applyBtn = document.getElementById("sync-import-apply");
+    const mergeBox = document.getElementById("sync-import-merge");
+
+    if (linkBtn) linkBtn.addEventListener("click", async () => {
+      try {
+        const url = Sync.toShareUrl();
+        const ok = await copyToClipboard(url);
+        const len = url.length;
+        if (ok) {
+          setSyncStatus(`Share link copied (${len.toLocaleString()} chars). Paste it on another device to import this session.`, "ok");
+          Util.toast("Share link copied to clipboard.", "ok");
+        } else {
+          setSyncStatus("Could not access clipboard — link shown below; long-press to copy.", "err");
+          /* Fall back to showing the URL in the import textarea so the
+           * user can long-press it on iOS. */
+          if (ta) ta.value = url;
+          if (panel) panel.hidden = false;
+        }
+        if (len > 30000) {
+          setSyncStatus("Heads up: this share link is long (" + len.toLocaleString() + " chars). Some chat apps truncate URLs over ~30k characters — Download JSON is more reliable for big sessions.", "warn");
+        }
+      } catch (err) {
+        setSyncStatus("Couldn't build share link: " + ((err && err.message) || err), "err");
+      }
+    });
+
+    if (jsonBtn) jsonBtn.addEventListener("click", () => {
+      try {
+        const payload = Sync.collectPayload();
+        const text = JSON.stringify(payload, null, 2);
+        const stamp = new Date().toISOString().slice(0, 10);
+        downloadBlob(`reddit-campaign-reporter-session-${stamp}.json`, text);
+        setSyncStatus(`Downloaded session (${payload.campaigns.length} campaign${payload.campaigns.length === 1 ? "" : "s"}, ${(payload.subs && payload.subs.active || []).length} active subs).`, "ok");
+      } catch (err) {
+        setSyncStatus("Couldn't export: " + ((err && err.message) || err), "err");
+      }
+    });
+
+    if (showImportBtn && panel) showImportBtn.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden && ta) ta.focus();
+    });
+
+    if (fileInput && ta) fileInput.addEventListener("change", () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        ta.value = String(reader.result || "");
+        setImportStatus(`Loaded ${f.name} (${Math.round(f.size / 1024 * 10) / 10} KB). Tap Apply to import.`, "ok");
+      };
+      reader.onerror = () => setImportStatus("Couldn't read file.", "err");
+      reader.readAsText(f);
+    });
+
+    if (applyBtn && ta) applyBtn.addEventListener("click", () => {
+      const raw = (ta.value || "").trim();
+      if (!raw) { setImportStatus("Paste a share link or session JSON first.", "err"); return; }
+      let payload = null;
+      /* Try URL form first. */
+      const m = raw.match(/[#&?]session=([^&\s]+)/);
+      if (m) {
+        payload = Sync.decode(m[1]);
+      }
+      /* Else try base64 alone. */
+      if (!payload && /^[-_A-Za-z0-9]+$/.test(raw) && raw.length > 40) {
+        payload = Sync.decode(raw);
+      }
+      /* Else try JSON. */
+      if (!payload) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.app === "old-reddit-json-reporter") payload = parsed;
+        } catch (_) {}
+      }
+      if (!payload) { setImportStatus("Couldn't recognise that as a session. Paste a share link, a JSON blob, or upload a downloaded file.", "err"); return; }
+      try {
+        const stats = Sync.applyPayload(payload, { mode: mergeBox && mergeBox.checked ? "merge" : "replace" });
+        loadPersisted();
+        renderChips();
+        rerenderAll();
+        refreshAllCampaignSummaries();
+        if (!mergeBox || !mergeBox.checked) refreshData(true);
+        setImportStatus(`Imported · ${stats.campaignsAdded} campaign${stats.campaignsAdded === 1 ? "" : "s"} added (${stats.mode}). Active subs: ${stats.activeSubs}.`, "ok");
+        Util.toast(`Imported session (${stats.mode}).`, "ok");
+        ta.value = "";
+        if (fileInput) fileInput.value = "";
+      } catch (err) {
+        setImportStatus("Couldn't import: " + ((err && err.message) || err), "err");
+      }
+    });
+  }
+
   function bind() {
     const transportSelect = document.getElementById("transport-select");
     const transportSelectMobile = document.getElementById("transport-select-mobile");
@@ -1788,6 +2022,7 @@ const bestCampaignPost = (summary.posts || [])
     refreshData();
     refreshAllCampaignSummaries();
     checkStorageAvailability();
+    wireSyncSession();
   }
 
   if (document.readyState === "loading") {
