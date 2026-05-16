@@ -280,10 +280,11 @@
       bySubreddit[sub].views += p.view_count || 0;
       if (p.created_utc) {
         const d = new Date(p.created_utc * 1000);
-        byHour[d.getUTCHours()]++;
-        byDow[d.getUTCDay()]++;
-        sumScoreByHour[d.getUTCHours()] += s;
-        cntByHour[d.getUTCHours()]++;
+        const h = d.getHours(); /* local-time hour bucket */
+        byHour[h]++;
+        byDow[d.getDay()]++;
+        sumScoreByHour[h] += s;
+        cntByHour[h]++;
       }
       if (p.flair) flairs[p.flair] = (flairs[p.flair] || 0) + 1;
       if (p.author) authors[p.author] = (authors[p.author] || 0) + 1;
@@ -543,7 +544,7 @@
       reasons.push(`posting-time fit: <strong>${(hourAlign * 100).toFixed(0)}%</strong> hour-of-day overlap`);
       if (trend.direction === "rising") reasons.push(`<span class="badge good">engagement trending up</span> (recent avg ${Util.fmtNum(trend.recentAvg)} vs older ${Util.fmtNum(trend.olderAvg)})`);
       else if (trend.direction === "declining") reasons.push(`<span class="badge bad">engagement trending down</span> (recent avg ${Util.fmtNum(trend.recentAvg)} vs older ${Util.fmtNum(trend.olderAvg)})`);
-      if (sp.bestHour >= 0) reasons.push(`sub's peak hour <code>${String(sp.bestHour).padStart(2, "0")}:00 UTC</code>`);
+      if (sp.bestHour >= 0) reasons.push(`sub's peak hour <code>${String(sp.bestHour).padStart(2, "0")}:00</code> ${Util.escapeHtml(Util.getTzLabel())}`);
       if (alreadyTargeted) reasons.unshift(`<span class="badge info">already targeted</span>`);
 
       return {
@@ -665,7 +666,7 @@
       const titleLengths = set.map((p) => (p.title || "").length);
       const wordCounts = set.map((p) => (p.title || "").split(/\s+/).filter(Boolean).length);
       const sent = Analysis.aggregateSentiment(set);
-      const hours = set.map((p) => p.created_utc ? new Date(p.created_utc * 1000).getUTCHours() : null).filter((x) => x != null);
+      const hours = set.map((p) => p.created_utc ? new Date(p.created_utc * 1000).getHours() : null).filter((x) => x != null);
       const ratios = set.map((p) => p.upvote_ratio).filter((x) => x != null);
       return {
         avgLen: Util.average(titleLengths),
@@ -690,7 +691,7 @@
       insights.push(`Sentiment differs noticeably: top posts average <strong>${t.avgSent.toFixed(2)}</strong> vs bottom <strong>${b.avgSent.toFixed(2)}</strong>.`);
     }
     if (t.avgHour != null && b.avgHour != null && Math.abs(t.avgHour - b.avgHour) > 3) {
-      insights.push(`Top posts cluster around <strong>${pad2(Math.round(t.avgHour))}:00 UTC</strong>, low performers around <strong>${pad2(Math.round(b.avgHour))}:00 UTC</strong>.`);
+      insights.push(`Top posts cluster around <strong>${pad2(Math.round(t.avgHour))}:00 ${Util.escapeHtml(Util.getTzLabel())}</strong>, low performers around <strong>${pad2(Math.round(b.avgHour))}:00 ${Util.escapeHtml(Util.getTzLabel())}</strong>.`);
     }
     if (t.avgUpvoteRatio != null && b.avgUpvoteRatio != null && Math.abs(t.avgUpvoteRatio - b.avgUpvoteRatio) > 0.05) {
       insights.push(`Audience reception splits: ${(t.avgUpvoteRatio * 100).toFixed(0)}% upvote ratio for top vs ${(b.avgUpvoteRatio * 100).toFixed(0)}% for bottom.`);
@@ -771,7 +772,7 @@
         bestHour = h;
       }
     }
-    out.push(`Posts published around <strong>${pad2(bestHour)}:00 UTC</strong> show the highest average score (${Util.fmtNum(bestVal)} avg).`);
+    out.push(`Posts published around <strong>${pad2(bestHour)}:00 ${Util.escapeHtml(Util.getTzLabel())}</strong> show the highest average score (${Util.fmtNum(bestVal)} avg). <span class="meta">All times in your local timezone.</span>`);
 
     let bestDow = 0, bestDowVal = -1;
     for (let d = 0; d < 7; d++) {
@@ -834,12 +835,21 @@
      ============================================================ */
 
   Analysis.bucketByHour = function (posts) {
+    /* Bucket at LOCAL hour boundaries so a post made at "10pm local"
+     * shares a bucket with other 10pm-local posts regardless of where
+     * the dashboard user is. The key is "YYYY-MM-DD HH:00" and is
+     * lexicographically sortable. */
     const map = new Map();
     for (const p of posts) {
       if (!p.created_utc) continue;
       const d = new Date(p.created_utc * 1000);
-      d.setUTCMinutes(0, 0, 0);
-      const k = d.toISOString();
+      d.setMinutes(0, 0, 0);
+      d.setSeconds(0);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const k = yyyy + "-" + mm + "-" + dd + " " + hh + ":00";
       map.set(k, (map.get(k) || 0) + 1);
     }
     return Array.from(map.entries())
