@@ -25,6 +25,12 @@
     campaignSummaries: {},
     lastTransport: null,
     lastErrors: [],
+    /* deep analysis caches */
+    subProfiles: {},
+    targetingFor: {
+      ai: null,         // selected campaign id for the AI Insights playground
+      campaigns: null,  // selected campaign id for the Campaigns tab card
+    },
   };
 
   function isMobile() {
@@ -121,6 +127,8 @@
     const posts = filteredPosts();
     const agg = Analysis.aggregate(posts);
     const sentiment = Analysis.aggregateSentiment(posts);
+    const themes = Analysis.themes(posts);
+    state.subProfiles = Analysis.subredditProfiles(posts);
 
     UI.renderKpis(agg);
     UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
@@ -140,6 +148,12 @@
     UI.renderCrossPosts(Analysis.detectCrossPosts(posts));
     UI.renderRecommendations(Analysis.recommendations(agg, sentiment, posts));
     UI.renderNarrative(Analysis.narrative(agg, sentiment, Array.from(state.activeSubs)));
+    UI.renderThemes(themes);
+    UI.renderSubProfiles(state.subProfiles);
+
+    /* Refresh both targeting playgrounds whenever the dataset changes. */
+    refreshTargeting("ai");
+    refreshTargeting("campaigns");
   }
 
   /* ---------- Data fetch ---------- */
@@ -237,6 +251,9 @@
     }
     state.campaignSummaries = summaries;
     UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
+    populateTargetingSelectors();
+    refreshTargeting("ai");
+    refreshTargeting("campaigns");
   }
 
   async function openCampaign(campaign) {
@@ -248,11 +265,145 @@
     try {
       const agg = await Campaigns.fetchAggregated(campaign);
       state.campaignSummaries[campaign.id] = agg;
-      UI.renderCampaignDetail(campaign, agg);
+
+      const deep = computeCampaignDeep(campaign, agg);
+      UI.renderCampaignDetail(campaign, agg, deep);
       UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
+
+      /* Render targeting recommendations *inside* the deep-analysis card. */
+      const inlineEl = document.getElementById("campaign-detail-targets");
+      if (inlineEl) UI.renderTargeting(campaign, deep ? deep.targets : [], inlineEl, { heading: false });
     } catch (err) {
       body.innerHTML = `<div class="empty">Failed to fetch campaign data: ${Util.escapeHtml(err.message)}</div>`;
     }
+  }
+
+  /* ---------- Deep analysis for a campaign ---------- */
+
+  function computeCampaignDeep(campaign, agg) {
+    if (!agg || !agg.posts || !agg.posts.length) {
+      return {
+        profile: Analysis.profile([], { label: campaign.name }),
+        perSub: [],
+        comparison: null,
+        targets: [],
+        narrative: "<p>No resolved posts yet — nothing to analyze.</p>",
+      };
+    }
+    const profile = Analysis.campaignProfile(agg.posts, campaign);
+
+    /* per-subreddit performance for this campaign */
+    const perSub = {};
+    for (const p of agg.posts) {
+      const s = (p.subreddit || "").toLowerCase();
+      if (!s) continue;
+      if (!perSub[s]) perSub[s] = { subreddit: s, count: 0, totalScore: 0, totalComments: 0, ratios: [] };
+      perSub[s].count++;
+      perSub[s].totalScore += p.score || 0;
+      perSub[s].totalComments += p.num_comments || 0;
+      if (p.upvote_ratio != null) perSub[s].ratios.push(p.upvote_ratio);
+    }
+    const perSubArr = Object.values(perSub).map((r) => ({
+      ...r,
+      avgScore: r.totalScore / r.count,
+      avgComments: r.totalComments / r.count,
+      avgUpvoteRatio: r.ratios.length ? r.ratios.reduce((a, b) => a + b, 0) / r.ratios.length : null,
+    })).sort((a, b) => b.totalScore - a.totalScore);
+
+    const comparison = Analysis.compareTopBottom(agg.posts);
+    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 8 });
+    const narrative = buildCampaignNarrative(campaign, profile, perSubArr, comparison);
+
+    return { profile, perSub: perSubArr, comparison, targets, narrative };
+  }
+
+  function buildCampaignNarrative(campaign, profile, perSub, comparison) {
+    const parts = [];
+    const sentLean = profile.sentiment.average > 0.1
+      ? "<strong>positive-leaning</strong>"
+      : profile.sentiment.average < -0.1
+      ? "<strong>negative-leaning</strong>"
+      : "<strong>balanced</strong>";
+
+    parts.push(`<p>The <strong>${Util.escapeHtml(campaign.name)}</strong> campaign currently has <strong>${profile.count}</strong> resolved posts across <strong>${profile.subreddits.length}</strong> subreddit${profile.subreddits.length > 1 ? "s" : ""}, totalling <strong>${Util.fmtNum(profile.totalScore)}</strong> upvotes and <strong>${Util.fmtNum(profile.totalComments)}</strong> comments. Tone reads as ${sentLean}; engagement style is <strong>${profile.style}</strong>; audience reception is <strong>${profile.reception}</strong>.</p>`);
+
+    if (perSub.length > 1) {
+      const best = perSub[0];
+      const worst = perSub[perSub.length - 1];
+      parts.push(`<p>Best-performing sub for this campaign so far: <strong>r/${Util.escapeHtml(best.subreddit)}</strong> (${Util.fmtNum(best.totalScore)} pts across ${best.count} post${best.count > 1 ? "s" : ""}, avg ${Util.fmtNum(best.avgScore)}). Lowest: <strong>r/${Util.escapeHtml(worst.subreddit)}</strong> (${Util.fmtNum(worst.totalScore)} pts, avg ${Util.fmtNum(worst.avgScore)}).</p>`);
+    }
+
+    if (profile.themes && profile.themes.length) {
+      const t = profile.themes[0];
+      parts.push(`<p>Dominant theme: <strong>${t.kind === "phrase" ? `"${Util.escapeHtml(t.term)}"` : Util.escapeHtml(t.term)}</strong> (${t.count} post${t.count > 1 ? "s" : ""}, sentiment ${t.sentiment.average.toFixed(2)}).</p>`);
+    }
+
+    if (profile.bestHour >= 0) {
+      parts.push(`<p>Posts in this campaign cluster around <strong>${String(profile.bestHour).padStart(2, "0")}:00 UTC</strong> (best avg score). Consider matching timing on future cross-posts.</p>`);
+    }
+
+    if (comparison && comparison.insights && comparison.insights.length) {
+      parts.push(`<p><strong>Why some posts win:</strong> ${comparison.insights[0]}</p>`);
+    }
+
+    return parts.join("\n");
+  }
+
+  /* ---------- Targeting selectors ---------- */
+
+  function populateTargetingSelectors() {
+    const campaigns = Campaigns.list();
+    for (const id of ["targeting-campaign", "campaigns-targeting-campaign"]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const previous = el.value;
+      el.innerHTML = "";
+      if (!campaigns.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "(no campaigns saved — create one on the Campaigns tab)";
+        el.appendChild(opt);
+        continue;
+      }
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "— pick a campaign —";
+      el.appendChild(placeholder);
+      for (const c of campaigns) {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.name;
+        el.appendChild(opt);
+      }
+      if (previous && campaigns.some((c) => c.id === previous)) el.value = previous;
+    }
+  }
+
+  function refreshTargeting(which) {
+    const id = which === "ai" ? "targeting-campaign" : "campaigns-targeting-campaign";
+    const resultId = which === "ai" ? "targeting-results" : "campaigns-targeting-results";
+    const select = document.getElementById(id);
+    const out = document.getElementById(resultId);
+    if (!select || !out) return;
+    const campaignId = select.value || state.targetingFor[which];
+    if (!campaignId) {
+      out.innerHTML = '<div class="empty">Pick a campaign above to see targeting recommendations.</div>';
+      return;
+    }
+    state.targetingFor[which] = campaignId;
+    const campaign = Campaigns.get(campaignId);
+    if (!campaign) {
+      out.innerHTML = '<div class="empty">Campaign not found.</div>';
+      return;
+    }
+    const summary = state.campaignSummaries[campaign.id];
+    if (!summary || !summary.posts || !summary.posts.length) {
+      out.innerHTML = `<div class="empty">"${Util.escapeHtml(campaign.name)}" has no resolved posts. Open it on the Campaigns tab and tap Refresh, then revisit.</div>`;
+      return;
+    }
+    const profile = Analysis.campaignProfile(summary.posts, campaign);
+    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 10 });
+    UI.renderTargeting(campaign, targets, out, { heading: true });
   }
 
   /* ---------- Wire UI ---------- */
@@ -300,15 +451,9 @@
 
     document.getElementById("refresh-btn").addEventListener("click", () => refreshData(true));
     const clearBtn = document.getElementById("clear-cache-btn");
-    if (clearBtn) clearBtn.addEventListener("click", () => {
-      Reddit.clearCache();
-      Util.toast("Cache cleared", "ok");
-    });
+    if (clearBtn) clearBtn.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
     const clearBtnMobile = document.getElementById("clear-cache-btn-mobile");
-    if (clearBtnMobile) clearBtnMobile.addEventListener("click", () => {
-      Reddit.clearCache();
-      Util.toast("Cache cleared", "ok");
-    });
+    if (clearBtnMobile) clearBtnMobile.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
 
     document.getElementById("listing-select").addEventListener("change", (e) => {
       state.listing = e.target.value; persist(); refreshData();
@@ -412,6 +557,22 @@
       UI.hideCampaignDetail();
       refreshAllCampaignSummaries();
     });
+
+    /* Targeting selectors (AI tab + Campaigns tab) */
+    const targetingAi = document.getElementById("targeting-campaign");
+    if (targetingAi) {
+      targetingAi.addEventListener("change", () => {
+        state.targetingFor.ai = targetingAi.value;
+        refreshTargeting("ai");
+      });
+    }
+    const targetingCamp = document.getElementById("campaigns-targeting-campaign");
+    if (targetingCamp) {
+      targetingCamp.addEventListener("change", () => {
+        state.targetingFor.campaigns = targetingCamp.value;
+        refreshTargeting("campaigns");
+      });
+    }
 
     /* Close filters drawer when user finishes a filter action on mobile */
     const closeOnSelect = (el) => {

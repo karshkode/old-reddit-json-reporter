@@ -207,6 +207,18 @@
         </div>
       </div>
 
+      <div class="card" id="campaign-targeting-card">
+        <header class="card-header">
+          <h2>Where to target next</h2>
+          <span class="hint">Select a campaign &amp; let the dashboard rank loaded subs</span>
+        </header>
+        <div class="targeting-picker">
+          <label class="group-label" for="campaigns-targeting-campaign">Campaign</label>
+          <select id="campaigns-targeting-campaign"></select>
+        </div>
+        <div id="campaigns-targeting-results" class="targeting-list" style="margin-top:10px"></div>
+      </div>
+
       <div class="card" id="campaign-detail" hidden>
         <header class="card-header">
           <h2 id="campaign-detail-title">Campaign</h2>
@@ -225,6 +237,28 @@
         <div class="card span-2">
           <header class="card-header"><h2>Narrative summary</h2><span class="hint">From data on screen</span></header>
           <div id="ai-summary" class="prose"></div>
+        </div>
+
+        <div class="card span-2">
+          <header class="card-header"><h2>Themes</h2><span class="hint">Recurring topics with sentiment &amp; engagement</span></header>
+          <div id="themes" class="theme-list"></div>
+        </div>
+
+        <div class="card span-2">
+          <header class="card-header"><h2>Subreddit profiles</h2><span class="hint">Audience fingerprint per loaded sub</span></header>
+          <div id="sub-profiles" class="profile-list"></div>
+        </div>
+
+        <div class="card span-2">
+          <header class="card-header">
+            <h2>Targeting playground</h2>
+            <span class="hint">Pick a campaign and see which loaded subs fit best</span>
+          </header>
+          <div class="targeting-picker">
+            <label class="group-label" for="targeting-campaign">Campaign</label>
+            <select id="targeting-campaign"></select>
+          </div>
+          <div id="targeting-results" class="targeting-list" style="margin-top:10px"></div>
         </div>
         <div class="card">
           <header class="card-header"><h2>Title sentiment</h2><span class="hint">Lexicon-based</span></header>

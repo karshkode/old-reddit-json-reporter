@@ -1,14 +1,243 @@
-/* Analysis helpers: aggregations, sentiment, keywords, time bucketing,
- * cross-post detection, and narrative summary generation.
+/* Analysis helpers — aggregations, sentiment, themes, audience profiles,
+ * targeting recommendations, title quality, narrative generation.
  *
  * Everything is heuristic and runs entirely client-side. We label the
  * pattern-recognition output as "AI insights" because that is the user-facing
- * framing, but no model is shipped — these are deterministic statistics.
+ * framing, but no model is shipped — these are deterministic statistics and
+ * lexicon-based scoring tuned for activism / civic / political content.
  */
 (function () {
   const Analysis = {};
 
-  /* ---------- Aggregates ---------- */
+  /* ============================================================
+     1. SENTIMENT LEXICON  (activism / civic-discourse tuned)
+     ============================================================ */
+
+  const POS = new Set([
+    "good", "great", "love", "amazing", "win", "wins", "winning", "won",
+    "victory", "victorious", "best", "happy", "hope", "hopeful", "powerful",
+    "strong", "strength", "thank", "thanks", "thankful", "grateful",
+    "appreciate", "celebrate", "celebrated", "proud", "rise", "rising",
+    "united", "unite", "unity", "freedom", "liberty", "save", "saved",
+    "saving", "help", "helping", "helpful", "free", "succeed", "success",
+    "successful", "achieve", "achievement", "milestone", "breakthrough",
+    "fight", "fights", "fighting", "solidarity", "progress", "progressive",
+    "vote", "voting", "voted", "rally", "march", "marched", "people",
+    "approve", "approved", "support", "supported", "supporter",
+    "organize", "organized", "organizing", "build", "building", "built",
+    "inspire", "inspired", "inspiring", "protect", "protected", "protector",
+    "defend", "defended", "defender", "together", "justice", "just",
+    "fair", "fairness", "equal", "equality", "peace", "peaceful",
+    "reform", "reformed", "improve", "improved", "improvement", "improving",
+    "honest", "honesty", "truth", "true", "transparent",
+    "courage", "courageous", "brave", "bravery", "resilient", "resilience",
+    "energize", "energized", "passionate", "thriving", "empower",
+    "empowered", "empowering", "stand", "standing",
+  ]);
+
+  const NEG = new Set([
+    "bad", "hate", "hated", "hateful", "terrible", "awful", "horrible",
+    "lose", "loss", "loser", "losing", "lost", "fail", "failed",
+    "failing", "failure", "scam", "fraud", "rigged", "corrupt", "corruption",
+    "racist", "racism", "fascist", "fascism", "authoritarian", "tyranny",
+    "tyrant", "dictator", "dictatorship", "nazi", "ban", "banned",
+    "shutdown", "stolen", "steal", "stealing", "lies", "lie", "lying",
+    "liar", "outrage", "angry", "rage", "evil", "destroy", "destroyed",
+    "destroying", "destruction", "veto", "vetoed", "block", "blocked",
+    "denied", "deny", "abuse", "abusive", "violence", "violent",
+    "attack", "attacked", "assault", "assaulted", "crisis", "emergency",
+    "threat", "threatened", "threatening", "danger", "dangerous",
+    "oppress", "oppressed", "oppression", "suppress", "suppressed",
+    "betray", "betrayed", "betrayal", "killed", "death", "deaths",
+    "dead", "die", "dies", "dying", "murder", "murdered",
+    "war", "warfare", "atrocity", "genocide", "ethnic-cleansing",
+    "worse", "worst", "shame", "shameful", "disgrace", "disgraceful",
+    "scandal", "outrageous", "ridiculous", "disaster", "disastrous",
+    "deceit", "deceived", "deceitful", "manipulate", "manipulated",
+    "hostile", "hostility", "panic", "fear", "feared",
+    "stripped", "strip", "denying", "purge", "purged",
+  ]);
+
+  Analysis.scoreSentiment = function (text) {
+    if (!text) return { score: 0, pos: 0, neg: 0 };
+    const tokens = String(text).toLowerCase().match(/[a-z'-]+/g) || [];
+    let pos = 0, neg = 0;
+    for (const t of tokens) {
+      if (POS.has(t)) pos++;
+      else if (NEG.has(t)) neg++;
+    }
+    const total = pos + neg;
+    return { score: total ? (pos - neg) / total : 0, pos, neg };
+  };
+
+  Analysis.aggregateSentiment = function (posts) {
+    let pos = 0, neg = 0, neu = 0, sum = 0;
+    for (const p of posts) {
+      const s = Analysis.scoreSentiment((p.title || "") + " " + (p.selftext || "").slice(0, 240));
+      sum += s.score;
+      if (s.pos > s.neg) pos++;
+      else if (s.neg > s.pos) neg++;
+      else neu++;
+    }
+    return {
+      positive: pos, negative: neg, neutral: neu,
+      average: posts.length ? sum / posts.length : 0,
+    };
+  };
+
+  /* ============================================================
+     2. STOPWORDS + KEYWORD / BIGRAM EXTRACTION
+     ============================================================ */
+
+  const STOPWORDS = new Set([
+    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for",
+    "with", "is", "are", "was", "were", "be", "been", "being", "this",
+    "that", "these", "those", "it", "its", "as", "at", "by", "from",
+    "into", "up", "down", "out", "off", "over", "under", "than", "then",
+    "so", "not", "no", "yes", "do", "does", "did", "done", "have", "has",
+    "had", "i", "you", "he", "she", "they", "we", "me", "my", "your",
+    "his", "her", "their", "our", "us", "them", "what", "who", "whom",
+    "which", "why", "how", "when", "where", "there", "here", "just",
+    "more", "less", "also", "too", "very", "can", "could", "should",
+    "would", "will", "won", "wont", "shall", "may", "might", "must",
+    "about", "like", "one", "two", "if", "else", "while", "because",
+    "amp", "im", "ive", "dont", "didnt", "cant", "wont", "thats",
+    "theyre", "youre", "got", "get", "gets", "new", "says", "said", "say",
+    "now", "still", "via", "etc", "per", "upon", "r", "u", "www", "http",
+    "https", "com", "org", "be", "going", "go", "see", "seen", "make",
+    "made", "take", "taking", "took", "use", "used", "using", "want",
+    "need", "let", "lets", "looks", "look", "looking", "really", "even",
+    "ever", "always", "never", "many", "much", "any", "some", "all",
+    "every", "another", "such", "own", "same", "other", "though", "back",
+    "first", "second", "next", "last", "last-night", "today", "yesterday",
+    "tomorrow", "people", "thing", "things", "way", "ways",
+  ]);
+
+  function tokenize(text) {
+    return ((text || "").toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [])
+      .filter((t) => !STOPWORDS.has(t) && t.length >= 3 && t.length <= 28);
+  }
+
+  Analysis.extractKeywords = function (posts, limit) {
+    const counts = {};
+    for (const p of posts) {
+      const toks = tokenize((p.title || "") + " " + (p.flair || ""));
+      for (const t of toks) counts[t] = (counts[t] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([word, count]) => ({ word, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit || 30);
+  };
+
+  Analysis.extractBigrams = function (posts, limit) {
+    const counts = {};
+    for (const p of posts) {
+      const toks = tokenize(p.title || "");
+      for (let i = 0; i < toks.length - 1; i++) {
+        const a = toks[i], b = toks[i + 1];
+        if (STOPWORDS.has(a) || STOPWORDS.has(b)) continue;
+        const k = a + " " + b;
+        counts[k] = (counts[k] || 0) + 1;
+      }
+    }
+    return Object.entries(counts)
+      .filter(([, c]) => c >= 2)
+      .map(([phrase, count]) => ({ phrase, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit || 15);
+  };
+
+  /* ============================================================
+     3. THEME CLUSTERING
+     ------------------------------------------------------------
+     A "theme" is a frequent term (uni- or bigram). We tag every post
+     that contains the term with that theme, then compute engagement
+     and sentiment per theme. Posts can belong to multiple themes.
+     ============================================================ */
+
+  Analysis.themes = function (posts, opts) {
+    opts = opts || {};
+    const wantUni = opts.uniTop || 14;
+    const wantBi = opts.biTop || 8;
+    const minPosts = opts.minPosts || 2;
+
+    if (!posts || !posts.length) return [];
+
+    const uni = Analysis.extractKeywords(posts, 60).slice(0, wantUni);
+    const bi = Analysis.extractBigrams(posts, 30).slice(0, wantBi);
+    const seeds = [
+      ...bi.map((x) => ({ kind: "phrase", term: x.phrase })),
+      ...uni.map((x) => ({ kind: "word", term: x.word })),
+    ];
+
+    const out = [];
+    for (const seed of seeds) {
+      const re = seed.kind === "phrase"
+        ? new RegExp("\\b" + escapeRe(seed.term) + "\\b", "i")
+        : new RegExp("\\b" + escapeRe(seed.term) + "\\b", "i");
+      const matches = posts.filter((p) => re.test((p.title || "") + " " + (p.flair || "")));
+      if (matches.length < minPosts) continue;
+
+      const sent = Analysis.aggregateSentiment(matches);
+      const totalScore = matches.reduce((a, b) => a + (b.score || 0), 0);
+      const totalComments = matches.reduce((a, b) => a + (b.num_comments || 0), 0);
+      const subs = {};
+      for (const m of matches) {
+        const s = (m.subreddit || "").toLowerCase();
+        subs[s] = (subs[s] || 0) + 1;
+      }
+      const topSub = Object.entries(subs).sort((a, b) => b[1] - a[1])[0];
+      const examples = matches
+        .slice()
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+        .slice(0, 3);
+
+      out.push({
+        kind: seed.kind,
+        term: seed.term,
+        count: matches.length,
+        totalScore,
+        totalComments,
+        avgScore: totalScore / matches.length,
+        avgComments: totalComments / matches.length,
+        sentiment: sent,
+        topSub: topSub ? topSub[0] : null,
+        subSpread: Object.keys(subs).length,
+        examples,
+      });
+    }
+    out.sort((a, b) => b.totalScore - a.totalScore);
+    return dedupeThemes(out);
+  };
+
+  function dedupeThemes(themes) {
+    /* If a unigram theme is fully contained within a bigram theme that
+     * has roughly the same coverage, drop the unigram. e.g. "general"
+     * shouldn't appear separately from "general strike" if every post
+     * tagged "general" is also tagged "general strike". */
+    const out = [];
+    for (const t of themes) {
+      let dup = false;
+      for (const k of out) {
+        if (k.kind === "phrase" && k.term.split(" ").includes(t.term) &&
+            t.kind === "word" && Math.abs(t.count - k.count) <= 1) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) out.push(t);
+    }
+    return out;
+  }
+
+  function escapeRe(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  /* ============================================================
+     4. AGGREGATE  (existing API kept stable)
+     ============================================================ */
 
   Analysis.aggregate = function (posts) {
     if (!posts || !posts.length) {
@@ -16,7 +245,7 @@
         count: 0, totalScore: 0, totalComments: 0, totalAwards: 0,
         totalViews: 0, viewsKnown: 0,
         avgScore: 0, medianScore: 0, p95Score: 0,
-        avgComments: 0, avgUpvoteRatio: 0,
+        avgComments: 0, avgUpvoteRatio: null,
         topPost: null, lowPost: null,
         bySubreddit: {}, byHour: new Array(24).fill(0), byDow: new Array(7).fill(0),
         avgScoreByHour: new Array(24).fill(0),
@@ -37,8 +266,7 @@
     const flairs = {};
     const authors = {};
 
-    let topPost = posts[0];
-    let lowPost = posts[0];
+    let topPost = posts[0], lowPost = posts[0];
     for (const p of posts) {
       const s = p.score || 0;
       if (s > (topPost.score || 0)) topPost = p;
@@ -52,12 +280,10 @@
       bySubreddit[sub].views += p.view_count || 0;
       if (p.created_utc) {
         const d = new Date(p.created_utc * 1000);
-        const h = d.getUTCHours();
-        const w = d.getUTCDay();
-        byHour[h]++;
-        byDow[w]++;
-        sumScoreByHour[h] += s;
-        cntByHour[h]++;
+        byHour[d.getUTCHours()]++;
+        byDow[d.getUTCDay()]++;
+        sumScoreByHour[d.getUTCHours()] += s;
+        cntByHour[d.getUTCHours()]++;
       }
       if (p.flair) flairs[p.flair] = (flairs[p.flair] || 0) + 1;
       if (p.author) authors[p.author] = (authors[p.author] || 0) + 1;
@@ -70,102 +296,339 @@
       totalScore: scores.reduce((a, b) => a + b, 0),
       totalComments: comments.reduce((a, b) => a + b, 0),
       totalAwards: posts.reduce((a, b) => a + (b.total_awards || 0), 0),
-      totalViews,
-      viewsKnown,
+      totalViews, viewsKnown,
       avgScore: Util.average(scores),
       medianScore: Util.median(scores),
       p95Score: Util.percentile(scores, 95),
       avgComments: Util.average(comments),
       avgUpvoteRatio: ratios.length ? Util.average(ratios) : null,
-      topPost,
-      lowPost,
-      bySubreddit,
-      byHour,
-      byDow,
-      avgScoreByHour,
-      flairs,
-      authors,
+      topPost, lowPost,
+      bySubreddit, byHour, byDow, avgScoreByHour,
+      flairs, authors,
     };
   };
 
-  /* ---------- Sentiment (lexicon) ---------- */
+  /* ============================================================
+     5. PROFILE  (composite snapshot of any post set)
+     ============================================================ */
 
-  const POS = new Set([
-    "good", "great", "love", "amazing", "win", "wins", "winning", "support",
-    "victory", "best", "happy", "hope", "hopeful", "powerful", "strong",
-    "thank", "thanks", "thankful", "celebrate", "proud", "rise", "united",
-    "freedom", "save", "saved", "saving", "help", "helping", "free", "fight",
-    "fights", "solidarity", "progress", "progressive", "vote", "voting",
-    "voted", "rally", "march", "people", "yes", "approve", "approved",
-    "succeed", "success", "successful",
-  ]);
-  const NEG = new Set([
-    "bad", "hate", "terrible", "lose", "loss", "loser", "fail", "failed",
-    "failure", "scam", "fraud", "corrupt", "corruption", "racist", "fascist",
-    "fascism", "nazi", "tyranny", "tyrant", "ban", "banned", "shut",
-    "shutdown", "stolen", "steal", "lies", "lie", "lying", "liar",
-    "outrage", "angry", "rage", "evil", "destroy", "destroyed", "no",
-    "nope", "veto", "block", "blocked", "denied", "deny", "abuse",
-    "abusive", "violence", "violent", "attack", "attacked",
-  ]);
+  Analysis.profile = function (posts, opts) {
+    opts = opts || {};
+    const agg = Analysis.aggregate(posts);
+    const sentiment = Analysis.aggregateSentiment(posts);
+    const keywords = Analysis.extractKeywords(posts, 25);
+    const bigrams = Analysis.extractBigrams(posts, 12);
+    const themes = Analysis.themes(posts, { uniTop: 10, biTop: 6, minPosts: 2 });
 
-  Analysis.scoreSentiment = function (text) {
-    if (!text) return { score: 0, pos: 0, neg: 0 };
-    const tokens = String(text).toLowerCase().match(/[a-z']+/g) || [];
-    let pos = 0, neg = 0;
-    for (const t of tokens) {
-      if (POS.has(t)) pos++;
-      else if (NEG.has(t)) neg++;
-    }
-    const total = pos + neg;
-    return { score: total ? (pos - neg) / total : 0, pos, neg };
-  };
-
-  Analysis.aggregateSentiment = function (posts) {
-    let pos = 0, neg = 0, neu = 0, sum = 0;
-    for (const p of posts) {
-      const s = Analysis.scoreSentiment((p.title || "") + " " + (p.selftext || "").slice(0, 240));
-      sum += s.score;
-      if (s.pos > s.neg) pos++;
-      else if (s.neg > s.pos) neg++;
-      else neu++;
-    }
-    return { positive: pos, negative: neg, neutral: neu, average: posts.length ? sum / posts.length : 0 };
-  };
-
-  /* ---------- Keyword extraction ---------- */
-
-  const STOPWORDS = new Set([
-    "the","a","an","and","or","but","of","to","in","on","for","with","is","are",
-    "was","were","be","been","being","this","that","these","those","it","its",
-    "as","at","by","from","into","up","down","out","off","over","under","than",
-    "then","so","not","no","yes","do","does","did","done","have","has","had",
-    "i","you","he","she","they","we","me","my","your","his","her","their","our",
-    "us","them","what","who","whom","which","why","how","when","where","there",
-    "here","just","more","less","also","too","very","can","could","should","would",
-    "will","won","wont","shall","may","might","must","about","like","one","two",
-    "if","else","while","because","amp","im","ive","dont","didnt","cant","wont",
-    "thats","its","theyre","youre","got","get","gets","new","says","said","say",
-    "now","still","via","etc","per","upon","via","r","u","www","http","https",
-  ]);
-
-  Analysis.extractKeywords = function (posts, limit) {
-    const counts = {};
-    for (const p of posts) {
-      const toks = ((p.title || "") + " " + (p.flair || "")).toLowerCase().match(/[a-z][a-z'\-]{2,}/g) || [];
-      for (const t of toks) {
-        if (STOPWORDS.has(t)) continue;
-        if (t.length < 3) continue;
-        counts[t] = (counts[t] || 0) + 1;
+    let bestHour = -1, bestHourVal = -Infinity;
+    for (let h = 0; h < 24; h++) {
+      if (agg.byHour[h] > 0 && agg.avgScoreByHour[h] > bestHourVal) {
+        bestHourVal = agg.avgScoreByHour[h];
+        bestHour = h;
       }
     }
-    return Object.entries(counts)
-      .map(([word, count]) => ({ word, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, limit || 30);
+    let bestDow = 0, bestDowVal = -1;
+    for (let d = 0; d < 7; d++) {
+      if (agg.byDow[d] > bestDowVal) { bestDowVal = agg.byDow[d]; bestDow = d; }
+    }
+
+    let style;
+    const ratio = agg.avgComments > 0 ? agg.avgScore / agg.avgComments : 0;
+    if (ratio >= 50) style = "shareable";
+    else if (ratio > 0 && ratio <= 8) style = "discussion";
+    else style = "mixed";
+
+    let reception;
+    const r = agg.avgUpvoteRatio;
+    if (r == null) reception = "unknown";
+    else if (r >= 0.9) reception = "warm";
+    else if (r >= 0.75) reception = "healthy";
+    else if (r >= 0.6) reception = "mixed";
+    else reception = "contentious";
+
+    const subs = Object.keys(agg.bySubreddit);
+    const topPostsBy = (k) => posts.slice().sort((a, b) => (b[k] || 0) - (a[k] || 0)).slice(0, 5);
+
+    return {
+      label: opts.label || "Posts",
+      count: agg.count,
+      totalScore: agg.totalScore,
+      totalComments: agg.totalComments,
+      avgScore: agg.avgScore,
+      medianScore: agg.medianScore,
+      avgComments: agg.avgComments,
+      avgUpvoteRatio: agg.avgUpvoteRatio,
+      sentiment,
+      keywords, bigrams, themes,
+      bestHour, bestDow,
+      byHour: agg.byHour,
+      byDow: agg.byDow,
+      avgScoreByHour: agg.avgScoreByHour,
+      style, reception,
+      ratio,
+      subreddits: subs,
+      bySubreddit: agg.bySubreddit,
+      topByScore: topPostsBy("score"),
+      topByComments: topPostsBy("num_comments"),
+      topPost: agg.topPost,
+      lowPost: agg.lowPost,
+    };
   };
 
-  /* ---------- Cross-post detection ---------- */
+  /* ============================================================
+     6. PER-SUBREDDIT PROFILES
+     ============================================================ */
+
+  Analysis.subredditProfiles = function (posts) {
+    const groups = {};
+    for (const p of posts) {
+      const s = (p.subreddit || "").toLowerCase();
+      if (!s) continue;
+      if (!groups[s]) groups[s] = [];
+      groups[s].push(p);
+    }
+    const out = {};
+    for (const [s, list] of Object.entries(groups)) {
+      out[s] = Analysis.profile(list, { label: "r/" + s });
+      out[s].subreddit = s;
+    }
+    return out;
+  };
+
+  /* ============================================================
+     7. CAMPAIGN PROFILE (same builder, just labelled)
+     ============================================================ */
+
+  Analysis.campaignProfile = function (posts, campaign) {
+    const profile = Analysis.profile(posts || [], {
+      label: campaign && campaign.name ? campaign.name : "Campaign",
+    });
+    profile.campaignId = campaign && campaign.id;
+    profile.campaignName = campaign && campaign.name;
+    return profile;
+  };
+
+  /* ============================================================
+     8. TARGETING RECOMMENDER
+     ------------------------------------------------------------
+     Given a campaign profile and a map of subreddit profiles,
+     score each subreddit on its fit for the campaign's content.
+     Returns a ranked list with composite score and reasoning.
+     ============================================================ */
+
+  Analysis.recommendTargets = function (campaignProfile, subProfiles, opts) {
+    opts = opts || {};
+    const limit = opts.limit || 10;
+    const subs = Object.values(subProfiles || {});
+    if (!subs.length || !campaignProfile || !campaignProfile.count) return [];
+
+    const campaignSubs = new Set(campaignProfile.subreddits || []);
+    const camKeys = new Set(campaignProfile.keywords.map((k) => k.word));
+    const camPhrases = new Set(campaignProfile.bigrams.map((b) => b.phrase));
+    const camSent = campaignProfile.sentiment.average;
+
+    const maxCount = Math.max(1, ...subs.map((s) => s.count));
+
+    const out = subs.map((sp) => {
+      const subKeys = new Set(sp.keywords.map((k) => k.word));
+      const subPhrases = new Set(sp.bigrams.map((b) => b.phrase));
+      const wOverlap = intersect(camKeys, subKeys);
+      const pOverlap = intersect(camPhrases, subPhrases);
+      const wUnion = union(camKeys, subKeys).size || 1;
+      const pUnion = union(camPhrases, subPhrases).size || 1;
+      const themeJaccard = (wOverlap.size + 2 * pOverlap.size) / (wUnion + 2 * pUnion);
+
+      const sentDiff = Math.abs(camSent - sp.sentiment.average);
+      const sentMatch = Math.max(0, 1 - sentDiff / 1.0);
+
+      const reception = sp.avgUpvoteRatio == null ? 0.5 : sp.avgUpvoteRatio;
+      const activity = Math.log(sp.count + 1) / Math.log(maxCount + 1);
+
+      let style = 0.5;
+      if (sp.style === campaignProfile.style) style = 1.0;
+      else if (sp.style === "mixed" || campaignProfile.style === "mixed") style = 0.7;
+      else style = 0.3;
+
+      const composite = clamp01(
+        0.40 * Math.min(1, themeJaccard * 4) +
+        0.20 * sentMatch +
+        0.18 * reception +
+        0.12 * activity +
+        0.10 * style
+      );
+      const score = Math.round(composite * 100);
+
+      const alreadyTargeted = campaignSubs.has(sp.subreddit);
+      const sharedKeys = Array.from(wOverlap).slice(0, 6);
+      const sharedPhrases = Array.from(pOverlap).slice(0, 4);
+
+      const reasons = [];
+      if (sharedPhrases.length) reasons.push(`shared themes <em>${sharedPhrases.map(htmlSafe).join(", ")}</em>`);
+      if (sharedKeys.length) reasons.push(`overlapping keywords <em>${sharedKeys.map(htmlSafe).join(", ")}</em>`);
+      reasons.push(`audience reception ${labelReception(reception)} (${(reception * 100).toFixed(0)}% upvote ratio)`);
+      reasons.push(`sentiment ${describeSentDelta(camSent, sp.sentiment.average)}`);
+      reasons.push(`engagement style: <strong>${sp.style}</strong> vs campaign <strong>${campaignProfile.style}</strong>`);
+      if (sp.bestHour >= 0) reasons.push(`peak hour <code>${String(sp.bestHour).padStart(2, "0")}:00 UTC</code>`);
+      if (alreadyTargeted) reasons.unshift(`<span class="badge info">already targeted</span>`);
+
+      return {
+        subreddit: sp.subreddit,
+        score,
+        composite,
+        themeJaccard,
+        sentMatch,
+        reception,
+        activity,
+        styleMatch: style,
+        alreadyTargeted,
+        sharedKeys,
+        sharedPhrases,
+        profile: sp,
+        reasons,
+      };
+    });
+
+    out.sort((a, b) => {
+      // already-targeted subs go to the bottom
+      if (a.alreadyTargeted !== b.alreadyTargeted) return a.alreadyTargeted ? 1 : -1;
+      return b.score - a.score;
+    });
+    return out.slice(0, limit);
+  };
+
+  function intersect(a, b) {
+    const out = new Set();
+    for (const v of a) if (b.has(v)) out.add(v);
+    return out;
+  }
+  function union(a, b) {
+    const out = new Set(a);
+    for (const v of b) out.add(v);
+    return out;
+  }
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+  function htmlSafe(s) { return Util ? Util.escapeHtml(s) : String(s); }
+  function labelReception(r) {
+    if (r >= 0.9) return "warm";
+    if (r >= 0.75) return "healthy";
+    if (r >= 0.6) return "mixed";
+    if (r > 0) return "contentious";
+    return "unknown";
+  }
+  function describeSentDelta(a, b) {
+    const d = Math.abs(a - b);
+    if (d < 0.1) return "well aligned";
+    if (d < 0.3) return "modestly aligned";
+    return "diverging — consider reframing";
+  }
+
+  /* ============================================================
+     9. TITLE QUALITY SCORER
+     ============================================================ */
+
+  Analysis.titleQuality = function (title) {
+    title = String(title || "").trim();
+    const len = title.length;
+    const words = title.split(/\s+/).filter(Boolean);
+    const wc = words.length;
+    const factors = [];
+    let score = 100;
+
+    if (len === 0) return { score: 0, factors: [{ label: "Empty title", delta: -100, ok: false }] };
+
+    if (len < 25) { factors.push({ label: "Too short (<25 chars)", delta: -15, ok: false }); score -= 15; }
+    else if (len <= 80) factors.push({ label: "Length sweet spot 25–80 chars", delta: +5, ok: true });
+    else if (len <= 120) factors.push({ label: "A touch long (80–120 chars)", delta: -5, ok: false });
+    else { factors.push({ label: "Very long (>120 chars)", delta: -15, ok: false }); score -= 15; }
+
+    if (wc < 5) { factors.push({ label: "Few words (<5)", delta: -10, ok: false }); score -= 10; }
+    else if (wc >= 6 && wc <= 18) factors.push({ label: "Word count 6–18", delta: +5, ok: true });
+    else if (wc > 22) { factors.push({ label: "Wordy (>22 words)", delta: -8, ok: false }); score -= 8; }
+
+    const capsWords = words.filter((w) => w.length > 2 && w === w.toUpperCase()).length;
+    const capsRatio = wc ? capsWords / wc : 0;
+    if (capsRatio > 0.4) { factors.push({ label: "Excessive ALL-CAPS", delta: -15, ok: false }); score -= 15; }
+    else if (capsRatio > 0) factors.push({ label: "Some caps for emphasis", delta: 0, ok: true });
+
+    if (/\?\s*$/.test(title)) { factors.push({ label: "Question — invites discussion", delta: +5, ok: true }); score += 5; }
+    if (/!{2,}/.test(title)) { factors.push({ label: "Multiple exclamation marks", delta: -5, ok: false }); score -= 5; }
+    if (/\b\d{1,4}\b/.test(title)) { factors.push({ label: "Includes a number — concrete", delta: +3, ok: true }); score += 3; }
+    if (/[\[\(].+?[\]\)]/.test(title)) { factors.push({ label: "Bracketed tag — scannable", delta: +2, ok: true }); score += 2; }
+
+    const sent = Analysis.scoreSentiment(title);
+    if (Math.abs(sent.score) >= 0.4) { factors.push({ label: `Strong ${sent.score > 0 ? "positive" : "negative"} framing`, delta: +4, ok: true }); score += 4; }
+    else if (Math.abs(sent.score) >= 0.15) factors.push({ label: `Mild ${sent.score > 0 ? "positive" : "negative"} framing`, delta: +2, ok: true });
+
+    const clickbaity = /\b(you won't believe|shocking|literally everyone|this one trick|destroyed|owned|epic|legendary)\b/i;
+    if (clickbaity.test(title)) { factors.push({ label: "Clickbait phrasing", delta: -10, ok: false }); score -= 10; }
+
+    score = Math.max(0, Math.min(100, score));
+    let band;
+    if (score >= 80) band = "excellent";
+    else if (score >= 65) band = "good";
+    else if (score >= 50) band = "okay";
+    else band = "weak";
+
+    return { score, band, factors, length: len, words: wc, capsRatio, sentiment: sent.score };
+  };
+
+  /* ============================================================
+     10. TOP vs BOTTOM POST COMPARISON
+     ============================================================ */
+
+  Analysis.compareTopBottom = function (posts) {
+    if (!posts || posts.length < 4) return null;
+    const sorted = posts.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+    const n = Math.min(3, Math.floor(sorted.length / 3));
+    const top = sorted.slice(0, n);
+    const bottom = sorted.slice(-n);
+
+    function summarize(set) {
+      const titleLengths = set.map((p) => (p.title || "").length);
+      const wordCounts = set.map((p) => (p.title || "").split(/\s+/).filter(Boolean).length);
+      const sent = Analysis.aggregateSentiment(set);
+      const hours = set.map((p) => p.created_utc ? new Date(p.created_utc * 1000).getUTCHours() : null).filter((x) => x != null);
+      const ratios = set.map((p) => p.upvote_ratio).filter((x) => x != null);
+      return {
+        avgLen: Util.average(titleLengths),
+        avgWords: Util.average(wordCounts),
+        avgSent: sent.average,
+        avgHour: hours.length ? Util.average(hours) : null,
+        avgUpvoteRatio: ratios.length ? Util.average(ratios) : null,
+        avgComments: Util.average(set.map((p) => p.num_comments || 0)),
+        avgScore: Util.average(set.map((p) => p.score || 0)),
+        examples: set.slice(0, 3),
+      };
+    }
+
+    const t = summarize(top);
+    const b = summarize(bottom);
+
+    const insights = [];
+    if (Math.abs(t.avgLen - b.avgLen) > 10) {
+      insights.push(`Top posts have ${t.avgLen > b.avgLen ? "longer" : "shorter"} titles on average (${Math.round(t.avgLen)} vs ${Math.round(b.avgLen)} chars).`);
+    }
+    if (Math.abs(t.avgSent - b.avgSent) > 0.15) {
+      insights.push(`Sentiment differs noticeably: top posts average <strong>${t.avgSent.toFixed(2)}</strong> vs bottom <strong>${b.avgSent.toFixed(2)}</strong>.`);
+    }
+    if (t.avgHour != null && b.avgHour != null && Math.abs(t.avgHour - b.avgHour) > 3) {
+      insights.push(`Top posts cluster around <strong>${pad2(Math.round(t.avgHour))}:00 UTC</strong>, low performers around <strong>${pad2(Math.round(b.avgHour))}:00 UTC</strong>.`);
+    }
+    if (t.avgUpvoteRatio != null && b.avgUpvoteRatio != null && Math.abs(t.avgUpvoteRatio - b.avgUpvoteRatio) > 0.05) {
+      insights.push(`Audience reception splits: ${(t.avgUpvoteRatio * 100).toFixed(0)}% upvote ratio for top vs ${(b.avgUpvoteRatio * 100).toFixed(0)}% for bottom.`);
+    }
+    if (Math.abs(t.avgComments - b.avgComments) > 5) {
+      insights.push(`Comment activity is ${t.avgComments > b.avgComments ? "much higher" : "lower"} on top posts (${Math.round(t.avgComments)} vs ${Math.round(b.avgComments)}).`);
+    }
+    if (!insights.length) insights.push("Top and bottom posts look similar across the measurable dimensions — content/topic matters more than timing here.");
+
+    return { top: t, bottom: b, insights };
+  };
+  function pad2(n) { return String(n).padStart(2, "0"); }
+
+  /* ============================================================
+     11. CROSS-POST DETECTION (existing API kept stable)
+     ============================================================ */
 
   Analysis.detectCrossPosts = function (posts) {
     const byTitle = new Map();
@@ -188,8 +651,7 @@
         const subs = new Set(list.map((p) => (p.subreddit || "").toLowerCase()));
         if (subs.size >= 2) {
           groups.push({
-            kind,
-            key,
+            kind, key,
             subs: Array.from(subs),
             posts: list,
             totalScore: list.reduce((a, b) => a + (b.score || 0), 0),
@@ -211,7 +673,9 @@
       });
   };
 
-  /* ---------- Recommendations / narrative ---------- */
+  /* ============================================================
+     12. RECOMMENDATIONS  &  NARRATIVE
+     ============================================================ */
 
   const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -229,20 +693,20 @@
         bestHour = h;
       }
     }
-    out.push(`Posts published around <strong>${String(bestHour).padStart(2, "0")}:00 UTC</strong> show the highest average score in this dataset (${Util.fmtNum(bestVal)} avg).`);
+    out.push(`Posts published around <strong>${pad2(bestHour)}:00 UTC</strong> show the highest average score (${Util.fmtNum(bestVal)} avg).`);
 
     let bestDow = 0, bestDowVal = -1;
     for (let d = 0; d < 7; d++) {
       if (agg.byDow[d] > bestDowVal) { bestDowVal = agg.byDow[d]; bestDow = d; }
     }
-    out.push(`<strong>${DAY_NAMES[bestDow]}</strong> is the most active submission day across the loaded window (${bestDowVal} posts).`);
+    out.push(`<strong>${DAY_NAMES[bestDow]}</strong> is the most active submission day (${bestDowVal} posts).`);
 
     if (agg.avgUpvoteRatio != null) {
       const r = agg.avgUpvoteRatio;
-      if (r >= 0.9) out.push(`Audience reception is <strong>strongly positive</strong> — average upvote ratio ${Util.fmtPct(r)}.`);
-      else if (r >= 0.75) out.push(`Audience reception is <strong>healthy</strong> — average upvote ratio ${Util.fmtPct(r)}.`);
-      else if (r >= 0.6) out.push(`Audience reception is <strong>mixed</strong> — average upvote ratio ${Util.fmtPct(r)}; consider tightening title framing.`);
-      else out.push(`Audience reception looks <strong>contentious</strong> — average upvote ratio ${Util.fmtPct(r)}. Posts may be drawing brigading or off-topic engagement.`);
+      if (r >= 0.9) out.push(`Audience reception is <strong>strongly positive</strong> — upvote ratio ${Util.fmtPct(r)}.`);
+      else if (r >= 0.75) out.push(`Audience reception is <strong>healthy</strong> — upvote ratio ${Util.fmtPct(r)}.`);
+      else if (r >= 0.6) out.push(`Audience reception is <strong>mixed</strong> — upvote ratio ${Util.fmtPct(r)}; consider tightening title framing.`);
+      else out.push(`Audience reception looks <strong>contentious</strong> — upvote ratio ${Util.fmtPct(r)}. Posts may be drawing brigading or off-topic engagement.`);
     }
 
     if (sentiment) {
@@ -256,8 +720,8 @@
     }
 
     const ratio = agg.avgComments > 0 ? agg.avgScore / Math.max(1, agg.avgComments) : 0;
-    if (ratio >= 25) out.push(`Posts attract upvotes faster than comments (≈${ratio.toFixed(1)}× score-to-comment ratio) — content is more shareable than discussion-provoking.`);
-    else if (ratio > 0 && ratio <= 5) out.push(`Posts spark above-average discussion (low score-to-comment ratio of ${ratio.toFixed(1)}) — strong community-engagement content.`);
+    if (ratio >= 25) out.push(`Posts attract upvotes faster than comments (≈${ratio.toFixed(1)}× score-to-comment ratio) — content is shareable rather than discussion-driving.`);
+    else if (ratio > 0 && ratio <= 5) out.push(`Posts spark above-average discussion (low score-to-comment ratio of ${ratio.toFixed(1)}) — strong engagement content.`);
 
     if (agg.viewsKnown && agg.viewsKnown < agg.count) {
       out.push(`View counts are only known for ${agg.viewsKnown} of ${agg.count} posts — Reddit hides <code>view_count</code> from non-owners on most submissions.`);
@@ -287,7 +751,9 @@
     return parts.join("\n");
   };
 
-  /* ---------- Time bucketing ---------- */
+  /* ============================================================
+     13. TIME BUCKETING (existing API kept stable)
+     ============================================================ */
 
   Analysis.bucketByHour = function (posts) {
     const map = new Map();
@@ -307,15 +773,13 @@
     bins = bins || 12;
     if (!posts.length) return { labels: [], counts: [] };
     const scores = posts.map((p) => p.score || 0);
-    const max = Math.max(...scores);
-    const min = Math.min(...scores);
+    const max = Math.max(...scores), min = Math.min(...scores);
     const span = Math.max(1, max - min);
     const step = span / bins;
     const labels = [];
     const counts = new Array(bins).fill(0);
     for (let i = 0; i < bins; i++) {
-      const lo = min + i * step;
-      const hi = lo + step;
+      const lo = min + i * step, hi = lo + step;
       labels.push(`${Util.fmtNum(lo)}–${Util.fmtNum(hi)}`);
     }
     for (const s of scores) {
@@ -324,6 +788,11 @@
     }
     return { labels, counts };
   };
+
+  /* ============================================================
+     Constants exposed for the UI layer
+     ============================================================ */
+  Analysis.DAY_NAMES = DAY_NAMES;
 
   window.Analysis = Analysis;
 })();
