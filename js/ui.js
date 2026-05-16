@@ -334,16 +334,31 @@
     }).join("");
   };
 
-  /* Render new-subreddit candidates discovered via Reddit search. */
-  UI.renderDiscoveryCandidates = function (candidates, container, opts) {
+  /* Render new-subreddit candidates discovered via Reddit search.
+   *
+   * `result` shape:
+   *   { candidates:[...], alreadyLoaded:[...], totalScanned: N }
+   * (for back-compat we still accept a plain array). */
+  UI.renderDiscoveryCandidates = function (result, container) {
     const el = typeof container === "string" ? document.getElementById(container) : container;
     if (!el) return;
-    opts = opts || {};
-    if (!candidates || !candidates.length) {
+    let candidates, alreadyLoaded, totalScanned;
+    if (Array.isArray(result)) {
+      candidates = result; alreadyLoaded = []; totalScanned = result.length;
+    } else if (result) {
+      candidates = result.candidates || [];
+      alreadyLoaded = result.alreadyLoaded || [];
+      totalScanned = result.totalScanned || (candidates.length + alreadyLoaded.length);
+    } else {
+      candidates = []; alreadyLoaded = []; totalScanned = 0;
+    }
+
+    if (!candidates.length && !alreadyLoaded.length) {
       el.innerHTML = '<div class="empty">No candidate subreddits found. Try opening a campaign with richer post content first.</div>';
       return;
     }
-    el.innerHTML = candidates.map((c, i) => {
+
+    function renderCard(c, i, isAlready) {
       const cls = c.score >= 70 ? "good" : c.score >= 50 ? "info" : c.score >= 30 ? "warn" : "bad";
       const reasons = c.reasons.map((r) => `<li>${r}</li>`).join("");
       const desc = c.candidate.public_description ? `<div class="cand-desc">${Util.escapeHtml(c.candidate.public_description.slice(0, 220))}${c.candidate.public_description.length > 220 ? "…" : ""}</div>` : "";
@@ -354,8 +369,11 @@
           ${meterRow("Activity", c.engagement, "var(--good)")}
         </div>
       `;
+      const action = isAlready
+        ? `<span class="badge info">already in your dashboard</span>`
+        : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>`;
       return `
-        <div class="target-row candidate" data-name="${Util.escapeHtml(c.canonical)}">
+        <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.canonical)}">
           <div class="target-head">
             <div>
               <span class="rank">#${i + 1}</span>
@@ -368,12 +386,31 @@
           ${meters}
           <ul class="target-reasons">${reasons}</ul>
           <div class="cand-actions">
-            <button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>
+            ${action}
             <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
           </div>
         </div>
       `;
-    }).join("");
+    }
+
+    const newSection = candidates.length
+      ? `<div class="discover-section">
+           <h4 class="discover-h">New candidates (${candidates.length})</h4>
+           ${candidates.map((c, i) => renderCard(c, i, false)).join("")}
+         </div>`
+      : `<div class="discover-section"><h4 class="discover-h">New candidates (0)</h4>
+           <div class="empty">Every match is already in your dashboard. Scroll down to see how your existing subs scored, or load fewer subs and re-run Discover for fresh ideas.</div>
+         </div>`;
+
+    const alreadySection = alreadyLoaded.length
+      ? `<div class="discover-section">
+           <h4 class="discover-h">Already in your dashboard (${alreadyLoaded.length})</h4>
+           <div class="discover-sub-hint">Confirms the engine ranked these high too — proof the discovery query is on-target.</div>
+           ${alreadyLoaded.map((c, i) => renderCard(c, i, true)).join("")}
+         </div>`
+      : "";
+
+    el.innerHTML = newSection + alreadySection;
   };
 
   function meterRow(label, value, color) {

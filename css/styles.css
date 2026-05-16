@@ -1381,3 +1381,20 @@ footer {
   #discover-card .targeting-picker select { flex: 1 1 100%; }
   #discover-card #discover-run { width: 100%; }
 }
+
+
+/* Discover sections: separate "new" candidates from "already in your dashboard" */
+.discover-section + .discover-section { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.discover-h {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-mute);
+  font-weight: 700;
+}
+.discover-sub-hint {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-bottom: 8px;
+}

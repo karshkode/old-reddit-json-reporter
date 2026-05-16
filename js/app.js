@@ -953,32 +953,105 @@
           return;
         }
         const profile = Analysis.campaignProfile(summary.posts, campaign);
-        const query = Analysis.buildDiscoveryQuery(profile);
-        if (!query) {
-          setDiscoverStatus("Not enough campaign content to derive a search query.", "err");
+        const queries = Analysis.buildDiscoveryQuerySet(profile, 6);
+        if (!queries.length) {
+          setDiscoverStatus("Not enough campaign content to derive search queries.", "err");
           return;
         }
 
         if (discoverBtn) { discoverBtn.disabled = true; discoverBtn.textContent = "Searching…"; }
-        setDiscoverStatus(`Searching Reddit for subs matching: ${query.slice(0, 80)}…`);
+        setDiscoverStatus(`Running ${queries.length} angle${queries.length === 1 ? "" : "s"}: ${queries.join(" · ").slice(0, 100)}…`);
         discoverResults.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
 
         const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
-        const results = await Reddit.searchSubreddits(query, { limit: 25, sort: "relevance" });
+
+        /* 1. Multi-query subreddit search — each top phrase / keyword is
+         *    its own query. We tally how many queries each sub appeared
+         *    in so the recommender can boost cross-query matches. */
+        const subResults = new Map();   // canonical -> { candidate, hits }
+        const queryHitsByName = {};
+        await Util.pmap(queries, 2, async (q) => {
+          try {
+            const r = await Reddit.searchSubreddits(q, { limit: 12 });
+            for (const sr of r) {
+              const k = (sr.display_name || "").toLowerCase();
+              if (!k) continue;
+              if (!subResults.has(k)) subResults.set(k, { candidate: sr, hits: 0 });
+              subResults.get(k).hits++;
+              queryHitsByName[k] = (queryHitsByName[k] || 0) + 1;
+            }
+          } catch (e) {
+            console.warn(`[discover] sub-search "${q}" failed:`, e && e.message);
+          }
+        });
+
+        /* 2. Post mining — search /search.json for posts that mention the
+         *    campaign keywords, then collect distinct subreddits those
+         *    posts live in. This finds niche / active communities the
+         *    /subreddits/search endpoint never surfaces. */
+        const postQuery = (profile.keywords || []).slice(0, 4).map((k) => k.word).join(" ");
+        const postHitsByName = {};
+        let postHitsTotal = 0;
+        if (postQuery) {
+          try {
+            const posts = await Reddit.searchPosts(postQuery, { limit: 75, sort: "top", t: "month" });
+            postHitsTotal = posts.length;
+            const subFromPosts = new Map();
+            for (const p of posts) {
+              const k = (p.subreddit || "").toLowerCase();
+              if (!k) continue;
+              subFromPosts.set(k, (subFromPosts.get(k) || 0) + 1);
+            }
+            for (const [k, v] of subFromPosts.entries()) postHitsByName[k] = v;
+
+            /* Fetch about info for sub names that didn't show up in
+             * /subreddits/search but were mined from posts. Concurrency 3,
+             * skip when we already have it. */
+            const newSubs = Array.from(subFromPosts.keys())
+              .filter((k) => !subResults.has(k))
+              .sort((a, b) => (subFromPosts.get(b) || 0) - (subFromPosts.get(a) || 0))
+              .slice(0, 12);
+            await Util.pmap(newSubs, 3, async (sub) => {
+              try {
+                const about = await Reddit.fetchSubredditAbout(sub);
+                if (about && about.display_name) {
+                  const k = about.display_name.toLowerCase();
+                  if (!subResults.has(k)) subResults.set(k, { candidate: about, hits: 0 });
+                }
+              } catch (_) {}
+            });
+          } catch (e) {
+            console.warn(`[discover] post-search failed:`, e && e.message);
+          }
+        }
+
+        /* 3. Score & split into "new" vs "already in dashboard". */
         const exclude = new Set([
           ...(profile.subreddits || []),
           ...Array.from(state.activeSubs),
         ].map((s) => String(s).toLowerCase()));
-        const candidates = Analysis.discoverCandidates(results, profile, {
-          excludeNames: Array.from(exclude),
-          minSubs: 100,
-          limit: 12,
-        });
-        const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
-        console.log(`[discover] ${campaign.name}: ${results.length} hits, ${candidates.length} after scoring (${dur}ms)`);
 
-        UI.renderDiscoveryCandidates(candidates, discoverResults);
-        setDiscoverStatus(`Found ${candidates.length} candidate sub${candidates.length === 1 ? "" : "s"} not already in your dashboard or campaign.`, "ok");
+        const result = Analysis.discoverCandidates(
+          Array.from(subResults.values()).map((v) => v.candidate),
+          profile,
+          {
+            excludeNames: Array.from(exclude),
+            minSubs: 25,
+            limit: 20,
+            queryHitsByName,
+            postHitsByName,
+          }
+        );
+
+        const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
+        console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded after scoring (${dur}ms)`);
+
+        UI.renderDiscoveryCandidates(result, discoverResults);
+
+        const status = result.candidates.length
+          ? `Found ${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} matching this campaign — plus ${result.alreadyLoaded.length} of your existing subs that also rank highly.`
+          : `Scanned ${result.totalScanned} sub${result.totalScanned === 1 ? "" : "s"} — every match is already in your dashboard. Try removing a few subs from your filter chips and re-running, or run Discover on a campaign with broader themes.`;
+        setDiscoverStatus(status, result.candidates.length ? "ok" : "warn");
       } catch (err) {
         console.warn("[discover] failed:", err && err.message);
         setDiscoverStatus(`Discovery failed: ${(err && err.message) || err}`, "err");
