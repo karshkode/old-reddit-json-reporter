@@ -1908,3 +1908,76 @@ footer {
   border-color: var(--info);
   color: var(--text);
 }
+
+/* =====================================================================
+   SPHERE PICKER on the Discover hero card
+   ===================================================================== */
+
+.sphere-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.sphere-picker .group-label { white-space: nowrap; }
+.sphere-picker select {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  min-height: 36px;
+  cursor: pointer;
+  flex: 0 1 auto;
+}
+.sphere-picker select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18); }
+
+.active-spheres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+  min-height: 26px;
+}
+.active-spheres .meta {
+  color: var(--text-mute);
+  font-size: 11px;
+  font-style: italic;
+}
+.active-spheres .sphere-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 10px;
+}
+.active-spheres .sphere-chip .chip-meta {
+  font-size: 10px;
+  color: var(--text-mute);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  background: var(--bg-elev);
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.active-spheres .sphere-chip.strong .chip-meta {
+  color: var(--good);
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.10);
+}
+.active-spheres .sphere-chip.weak .chip-meta {
+  color: var(--text-mute);
+  opacity: 0.75;
+}
+
+@media (max-width: 720px) {
+  .sphere-picker { gap: 6px; padding-top: 10px; }
+  .sphere-picker select { font-size: 12px; padding: 6px 8px; flex: 1 1 100px; }
+  .sphere-picker .group-label { width: 100%; }
+}

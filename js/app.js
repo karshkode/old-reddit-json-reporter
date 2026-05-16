@@ -34,6 +34,10 @@
      * data-cp-index in the rendered cross-post rows so the
      * "+ Make campaign" button can resolve back to its group. */
     crossPosts: [],
+    /* Manually-chosen sphere keys to seed Discover with, on top of
+     * Seeds.detectSpheres()'s auto-detection. Stored in localStorage
+     * under "rj.activeSpheres". */
+    activeSpheres: [],
     targetingFor: {
       ai: null,         // selected campaign id for the AI Insights playground
       campaigns: null,  // selected campaign id for the Campaigns tab card
@@ -62,6 +66,13 @@
       state.listing = localStorage.getItem(STORAGE_KEYS.listing) || "hot";
       state.timeWindow = localStorage.getItem(STORAGE_KEYS.time) || "week";
       state.limit = Number(localStorage.getItem(STORAGE_KEYS.limit)) || 100;
+      try {
+        const raw = localStorage.getItem("rj.activeSpheres");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) state.activeSpheres = parsed.filter((k) => typeof k === "string");
+        }
+      } catch (_) {}
     } catch (_) {
       state.knownSubs = DEFAULT_SUBS.slice();
       state.activeSubs = new Set(DEFAULT_SUBS);
@@ -666,7 +677,89 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     select.value = Reddit.getTransport();
   }
 
-  function bind() {
+  /* ============ Active sphere picker (Discover hero) ============ */
+
+  function persistSpheres() {
+    try { localStorage.setItem("rj.activeSpheres", JSON.stringify(state.activeSpheres)); } catch (_) {}
+  }
+
+  function populateSphereDropdowns() {
+    if (typeof Seeds === "undefined") return;
+    function fill(id, entries) {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      /* keep the first placeholder option, drop the rest */
+      while (sel.options.length > 1) sel.remove(1);
+      const sorted = entries.slice().sort((a, b) => a[1].localeCompare(b[1]));
+      for (const [key, label] of sorted) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = label;
+        sel.appendChild(opt);
+      }
+    }
+    fill("sphere-add-issue", Object.entries(Seeds.ISSUE_LABELS || {}));
+    fill("sphere-add-state", Object.entries(Seeds.STATE_LABELS || {}));
+    fill("sphere-add-audience", Object.entries(Seeds.DEMOGRAPHIC_LABELS || {}));
+  }
+
+  function renderActiveSpheres() {
+    const el = document.getElementById("active-spheres");
+    if (!el) return;
+    if (!state.activeSpheres.length) {
+      el.innerHTML = '<span class="meta">No manual spheres added — Discover auto-detects from your campaign content.</span>';
+      return;
+    }
+    el.innerHTML = state.activeSpheres.map((key) => {
+      const subs = (typeof Seeds !== "undefined") ? Seeds.expand([key]) : [];
+      const label = (typeof Seeds !== "undefined") ? Seeds.labelOf(key) : key;
+      return `<span class="chip active sphere-chip" data-sphere-key="${Util.escapeHtml(key)}">${Util.escapeHtml(label)}<span class="chip-meta" data-sphere-meta>${subs.length} sub${subs.length === 1 ? "" : "s"}</span><span class="x" data-action="remove-sphere" data-sphere-key="${Util.escapeHtml(key)}" aria-label="Remove sphere">×</span></span>`;
+    }).join("");
+  }
+
+  function addSphere(key) {
+    if (!key || state.activeSpheres.includes(key)) return;
+    state.activeSpheres.push(key);
+    persistSpheres();
+    renderActiveSpheres();
+  }
+
+  function removeSphere(key) {
+    state.activeSpheres = state.activeSpheres.filter((k) => k !== key);
+    persistSpheres();
+    renderActiveSpheres();
+  }
+
+  /* After Discover finishes, surface per-sphere effectiveness on each
+   * chip: how many candidates from that sphere came back, and the
+   * average fit score across them. Hits BOTH the new and already-loaded
+   * sections so a chip whose subs are all already in the dashboard
+   * still reads "5 subs · avg fit 71". */
+  function updateSphereChipScores(result) {
+    if (typeof Seeds === "undefined") return;
+    const all = [].concat(result.candidates || [], result.alreadyLoaded || []);
+    const byCanonical = new Map();
+    for (const c of all) byCanonical.set(c.canonical, c);
+
+    document.querySelectorAll(".sphere-chip").forEach((chip) => {
+      const key = chip.dataset.sphereKey;
+      const meta = chip.querySelector("[data-sphere-meta]");
+      if (!key || !meta) return;
+      const expected = Seeds.expand([key]).map((s) => s.toLowerCase());
+      const matched = expected.map((s) => byCanonical.get(s)).filter(Boolean);
+      if (!matched.length) {
+        meta.textContent = `${expected.length} sub${expected.length === 1 ? "" : "s"} · no matches`;
+        chip.classList.remove("strong", "weak");
+        return;
+      }
+      const avg = Math.round(matched.reduce((sum, x) => sum + x.score, 0) / matched.length);
+      meta.textContent = `${matched.length} sub${matched.length === 1 ? "" : "s"} · avg fit ${avg}`;
+      chip.classList.toggle("strong", avg >= 50);
+      chip.classList.toggle("weak", avg < 30);
+    });
+  }
+
+    function bind() {
     const transportSelect = document.getElementById("transport-select");
     const transportSelectMobile = document.getElementById("transport-select-mobile");
     populateTransportSelect(transportSelect);
@@ -1245,6 +1338,31 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     closeOnSelect(document.getElementById("time-select"));
     closeOnSelect(document.getElementById("limit-select"));
 
+    /* Sphere picker dropdowns + chip removal. Populate options from
+     * Seeds.* labels, persist user picks, render chips. */
+    populateSphereDropdowns();
+    renderActiveSpheres();
+    ["sphere-add-issue", "sphere-add-state", "sphere-add-audience"].forEach((id) => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.addEventListener("change", (e) => {
+        const v = e.target.value;
+        if (!v) return;
+        addSphere(v);
+        sel.value = "";
+      });
+    });
+    const activeChips = document.getElementById("active-spheres");
+    if (activeChips) {
+      activeChips.addEventListener("click", (e) => {
+        const x = e.target && e.target.closest && e.target.closest('[data-action="remove-sphere"]');
+        if (!x) return;
+        e.preventDefault();
+        e.stopPropagation();
+        removeSphere(x.dataset.sphereKey);
+      });
+    }
+
     /* ------ Discover similar subreddits ------ */
     const discoverBtn = document.getElementById("discover-run");
     const discoverSel = document.getElementById("discover-campaign");
@@ -1371,7 +1489,9 @@ const crossPosts = Analysis.detectCrossPosts(posts);
          *    campaign always considers r/MedicareForAll / r/healthcare
          *    even when Reddit's /subreddits/search misses them, and
          *    that strict mode never drops a known-good catalog member. */
-        const detectedSpheres = (window.Seeds && Seeds.detectSpheres(profile)) || [];
+        const autoSpheres = (window.Seeds && Seeds.detectSpheres(profile)) || [];
+        /* Combine auto-detected with the user's manually picked ones. */
+        const detectedSpheres = Array.from(new Set([...autoSpheres, ...(state.activeSpheres || [])]));
         let sphereSeedAttempted = 0, sphereSeedFetched = 0;
         progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100;
         Util.setProgress(progressPct, detectedSpheres.length
@@ -1436,6 +1556,7 @@ const bestCampaignPost = (summary.posts || [])
           bestCampaignPost,
           campaignSubs,
         });
+        updateSphereChipScores(result);
         Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
 
         const sphereTail = detectedSpheres.length
