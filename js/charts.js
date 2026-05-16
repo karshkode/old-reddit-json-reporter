@@ -59,33 +59,119 @@
     return instances[id];
   }
 
-  Charts.timeline = function (id, buckets) {
+  /* Distinct, readable colours for up to 12 subreddits before the
+   * sequence wraps. The first three match the app's accent / info /
+   * good tokens so the most-active sub uses the brand orange. */
+  const SUB_PALETTE = [
+    "#ff5722", "#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa",
+    "#22d3ee", "#f472b6", "#84cc16", "#fb923c", "#06b6d4", "#e879f9",
+  ];
+  function paletteAt(i) { return SUB_PALETTE[i % SUB_PALETTE.length]; }
+
+  /* Timeline accepts either:
+   *   - the legacy [{t,n}] from Analysis.bucketByHour (plotted as Total)
+   *   - the new {keys, total, bySub, subs, bucketS, bucketLabel} from
+   *     Analysis.bucketByTimePerSub (plotted as Per-sub / Stacked / Total
+   *     depending on opts.mode).
+   */
+  Charts.timeline = function (id, data, opts) {
     const t = theme();
-    const labels = buckets.map((b) => b.t.slice(5, 16));
-    const data = buckets.map((b) => b.n);
+    opts = opts || {};
+    const mode = opts.mode || "lines";
+
+    /* Legacy shape -> single-line Total chart */
+    if (Array.isArray(data)) {
+      const labels = data.map((b) => b.t.slice(5, 16));
+      const series = data.map((b) => b.n);
+      return render(id, {
+        type: "line",
+        data: { labels, datasets: [{
+          label: "Posts", data: series,
+          borderColor: t.accent, backgroundColor: hexA(t.accent, 0.18),
+          fill: true, tension: 0.25, pointRadius: 1, pointHoverRadius: 4,
+        }]},
+        options: Object.assign(commonOpts(), {
+          plugins: { legend: { display: false }, tooltip: commonOpts().plugins.tooltip },
+          scales: timelineScales(t, labels.length),
+        }),
+      });
+    }
+
+    const keys = data && data.keys ? data.keys : [];
+    if (!keys.length) {
+      return render(id, {
+        type: "line",
+        data: { labels: ["—"], datasets: [{ data: [0], borderColor: t.mute }] },
+        options: Object.assign(commonOpts(), { plugins: { legend: { display: false } } }),
+      });
+    }
+
+    let datasets;
+    if (mode === "total") {
+      datasets = [{
+        label: "Posts (all subs)",
+        data: data.total,
+        borderColor: t.accent, backgroundColor: hexA(t.accent, 0.20),
+        fill: true, tension: 0.25, pointRadius: 1, pointHoverRadius: 4,
+      }];
+    } else if (mode === "stacked") {
+      datasets = data.subs.map((sub, i) => ({
+        label: "r/" + sub,
+        data: data.bySub[sub],
+        borderColor: paletteAt(i),
+        backgroundColor: hexA(paletteAt(i), 0.45),
+        borderWidth: 1,
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 3,
+        stack: "subs",
+      }));
+    } else {
+      /* "lines" — per-sub overlay, no stacking */
+      datasets = data.subs.map((sub, i) => ({
+        label: "r/" + sub,
+        data: data.bySub[sub],
+        borderColor: paletteAt(i),
+        backgroundColor: hexA(paletteAt(i), 0.10),
+        borderWidth: 2,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      }));
+    }
+
+    const stacked = mode === "stacked";
     return render(id, {
       type: "line",
-      data: {
-        labels,
-        datasets: [{
-          label: "Posts",
-          data,
-          borderColor: t.accent,
-          backgroundColor: hexA(t.accent, 0.18),
-          fill: true,
-          tension: 0.25,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-        }],
-      },
+      data: { labels: keys, datasets },
       options: Object.assign(commonOpts(), {
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: data.subs.length <= 12,
+            position: "bottom",
+            labels: { color: t.dim, font: { size: 10 }, boxWidth: 8, boxHeight: 8 },
+          },
           tooltip: commonOpts().plugins.tooltip,
         },
+        scales: timelineScales(t, keys.length, stacked),
+        interaction: { mode: "index", intersect: false },
       }),
     });
   };
+
+  /* Reduce x-axis tick clutter on dense or narrow charts and respect
+   * stacking when requested. */
+  function timelineScales(t, n, stacked) {
+    const maxTicks = n > 60 ? 8 : n > 30 ? 10 : 14;
+    return {
+      x: { ...commonOpts().scales.x,
+           ticks: { ...commonOpts().scales.x.ticks, maxTicksLimit: maxTicks, autoSkip: true } },
+      y: { ...commonOpts().scales.y, beginAtZero: true, stacked: !!stacked,
+           ticks: { ...commonOpts().scales.y.ticks, precision: 0 } },
+    };
+  }
 
   Charts.scatter = function (id, posts) {
     const t = theme();

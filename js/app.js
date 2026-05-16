@@ -27,6 +27,7 @@
     lastErrors: [],
     /* deep analysis caches */
     subProfiles: {},
+    timelineMode: "lines",  /* lines | stacked | total — Posts-over-time chart mode */
     targetingFor: {
       ai: null,         // selected campaign id for the AI Insights playground
       campaigns: null,  // selected campaign id for the Campaigns tab card
@@ -169,7 +170,14 @@
     UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
 
     if (window.Chart) {
-      Charts.timeline("chart-timeline", Analysis.bucketByHour(posts));
+      const timelineData = Analysis.bucketByTimePerSub(posts);
+      Charts.timeline("chart-timeline", timelineData, { mode: state.timelineMode });
+      const hintEl = document.getElementById("timeline-hint");
+      if (hintEl) {
+        const subsCount = timelineData.subs.length;
+        const modeLabel = state.timelineMode === "total" ? "Total · all subs combined" : state.timelineMode === "stacked" ? "Stacked area · per subreddit" : "Per subreddit · overlay";
+        hintEl.textContent = `${modeLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}`;
+      }
       Charts.scatter("chart-scatter", posts);
       Charts.subCompare("chart-sub-compare", agg);
       Charts.histogram("chart-hist", Analysis.scoreHistogram(posts, 12));
@@ -739,6 +747,20 @@
 
     document.querySelectorAll(".tab").forEach((tab) => {
       tab.addEventListener("click", () => UI.activateTab(tab.dataset.tab));
+    });
+
+    /* Posts-over-time mode toggle */
+    document.querySelectorAll("#timeline-card .chart-mode button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const m = btn.dataset.mode;
+        if (!m || m === state.timelineMode) return;
+        state.timelineMode = m;
+        document.querySelectorAll("#timeline-card .chart-mode button").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+        rerenderAll();
+      });
     });
 
     document.querySelectorAll("#posts-table thead th.sortable").forEach((th) => {
