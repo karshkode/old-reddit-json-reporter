@@ -161,5 +161,26 @@
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /* Concurrency-limited parallel map. Spawns at most `n` workers and
+   * resolves with an array aligned to `items` (errors caught into
+   * { __error } objects so a single failure doesn't reject the batch). */
+  Util.pmap = async function (items, n, fn) {
+    const results = new Array(items.length);
+    let idx = 0;
+    const workers = Array.from({ length: Math.min(n, items.length) }, async () => {
+      while (true) {
+        const i = idx++;
+        if (i >= items.length) return;
+        try {
+          results[i] = await fn(items[i], i);
+        } catch (err) {
+          results[i] = { __error: err };
+        }
+      }
+    });
+    await Promise.all(workers);
+    return results;
+  };
+
   window.Util = Util;
 })();

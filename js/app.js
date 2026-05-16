@@ -31,6 +31,13 @@
       ai: null,         // selected campaign id for the AI Insights playground
       campaigns: null,  // selected campaign id for the Campaigns tab card
     },
+    /* monotonic counter — every refreshData() call increments it; running
+     * fetches that observe a change discard their results so a fast user
+     * tapping Refresh repeatedly doesn't get stale data piled on top. */
+    fetchToken: 0,
+    /* skip expensive renders (themes, profiles, charts) while a batch
+     * fetch is still in progress — KPI + table render only. */
+    rendering: { light: false },
   };
 
   function isMobile() {
@@ -123,7 +130,20 @@
 
   /* ---------- Render pipeline ---------- */
 
+  /* Lightweight render: KPIs + posts table only. Used during in-progress
+   * batch fetches so the user sees data accumulate without paying the
+   * per-update cost of redrawing 8 Chart.js canvases and recomputing
+   * every theme/profile. */
+  function rerenderLight() {
+    const posts = filteredPosts();
+    const agg = Analysis.aggregate(posts);
+    UI.renderKpis(agg);
+    UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
+  }
+
   function rerenderAll() {
+    if (state.rendering.light) return rerenderLight();
+
     const posts = filteredPosts();
     const agg = Analysis.aggregate(posts);
     const sentiment = Analysis.aggregateSentiment(posts);
@@ -167,33 +187,75 @@
       return;
     }
     if (force) Reddit.clearCache();
+
     const subs = Array.from(state.activeSubs);
-    Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…`, "", "via " + describeTransport());
+    const myToken = ++state.fetchToken;
+    const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    console.log(`[refreshData] start: ${subs.length} subs, listing=${state.listing}, limit=${state.limit}`);
+
     state.lastErrors = [];
-    const all = [];
+    state.posts = [];
+    state.rendering.light = true;
+    Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… 0/${subs.length}`, "", "via " + describeTransport());
+    rerenderLight();
+
+    /* Up to 3 subreddits in flight at once. More than that and the public
+     * proxies start 429-ing. Each completion triggers a light re-render so
+     * the user sees posts accumulate live instead of staring at a spinner. */
+    const collected = [];
+    let completed = 0;
     let errors = 0;
-    for (const sub of subs) {
+
+    await Util.pmap(subs, 3, async (sub) => {
+      const subStart = (typeof performance !== "undefined" ? performance.now() : Date.now());
       try {
         const list = await Reddit.fetchSubredditListing(sub, {
           listing: state.listing,
           t: state.timeWindow,
           limit: state.limit,
         });
-        for (const p of list) all.push(p);
+        if (state.fetchToken !== myToken) return;
+        for (const p of list) collected.push(p);
+        const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - subStart));
+        console.log(`[refreshData] r/${sub}: ${list.length} posts in ${dur}ms`);
       } catch (err) {
         errors++;
         state.lastErrors.push({ sub, message: err.message });
+        console.warn(`[refreshData] r/${sub} FAILED:`, err.message);
         Util.toast(`r/${sub}: ${err.message}`, "error");
+      } finally {
+        completed++;
+        if (state.fetchToken === myToken) {
+          state.posts = Util.uniqBy(collected, (p) => p.id);
+          Util.setStatus(
+            `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… ${completed}/${subs.length}`,
+            errors ? "err" : "",
+            "via " + describeTransport()
+          );
+          rerenderLight();
+        }
       }
+    });
+
+    if (state.fetchToken !== myToken) {
+      console.log(`[refreshData] aborted (newer token outpaced this run)`);
+      return;
     }
-    state.posts = Util.uniqBy(all, (p) => p.id);
+
+    state.posts = Util.uniqBy(collected, (p) => p.id);
     state.lastTransport = Reddit._lastTransport || state.lastTransport;
+    state.rendering.light = false;
+
+    const totalMs = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
+    console.log(`[refreshData] complete: ${state.posts.length} unique posts in ${totalMs}ms (errors=${errors})`);
+
     Util.setStatus(
-      `Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}` +
+      `Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""} in ${(totalMs / 1000).toFixed(1)}s` +
       (errors ? ` · ${errors} err` : ""),
       errors ? "err" : "ok",
       "via " + describeTransport()
     );
+
     if (state.posts.length === 0 && state.activeSubs.size > 0) {
       const errLines = state.lastErrors.map((e) => `<li><code>r/${Util.escapeHtml(e.sub)}</code> — ${Util.escapeHtml(e.message)}</li>`).join("");
       showBanner("bad", `
@@ -205,6 +267,7 @@
     } else if (state.posts.length > 0) {
       hideBanner();
     }
+
     rerenderAll();
     refreshAllCampaignSummaries();
   }
@@ -240,15 +303,28 @@
 
   async function refreshAllCampaignSummaries() {
     const list = Campaigns.list();
+    if (!list.length) {
+      state.campaignSummaries = {};
+      UI.renderCampaignList([], {}, openCampaign);
+      populateTargetingSelectors();
+      refreshTargeting("ai");
+      refreshTargeting("campaigns");
+      return;
+    }
+    const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
     const summaries = {};
-    for (const c of list) {
+    /* Each campaign is one /by_id batch (≤100 IDs). Keep concurrency modest
+     * so the proxy isn't slammed while the subreddit fetcher is also active. */
+    await Util.pmap(list, 2, async (c) => {
       try {
-        const agg = await Campaigns.fetchAggregated(c);
-        summaries[c.id] = agg;
+        summaries[c.id] = await Campaigns.fetchAggregated(c);
       } catch (err) {
+        console.warn(`[campaigns] ${c.name} fetch failed:`, err.message);
         summaries[c.id] = { totalScore: 0, totalComments: 0, posts: [], subs: [], missing: c.postIds };
       }
-    }
+    });
+    const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
+    console.log(`[campaigns] refreshed ${list.length} in ${dur}ms`);
     state.campaignSummaries = summaries;
     UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
     populateTargetingSelectors();
