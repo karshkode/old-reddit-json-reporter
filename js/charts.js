@@ -61,7 +61,7 @@
 
   Charts.timeline = function (id, buckets) {
     const t = theme();
-    const labels = buckets.map((b) => b.t.slice(5, 16).replace("T", " "));
+    const labels = buckets.map((b) => b.t.slice(5, 16));
     const data = buckets.map((b) => b.n);
     return render(id, {
       type: "line",

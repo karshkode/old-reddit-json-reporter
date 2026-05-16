@@ -79,7 +79,7 @@
       tr.tabIndex = 0;
       tr.setAttribute("role", "button");
       tr.innerHTML = `
-        <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} UTC">${Util.escapeHtml(Util.relTime(p.created_utc))}</td>
+        <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">${Util.escapeHtml(Util.relTime(p.created_utc))}</td>
         <td data-label="Sub"><span class="tag">r/${Util.escapeHtml(p.subreddit)}</span></td>
         <td data-label="Title" class="title">
           <span class="title-text" title="${Util.escapeHtml(p.title || "")}">${Util.escapeHtml(p.title || "")}</span>
@@ -155,7 +155,7 @@
             <dt>Domain</dt><dd>${Util.escapeHtml(post.domain || "")}</dd>
             <dt>URL</dt><dd><a href="${Util.escapeHtml(post.url || "")}" target="_blank" rel="noopener">${Util.escapeHtml((post.url || "").slice(0, 80))}</a></dd>
             <dt>Permalink</dt><dd><a href="${Util.escapeHtml(post.permalink)}" target="_blank" rel="noopener">open thread</a></dd>
-            <dt>Posted</dt><dd>${Util.escapeHtml(Util.fmtDateShort(post.created_utc))} UTC</dd>
+            <dt>Posted</dt><dd>${Util.escapeHtml(Util.fmtDateShort(post.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}</dd>
             <dt>Comments<br>sentiment</dt><dd>${commentSent.positive} pos / ${commentSent.negative} neg / ${commentSent.neutral} neu</dd>
           </dl>
         </div>
@@ -508,7 +508,7 @@
           ${miniStat("Top avg score", Util.fmtNum(comparison.top.avgScore), Util.fmtNum(comparison.bottom.avgScore))}
           ${miniStat("Title length", Math.round(comparison.top.avgLen) + " ch", Math.round(comparison.bottom.avgLen) + " ch")}
           ${miniStat("Sentiment", comparison.top.avgSent.toFixed(2), comparison.bottom.avgSent.toFixed(2))}
-          ${miniStat("Hour (UTC)", comparison.top.avgHour == null ? "—" : pad2(Math.round(comparison.top.avgHour)) + ":00", comparison.bottom.avgHour == null ? "—" : pad2(Math.round(comparison.bottom.avgHour)) + ":00")}
+          ${miniStat("Hour (" + Util.getTzLabel() + ")", comparison.top.avgHour == null ? "—" : pad2(Math.round(comparison.top.avgHour)) + ":00", comparison.bottom.avgHour == null ? "—" : pad2(Math.round(comparison.bottom.avgHour)) + ":00")}
         </div>
       </div>
     ` : "";
