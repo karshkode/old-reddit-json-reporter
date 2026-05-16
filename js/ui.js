@@ -228,12 +228,14 @@
     if (!groups.length) { el.innerHTML = '<div class="empty">No cross-posts detected in the loaded set.</div>'; return; }
     el.innerHTML = groups.slice(0, 20).map((g, i) => {
       const headline = g.kind === "url" ? truncate(g.key, 90) : truncate(g.posts[0].title, 110);
-      const ids = g.posts.map((p) => p.id);
+      /* Spread-tier badge: 2 subs = info, 3-4 subs = warn, 5+ subs = good. */
+      const spread = g.subs.length;
+      const tier = spread >= 5 ? "good" : spread >= 3 ? "warn" : "info";
       return `
-        <div class="crosspost-row">
+        <div class="crosspost-row" data-spread="${spread}">
           <div class="crosspost-head">
             <strong>${Util.escapeHtml(headline)}</strong>
-            <span class="badge info">${g.posts.length} posts</span>
+            <span class="badge ${tier}" title="Cross-posted across ${spread} subreddits">in ${spread} sub${spread === 1 ? "" : "s"}</span>
           </div>
           <div class="subs">${g.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(" · ")} · ${Util.fmtNum(g.totalScore)} pts · ${Util.fmtNum(g.totalComments)} comments</div>
           <div class="crosspost-actions">
