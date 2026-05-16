@@ -483,10 +483,46 @@
     });
 
     const debouncedFilter = Util.debounce(() => { rerenderAll(); }, 200);
-    document.getElementById("post-id-filter").addEventListener("input", (e) => {
-      state.postIdFilter = Util.parseIdList(e.target.value);
+    function renderPastePreview(targetId, ids, opts) {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      opts = opts || {};
+      if (!ids || !ids.length) {
+        el.hidden = true;
+        el.innerHTML = "";
+        return;
+      }
+      el.hidden = false;
+      const chips = ids.slice(0, opts.max || 80).map((id) => `<span class="kw"><code>${Util.escapeHtml(id)}</code></span>`).join("");
+      const moreNote = ids.length > (opts.max || 80) ? ` <span class="meta">(+${ids.length - (opts.max || 80)} more)</span>` : "";
+      const heading = opts.short
+        ? `<span class="meta">${ids.length} ID${ids.length === 1 ? "" : "s"} detected</span>`
+        : `<div class="meta">Detected ${ids.length} post ID${ids.length === 1 ? "" : "s"} from your paste</div>`;
+      el.innerHTML = heading + chips + moreNote;
+    }
+
+    const postIdInput = document.getElementById("post-id-filter");
+    postIdInput.addEventListener("input", (e) => {
+      const ids = Util.parseIdList(e.target.value);
+      state.postIdFilter = ids;
+      renderPastePreview("post-id-filter-preview", ids, { short: true, max: 30 });
       debouncedFilter();
     });
+    postIdInput.addEventListener("paste", () => {
+      // The input event fires *after* paste in modern browsers but on some
+      // mobile keyboards it lags; this guarantees a refresh on next tick.
+      setTimeout(() => postIdInput.dispatchEvent(new Event("input")), 0);
+    });
+
+    const campaignIdsTa = document.getElementById("campaign-post-ids");
+    if (campaignIdsTa) {
+      const update = () => {
+        const ids = Util.parseIdList(campaignIdsTa.value);
+        renderPastePreview("campaign-post-ids-preview", ids, { max: 80 });
+      };
+      campaignIdsTa.addEventListener("input", update);
+      campaignIdsTa.addEventListener("paste", () => setTimeout(update, 0));
+    }
     document.getElementById("search-input").addEventListener("input", (e) => {
       state.searchQuery = e.target.value.trim();
       debouncedFilter();
@@ -551,6 +587,8 @@
         }
 
         document.getElementById("campaign-form").reset();
+        const ppEl = document.getElementById("campaign-post-ids-preview");
+        if (ppEl) { ppEl.hidden = true; ppEl.innerHTML = ""; }
 
         /* Render the new entry instantly so the user sees it; refresh
          * targeting selectors with the new campaign included. */

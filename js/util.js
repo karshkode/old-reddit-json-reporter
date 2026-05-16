@@ -43,9 +43,20 @@
       .replace(/'/g, "&#039;");
   };
 
+  /* Accepts any of:
+   *   foo
+   *   r/foo
+   *   /r/foo
+   *   https://www.reddit.com/r/foo/
+   *   https://old.reddit.com/r/foo/comments/123/title
+   *   https://reddit.com/r/foo
+   * Returns the lowercased sub name, or "" if nothing usable found. */
   Util.normalizeSubName = function (s) {
     if (!s) return "";
-    return String(s).trim().replace(/^\/?r\//i, "").replace(/\/$/, "").toLowerCase();
+    const t = String(s).trim();
+    const m = t.match(/r\/([A-Za-z0-9_]{2,30})/i);
+    if (m) return m[1].toLowerCase();
+    return t.replace(/[^A-Za-z0-9_]/g, "").toLowerCase();
   };
 
   /* Accept Reddit post IDs in any of these forms (mixed in one paste):
@@ -70,8 +81,16 @@
         const mShort = tok.match(/redd\.it\/([a-z0-9]{4,12})/i);
         if (mShort) id = mShort[1];
         else {
-          const cleaned = tok.replace(/^t3_/i, "").replace(/[^a-z0-9]/gi, "");
-          if (/^[a-z0-9]{4,12}$/i.test(cleaned)) id = cleaned;
+          // Only treat bare tokens as IDs if they're explicitly t3_-prefixed
+          // OR they look like a Reddit base36 ID (contain at least one digit).
+          // This stops "Check this out: https://reddit.com/r/x/comments/abc1234/y"
+          // from also picking up "Check" and "this" as IDs.
+          const t3 = /^t3_([a-z0-9]{4,12})$/i.exec(tok);
+          if (t3) id = t3[1];
+          else {
+            const cleaned = tok.replace(/[^a-z0-9]/gi, "");
+            if (/^[a-z0-9]{5,12}$/i.test(cleaned) && /\d/.test(cleaned)) id = cleaned;
+          }
         }
       }
       if (!id) continue;

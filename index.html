@@ -44,7 +44,7 @@
       <label class="group-label">Subreddits</label>
       <div id="subreddit-chips" class="chips"></div>
       <form id="add-sub-form" class="inline-form">
-        <input id="add-sub-input" type="text" placeholder="add subreddit" autocomplete="off" inputmode="text" />
+        <input id="add-sub-input" type="text" placeholder="add subreddit (paste a /r/x url too)" autocomplete="off" inputmode="text" />
         <button class="btn small" type="submit">Add</button>
       </form>
     </div>
@@ -78,7 +78,8 @@
 
     <div class="control-group">
       <label for="post-id-filter" class="group-label">Filter by post ID</label>
-      <input id="post-id-filter" type="text" placeholder="1abcd2e (comma-separated ok)" autocomplete="off" inputmode="text" />
+      <input id="post-id-filter" type="text" placeholder="paste post URLs or IDs — extracted automatically" autocomplete="off" inputmode="text" />
+      <div id="post-id-filter-preview" class="paste-preview tiny" hidden></div>
 
       <label for="search-input" class="group-label">Search</label>
       <input id="search-input" type="search" placeholder="title, author, flair…" autocomplete="off" />
@@ -193,8 +194,9 @@
             <label class="full">Name <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required /></label>
             <label>Goal upvotes <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" inputmode="numeric" /></label>
             <label>Goal comments <input id="campaign-goal-comments" type="number" min="0" placeholder="e.g. 500" inputmode="numeric" /></label>
-            <label class="full">Post IDs (comma or newline separated)
-              <textarea id="campaign-post-ids" rows="3" placeholder="1abcd2e, 9z8y7x6 …"></textarea>
+            <label class="full">Post IDs <span class="hint">paste full reddit URLs, share-sheet links, or bare IDs — anything pasteable from your phone works</span>
+              <textarea id="campaign-post-ids" rows="3" placeholder="https://www.reddit.com/r/Political_Revolution/comments/1abc2de/title/&#10;https://www.reddit.com/r/50501/comments/9def8gh/y/&#10;t3_xyz9999, abc1234"></textarea>
+              <div id="campaign-post-ids-preview" class="paste-preview" hidden></div>
             </label>
             <div class="full row-end">
               <button class="btn primary" type="submit">Save campaign</button>
