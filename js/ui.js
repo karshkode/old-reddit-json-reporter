@@ -378,9 +378,10 @@
    * `result` shape:
    *   { candidates:[...], alreadyLoaded:[...], totalScanned: N }
    * (for back-compat we still accept a plain array). */
-  UI.renderDiscoveryCandidates = function (result, container) {
+  UI.renderDiscoveryCandidates = function (result, container, ctx) {
     const el = typeof container === "string" ? document.getElementById(container) : container;
     if (!el) return;
+    ctx = ctx || {};
     let candidates, alreadyLoaded, totalScanned;
     if (Array.isArray(result)) {
       candidates = result; alreadyLoaded = []; totalScanned = result.length;
@@ -397,6 +398,19 @@
       return;
     }
 
+    /* Cross-post submit support: if the discovery context carries a
+     * representative campaign post (`ctx.bestCampaignPost`) and the
+     * candidate sub isn't already hosting that campaign, we render a
+     * "Cross-post here" link that opens Reddit's compose page with the
+     * post's title + selftext (markdown) or URL pre-filled.
+     *
+     * `ctx.campaignSubs` is a Set of subreddit names (lowercase) the
+     * campaign already lives in — those subs DON'T get the submit link
+     * (the user has already posted there). */
+    const bestPost = ctx.bestCampaignPost || null;
+    const campaignName = ctx.campaign && ctx.campaign.name;
+    const campaignSubs = ctx.campaignSubs instanceof Set ? ctx.campaignSubs : new Set();
+
     function renderCard(c, i, isAlready) {
       const cls = c.score >= 70 ? "good" : c.score >= 50 ? "info" : c.score >= 30 ? "warn" : "bad";
       const reasons = c.reasons.map((r) => `<li>${r}</li>`).join("");
@@ -411,6 +425,19 @@
       const action = isAlready
         ? `<span class="badge info">already in your dashboard</span>`
         : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>`;
+
+      /* Submit-to-Reddit link (only when we have a campaign post template
+       * AND the candidate sub doesn't already host it). */
+      let submitLink = "";
+      if (bestPost && !campaignSubs.has(c.canonical)) {
+        const submitUrl = Util.buildSubmitUrl(c.canonical, bestPost);
+        if (submitUrl) {
+          const titleHint = String(bestPost.title || "").slice(0, 120);
+          const tip = `Open Reddit's compose page in r/${c.canonical} pre-filled with "${titleHint}"${campaignName ? ` from "${campaignName}"` : ""}`;
+          submitLink = `<a class="btn small submit-link" href="${Util.escapeHtml(submitUrl)}" target="_blank" rel="noopener" title="${Util.escapeHtml(tip)}">↪ Cross-post here</a>`;
+        }
+      }
+
       return `
         <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.canonical)}">
           <div class="target-head">
@@ -426,6 +453,7 @@
           <ul class="target-reasons">${reasons}</ul>
           <div class="cand-actions">
             ${action}
+            ${submitLink}
             <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
           </div>
         </div>

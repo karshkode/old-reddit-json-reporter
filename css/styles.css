@@ -1894,3 +1894,17 @@ footer {
   padding-left: 9px;
   background: rgba(52, 211, 153, 0.04);
 }
+
+/* Cross-post submit link on Discover candidate cards.
+ * Uses the info-blue family so the user reads it as "go to Reddit"
+ * rather than competing with the orange "Add to dashboard" CTA. */
+.btn.submit-link {
+  background: rgba(96, 165, 250, 0.10);
+  border-color: rgba(96, 165, 250, 0.45);
+  color: var(--info);
+}
+.btn.submit-link:hover {
+  background: rgba(96, 165, 250, 0.18);
+  border-color: var(--info);
+  color: var(--text);
+}
