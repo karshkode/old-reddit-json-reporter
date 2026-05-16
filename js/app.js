@@ -222,8 +222,18 @@
     state.lastErrors = [];
     state.posts = [];
     state.rendering.light = true;
+    /* Expected post count = subs * per-sub limit. Used as the progress
+     * bar denominator so the bar fills smoothly as posts stream in
+     * rather than jumping in N step-increments when each sub completes.
+     * Some subs return fewer than the limit (small sub or short window)
+     * so we cap visible progress at 95% during the loop and let
+     * hideProgress() fill the remaining 5% when everything is done. */
+    const expectedTotal = Math.max(50, subs.length * (state.limit || 100));
+    function postProgressPct() {
+      return Math.min(95, (state.posts.length / expectedTotal) * 100);
+    }
     Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… 0/${subs.length}`, "", "via " + describeTransport());
-    Util.setProgress(0, `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…  0 / ${subs.length}`);
+    Util.setProgress(0, `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…  0 posts so far`);
     rerenderLight();
 
     /* Up to 3 subreddits in flight at once. More than that and the public
@@ -235,14 +245,36 @@
 
     await Util.pmap(subs, 3, async (sub) => {
       const subStart = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      let usedOnPage = false;
       try {
         const list = await Reddit.fetchSubredditListing(sub, {
           listing: state.listing,
           t: state.timeWindow,
           limit: state.limit,
+          /* Stream each page of posts as it arrives. The progress bar
+           * tracks total posts, not just the sub completion count, so
+           * a fetch returning 100 posts in two pages bumps the bar
+           * twice (~0.5% each at default limit) instead of waiting for
+           * the whole sub to finish. */
+          onPage: (newPosts) => {
+            usedOnPage = true;
+            if (state.fetchToken !== myToken) return;
+            for (const p of newPosts) collected.push(p);
+            state.posts = Util.uniqBy(collected, (p) => p.id);
+            Util.setProgress(
+              postProgressPct(),
+              `Streaming r/${sub} · ${state.posts.length} post${state.posts.length === 1 ? "" : "s"} loaded · ${completed} / ${subs.length} sub${subs.length === 1 ? "" : "s"} done`
+            );
+            rerenderLight();
+          },
         });
         if (state.fetchToken !== myToken) return;
-        for (const p of list) collected.push(p);
+        if (!usedOnPage) {
+          /* Fallback if onPage didn't fire — e.g., the listing was
+           * served from cache. Push synchronously so we don't lose data. */
+          for (const p of list) collected.push(p);
+          state.posts = Util.uniqBy(collected, (p) => p.id);
+        }
         const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - subStart));
         console.log(`[refreshData] r/${sub}: ${list.length} posts in ${dur}ms`);
       } catch (err) {
@@ -253,14 +285,17 @@
       } finally {
         completed++;
         if (state.fetchToken === myToken) {
+          /* Re-dedupe in case onPage hadn't fired for cached responses. */
           state.posts = Util.uniqBy(collected, (p) => p.id);
-          const pct = (completed / subs.length) * 100;
           Util.setStatus(
             `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… ${completed}/${subs.length}`,
             errors ? "err" : "",
             "via " + describeTransport()
           );
-          Util.setProgress(pct, `Loaded r/${sub}  ·  ${completed} / ${subs.length}  ·  ${state.posts.length} posts so far`);
+          Util.setProgress(
+            postProgressPct(),
+            `Loaded r/${sub} · ${completed} / ${subs.length} sub${subs.length === 1 ? "" : "s"} done · ${state.posts.length} posts so far`
+          );
           rerenderLight();
         }
       }
