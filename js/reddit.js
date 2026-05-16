@@ -94,7 +94,18 @@
 
   function transportsToTry() {
     if (preferredTransport === "auto") {
-      return AUTO_ORDER.map(getTransportByName).filter(Boolean);
+      const order = AUTO_ORDER.slice();
+      // Bubble the most recently successful transport to the front so a
+      // slow/dead proxy isn't tried first on every subsequent request.
+      const last = Reddit._lastTransport;
+      if (last && order.includes(last)) {
+        const i = order.indexOf(last);
+        if (i > 0) {
+          const [t] = order.splice(i, 1);
+          order.unshift(t);
+        }
+      }
+      return order.map(getTransportByName).filter(Boolean);
     }
     const t = getTransportByName(preferredTransport);
     return t && t.build ? [t] : AUTO_ORDER.map(getTransportByName).filter(Boolean);
@@ -158,7 +169,7 @@
     const promise = (async () => {
       let lastErr;
       const transports = transportsToTry();
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         for (const t of transports) {
           try {
             const out = await tryTransport(t, redditUrl, attempt);
@@ -170,7 +181,7 @@
             lastErr = err;
           }
         }
-        await Util.sleep(400 * Math.pow(2, attempt));
+        await Util.sleep(250 * Math.pow(2, attempt));
       }
       throw lastErr || new Error("All proxies failed");
     })();
