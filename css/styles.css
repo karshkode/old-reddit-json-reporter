@@ -1566,3 +1566,61 @@ footer {
 @media (max-width: 720px) {
   #discover-card .discover-mode { width: 100%; justify-content: center; }
 }
+
+/* =====================================================================
+   REORG: Discovery hero card on Campaigns + narrative card on Overview
+   ===================================================================== */
+
+.hero-card {
+  border: 1px solid var(--accent);
+  background: linear-gradient(180deg,
+              rgba(255, 87, 34, 0.06) 0%,
+              var(--bg-elev) 60%);
+  box-shadow: 0 6px 24px rgba(255, 87, 34, 0.10), var(--shadow);
+  position: relative;
+}
+.hero-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+.hero-card .card-header h2 { font-size: 16px; }
+.hero-card .targeting-picker {
+  background: var(--bg-elev);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.hero-card #discover-run {
+  min-height: 40px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Compact two-up campaigns row — saved + new side by side */
+.campaigns-row { margin-top: 14px; }
+
+/* Narrative card on Overview is full-bleed and lighter than the hero */
+.narrative-card {
+  margin-bottom: 14px;
+  background: var(--bg-elev-2);
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+.narrative-card .card-header h2 {
+  font-size: 14px;
+  color: var(--accent-2);
+}
+.narrative-card .prose p:last-child { margin-bottom: 0; }
+
+@media (max-width: 720px) {
+  .hero-card { padding: 14px; }
+  .hero-card .card-header h2 { font-size: 15px; }
+  .hero-card .targeting-picker { padding: 10px; }
+  .hero-card #discover-run { width: 100%; }
+}
