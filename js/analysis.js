@@ -1173,6 +1173,15 @@
     const sphereBoost = clamp01(sphereHits / 3);     // 3 hits = full boost
     const offtopicPenalty = clamp01(offtopicHits / 2); // 2 hits = full penalty
 
+    /* Catalog membership: known progressive-sphere subs from js/seeds.js
+     * carry their own evidence even if their description happens to be
+     * sparse on civic vocabulary. Tag-list comes from Seeds.spheresOf. */
+    const catalogTags = (typeof window !== "undefined" && window.Seeds)
+      ? window.Seeds.spheresOf(candidate.display_name || "")
+      : [];
+    const isCatalogMember = catalogTags.length > 0;
+    const catalogBoost = isCatalogMember ? 0.20 : 0;
+
     /* Mega-sub guard: when a sub has millions of subscribers but weak
      * topical signal (no sphere hits, weak theme), don't let raw
      * popularity carry it. Keeps r/AskReddit / r/conspiracy from
@@ -1182,14 +1191,15 @@
       : popularity;
 
     let raw =
-      0.30 * themeMatch +
-      0.10 * popularityEffective +
-      0.12 * engagement +
-      0.08 * multiBoost +
-      0.10 * postBoost +
-      0.05 * safety +
-      0.25 * sphereBoost;
-    raw -= 0.30 * offtopicPenalty;
+      0.26 * themeMatch +
+      0.08 * popularityEffective +
+      0.10 * engagement +
+      0.07 * multiBoost +
+      0.09 * postBoost +
+      0.04 * safety +
+      0.22 * sphereBoost +
+      catalogBoost;            /* +0.20 if a catalog member */
+    raw -= 0.28 * offtopicPenalty;
     const composite = clamp01(raw);
     const score = Math.round(composite * 100);
 
@@ -1204,6 +1214,7 @@
     if (offtopicHits >= 2) reasons.push(`<span class="badge bad">off-topic flags</span> · description leans entertainment / lifestyle (${offtopicHits} terms)`);
     if (postHits) reasons.push(`<span class="badge info">${postHits} hot post${postHits === 1 ? "" : "s"}</span> mention campaign keywords this month`);
     if (queryHits >= 2) reasons.push(`appeared in <strong>${queryHits}</strong> of your search angles`);
+    if (isCatalogMember) reasons.unshift(`<span class="badge good">in catalog</span> · ${catalogTags.map((t) => Util.escapeHtml(t.replace("state:", "📍 ").replace("demo:", "👥 "))).join(" · ")}`);
     reasons.push(`<strong>${Util.fmtNum(subs)}</strong> subscribers`);
     if (candidate.active_user_count) {
       const pct = (ratio * 100).toFixed(2);
@@ -1215,6 +1226,7 @@
       matchedKeys, matchedPhrases,
       queryHits, postHits,
       sphereHits, offtopicHits,
+      catalogTags, isCatalogMember,
       reasons,
     };
   };
@@ -1258,22 +1270,34 @@
         ...scored,
       };
 
-      /* Strict-mode topical filters. Already-loaded subs always pass through
-       * to the second section so the user can see their existing set ranked. */
-      if (strict && !item.alreadyLoaded) {
+      /* "Relevant" mode (formerly Strict): tighter than All but never
+       * drops a known-good catalog member. Already-loaded subs always
+       * pass through to the second section so the user can see their
+       * existing set ranked.
+       *
+       * The bar is now: keep if any one of these is true —
+       *   - already in your dashboard
+       *   - in the curated catalog (any sphere)
+       *   - sphereHits >= 2  (strong civic vocabulary)
+       *   - sphereHits >= 1 AND themeMatch >= 0.15
+       *   - themeMatch >= 0.30
+       *   - postHits >= 2 (real recent activity on campaign keywords)
+       * Otherwise drop. Plus mega-sub guard for raw-popularity giants. */
+      if (strict && !item.alreadyLoaded && !item.isCatalogMember) {
         const subs = c.subscribers || 0;
         /* Off-topic dominates: drop. */
-        if (item.offtopicHits >= 2 && item.themeMatch < 0.30 && item.sphereHits === 0) {
+        if (item.offtopicHits >= 2 && item.themeMatch < 0.25 && item.sphereHits === 0) {
           droppedOfftopic++; continue;
         }
-        /* No civic alignment AND weak theme AND not mined from posts: drop. */
-        if (item.sphereHits === 0 && item.themeMatch < 0.30 && item.postHits < 2) {
-          droppedWeak++; continue;
-        }
-        /* Mega-sub (>5M) without strong theme or civic alignment: drop —
-         * r/AskReddit / r/conspiracy / r/politics-adjacent giants only
-         * rank for being huge and aren't a useful expansion target. */
-        if (subs > 5000000 && item.themeMatch < 0.40 && item.sphereHits < 2) {
+        const hasGoodSignal =
+          item.sphereHits >= 2 ||
+          (item.sphereHits >= 1 && item.themeMatch >= 0.15) ||
+          item.themeMatch >= 0.30 ||
+          item.postHits >= 2;
+        if (!hasGoodSignal) { droppedWeak++; continue; }
+        /* Mega-sub (>5M) without strong topical signal: drop. Catalog
+         * members already exempt above. */
+        if (subs > 5000000 && item.themeMatch < 0.40 && item.sphereHits < 2 && item.postHits < 3) {
           droppedMega++; continue;
         }
       }
