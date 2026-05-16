@@ -231,23 +231,32 @@
     refreshSubFilterDropdowns();
 
     if (window.Chart) {
-      const timelineData = Analysis.bucketByTimePerSub(posts, { window: state.timelineWindow });
-      Charts.timeline("chart-timeline", timelineData, { mode: state.timelineMode });
-      const hintEl = document.getElementById("timeline-hint");
-      if (hintEl) {
-        const subsCount = timelineData.subs.length;
-        const modeLabel = state.timelineMode === "total" ? "All subs combined" : state.timelineMode === "stacked" ? "Stacked by sub" : state.timelineMode === "density" ? "Each sub at its own peak (%)" : "One line per sub";
-        const winLabel = state.timelineWindow === "all" ? "all loaded data" : state.timelineWindow === "auto" ? `auto window (${timelineData.windowLabel})` : `last ${state.timelineWindow}`;
-        const droppedNote = timelineData.droppedCount ? ` · ${timelineData.droppedCount} older post${timelineData.droppedCount === 1 ? "" : "s"} hidden` : "";
-        hintEl.textContent = `${modeLabel} · ${winLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}${droppedNote}`;
+      /* Each chart wrapped so one bad render (e.g. zero-data state during
+       * an in-progress fetch, or a browser without canvas support) can't
+       * take down the whole rerender path — which would otherwise prevent
+       * post-init steps like wireSyncSession from ever running. */
+      function safeChart(label, fn) {
+        try { fn(); } catch (err) { console.warn(`[charts] ${label}:`, err && err.message); }
       }
-      Charts.scatter("chart-scatter", posts);
-      Charts.subCompare("chart-sub-compare", agg);
-      Charts.histogram("chart-hist", Analysis.scoreHistogram(posts, 12));
-      Charts.hourHeat("chart-hour-heat", agg);
-      Charts.dow("chart-dow", agg);
-      Charts.velocity("chart-velocity", posts);
-      Charts.sentiment("chart-sentiment", sentiment);
+      safeChart("timeline", () => {
+        const timelineData = Analysis.bucketByTimePerSub(posts, { window: state.timelineWindow });
+        Charts.timeline("chart-timeline", timelineData, { mode: state.timelineMode });
+        const hintEl = document.getElementById("timeline-hint");
+        if (hintEl) {
+          const subsCount = timelineData.subs.length;
+          const modeLabel = state.timelineMode === "total" ? "All subs combined" : state.timelineMode === "stacked" ? "Stacked by sub" : state.timelineMode === "density" ? "Each sub at its own peak (%)" : "One line per sub";
+          const winLabel = state.timelineWindow === "all" ? "all loaded data" : state.timelineWindow === "auto" ? `auto window (${timelineData.windowLabel})` : `last ${state.timelineWindow}`;
+          const droppedNote = timelineData.droppedCount ? ` · ${timelineData.droppedCount} older post${timelineData.droppedCount === 1 ? "" : "s"} hidden` : "";
+          hintEl.textContent = `${modeLabel} · ${winLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}${droppedNote}`;
+        }
+      });
+      safeChart("scatter", () => Charts.scatter("chart-scatter", posts));
+      safeChart("subCompare", () => Charts.subCompare("chart-sub-compare", agg));
+      safeChart("histogram", () => Charts.histogram("chart-hist", Analysis.scoreHistogram(posts, 12)));
+      safeChart("hourHeat", () => Charts.hourHeat("chart-hour-heat", agg));
+      safeChart("dow", () => Charts.dow("chart-dow", agg));
+      safeChart("velocity", () => Charts.velocity("chart-velocity", posts));
+      safeChart("sentiment", () => Charts.sentiment("chart-sentiment", sentiment));
     }
 
     UI.renderKeywords(Analysis.extractKeywords(posts, 30));
@@ -1019,6 +1028,28 @@ const crossPosts = Analysis.detectCrossPosts(posts);
         setSyncStatus(`Downloaded session (${payload.campaigns.length} campaign${payload.campaigns.length === 1 ? "" : "s"}, ${(payload.subs && payload.subs.active || []).length} active subs).`, "ok");
       } catch (err) {
         setSyncStatus("Couldn't export: " + ((err && err.message) || err), "err");
+      }
+    });
+
+    /* Copy JSON to clipboard — alternative to Download for users who'd
+     * rather paste between devices via iCloud Universal Clipboard or
+     * any chat app. */
+    const copyJsonBtn = document.getElementById("sync-copy-json");
+    if (copyJsonBtn) copyJsonBtn.addEventListener("click", async () => {
+      try {
+        const payload = Sync.collectPayload();
+        const text = JSON.stringify(payload, null, 2);
+        const ok = await copyToClipboard(text);
+        if (ok) {
+          setSyncStatus(`JSON copied (${text.length.toLocaleString()} chars · ${payload.campaigns.length} campaign${payload.campaigns.length === 1 ? "" : "s"}). Paste into Import on another device.`, "ok");
+          Util.toast("Session JSON copied to clipboard.", "ok");
+        } else {
+          setSyncStatus("Could not access clipboard — JSON shown below; long-press to copy.", "err");
+          if (ta) ta.value = text;
+          if (panel) panel.hidden = false;
+        }
+      } catch (err) {
+        setSyncStatus("Couldn't copy JSON: " + ((err && err.message) || err), "err");
       }
     });
 
@@ -2014,15 +2045,30 @@ const bestCampaignPost = (summary.posts || [])
     main.insertBefore(banner, main.firstChild);
   }
 
+  /* Each init step is wrapped in safeRun so a single failure (e.g. one
+   * Chart.js call exploding on an exotic browser) can't take down the
+   * whole startup sequence. wireSyncSession() runs FIRST after bind so
+   * the share-link banner + the export/import buttons get listeners
+   * even if any later step throws. */
+  function safeRun(label, fn) {
+    try { fn(); }
+    catch (err) {
+      console.warn(`[init] ${label} failed:`, err && err.message);
+      try { Util.toast(`${label} hit an error — see console.`, "error"); } catch (_) {}
+    }
+  }
+
   function init() {
-    loadPersisted();
-    bind();
-    renderChips();
-    rerenderAll();
-    refreshData();
-    refreshAllCampaignSummaries();
-    checkStorageAvailability();
-    wireSyncSession();
+    safeRun("loadPersisted", loadPersisted);
+    safeRun("bind", bind);
+    /* Wire sync FIRST so the buttons + URL-hash banner are always live,
+     * even if a later render step throws on a slow / weird browser. */
+    safeRun("wireSyncSession", wireSyncSession);
+    safeRun("renderChips", renderChips);
+    safeRun("rerenderAll", rerenderAll);
+    safeRun("refreshData", () => refreshData());
+    safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
+    safeRun("checkStorageAvailability", checkStorageAvailability);
   }
 
   if (document.readyState === "loading") {
