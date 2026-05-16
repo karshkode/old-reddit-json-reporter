@@ -1624,3 +1624,164 @@ footer {
   .hero-card .targeting-picker { padding: 10px; }
   .hero-card #discover-run { width: 100%; }
 }
+
+/* =====================================================================
+   NON-TECHNICAL UX — collapsible cards, bigger charts, hour buckets
+   ===================================================================== */
+
+/* Collapsible cards: chevron in header, hide everything below when collapsed */
+.card[data-collapsible] .card-header { cursor: pointer; user-select: none; }
+.card[data-collapsible] .card-header:hover h2 { color: var(--accent-2); }
+.card[data-collapsible] .card-header .card-chevron {
+  margin-left: auto;
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-mute);
+  transition: transform 0.18s ease, color 0.18s ease;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}
+.card[data-collapsible].collapsed .card-chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.card[data-collapsible].collapsed > *:not(.card-header) { display: none; }
+.card[data-collapsible].collapsed .card-header { padding-bottom: 0; border-bottom: 0; margin-bottom: 0; }
+.card[data-collapsible].collapsed { padding-bottom: 12px; }
+
+/* Bigger chart heights — Posts over time gets the most room */
+#timeline-card .chart-wrap { height: 280px; }
+.chart-wrap { height: 240px; }
+.chart-wrap.tall { height: 300px; }
+
+@media (max-width: 720px) {
+  #timeline-card .chart-wrap { height: 220px; }
+  .chart-wrap { height: 200px; }
+  .chart-wrap.tall { height: 220px; }
+  .card[data-collapsible] .card-header h2 { font-size: 13px; }
+}
+
+/* Chart-controls: stack mode + window pickers neatly */
+#timeline-card .chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+#timeline-card .chart-controls .chart-mode { margin: 0; }
+#timeline-card .chart-window button { padding: 5px 10px; font-size: 11px; }
+@media (max-width: 720px) {
+  #timeline-card .chart-controls { gap: 6px; }
+  #timeline-card .chart-mode { font-size: 10px; }
+  #timeline-card .chart-mode button { padding: 5px 9px; font-size: 11px; }
+}
+
+/* =====================================================================
+   "?" help-tooltips on card headers
+   ===================================================================== */
+
+.card-help {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-mute);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  display: inline-grid;
+  place-items: center;
+  margin-left: 6px;
+  position: relative;
+  flex-shrink: 0;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  vertical-align: middle;
+}
+.card-help:hover,
+.card-help:focus-visible,
+.card-help.help-open {
+  color: var(--accent-2);
+  border-color: var(--accent);
+  background: rgba(255, 87, 34, 0.10);
+  outline: none;
+}
+
+/* The popover */
+.card-help::after {
+  content: attr(data-help);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  width: max-content;
+  max-width: 320px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.5;
+  box-shadow: var(--shadow);
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+/* Pointer triangle */
+.card-help::before {
+  content: "";
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 4px;
+  width: 0; height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid var(--border-strong);
+  z-index: 31;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.card-help:hover::after,
+.card-help:focus-visible::after,
+.card-help.help-open::after,
+.card-help:hover::before,
+.card-help:focus-visible::before,
+.card-help.help-open::before {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* On smaller screens: anchor the popover to the right edge of the card so it
+ * stays in the viewport, and shrink the max-width. */
+@media (max-width: 720px) {
+  .card-help::after {
+    max-width: 240px;
+    right: -10px;
+    font-size: 11.5px;
+  }
+}
+
+/* Inside collapsed cards, the help button stays clickable; clicking the
+ * help button must NOT toggle collapse. The collapse handler already
+ * skips clicks on <button>, but to be safe we add `pointer-events:auto`
+ * here. */
+.card[data-collapsible] .card-header .card-help { z-index: 5; }

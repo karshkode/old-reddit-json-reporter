@@ -850,12 +850,51 @@
    *     bucketLabel: human-readable bucket size          ("1 hour", "6 hours", "1 day")
    *   }
    */
+  /* Find the smallest contiguous window covering `coverage` of the
+   * timestamps. Used for the "Auto" picker so a few stale stickies in
+   * a recent listing don't blow the x-axis out to 8 years. */
+  function computeAutoWindow(posts, coverage, minS, maxS) {
+    coverage = coverage == null ? 0.8 : coverage;
+    minS = minS == null ? 24 * 3600 : minS;
+    maxS = maxS == null ? 365 * 24 * 3600 : maxS;
+    const times = posts.map((p) => p.created_utc).filter(Boolean).sort((a, b) => a - b);
+    if (times.length < 4) return times.length ? { start: times[0], end: times[times.length - 1] } : null;
+    const target = Math.max(2, Math.floor(times.length * coverage));
+    let bestRange = Infinity, bestStart = times[0], bestEnd = times[times.length - 1];
+    for (let i = 0; i + target - 1 < times.length; i++) {
+      const r = times[i + target - 1] - times[i];
+      if (r < bestRange) { bestRange = r; bestStart = times[i]; bestEnd = times[i + target - 1]; }
+    }
+    const span = Math.max(minS, Math.min(maxS, bestEnd - bestStart));
+    return { start: bestEnd - span, end: bestEnd };
+  }
+
+  /* Map a window descriptor (auto / 1d / 3d / 7d / 30d / 90d / 1y / all)
+   * to a [start, end] interval given the data's natural range. */
+  function resolveWindow(posts, descriptor, dataMin, dataMax) {
+    if (descriptor == null || descriptor === "all") return { start: dataMin, end: dataMax };
+    if (descriptor === "auto") {
+      const auto = computeAutoWindow(posts);
+      if (!auto) return { start: dataMin, end: dataMax };
+      return { start: Math.max(dataMin, auto.start), end: Math.min(dataMax, auto.end) };
+    }
+    let seconds;
+    if (typeof descriptor === "number") seconds = descriptor;
+    else {
+      const m = String(descriptor).match(/^(\d+)([hdwmy])$/i);
+      if (!m) return { start: dataMin, end: dataMax };
+      const n = parseInt(m[1], 10), unit = m[2].toLowerCase();
+      seconds = n * (unit === "h" ? 3600 : unit === "d" ? 86400 : unit === "w" ? 86400 * 7 : unit === "m" ? 86400 * 30 : 86400 * 365);
+    }
+    return { start: Math.max(dataMin, dataMax - seconds), end: dataMax };
+  }
+
   Analysis.bucketByTimePerSub = function (posts, opts) {
     opts = opts || {};
     const targetBuckets = opts.targetBuckets || 32;
 
     if (!posts || !posts.length) {
-      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour" };
+      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour", windowLabel: "no data", droppedCount: 0, filteredCount: 0 };
     }
 
     let minT = Infinity, maxT = -Infinity;
@@ -865,8 +904,17 @@
       if (p.created_utc > maxT) maxT = p.created_utc;
     }
     if (!Number.isFinite(minT)) {
-      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour" };
+      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour", windowLabel: "no data", droppedCount: 0, filteredCount: 0 };
     }
+
+    /* Apply the time-window filter. */
+    const win = resolveWindow(posts, opts.window != null ? opts.window : "7d", minT, maxT);
+    const filteredPosts = posts.filter((p) => p.created_utc >= win.start && p.created_utc <= win.end);
+    if (!filteredPosts.length) {
+      return { keys: [], total: [], bySub: {}, subs: [], bucketS: 3600, bucketLabel: "1 hour", windowLabel: "empty window", droppedCount: posts.length, filteredCount: 0 };
+    }
+    minT = win.start;
+    maxT = win.end;
 
     const NICE = [
       [60,         "1 min"],
@@ -893,7 +941,7 @@
 
     const buckets = new Map();
     const subTotals = {};
-    for (const p of posts) {
+    for (const p of filteredPosts) {
       if (!p.created_utc) continue;
       const start = Math.floor(p.created_utc / bucketS) * bucketS;
       const sub = (p.subreddit || "").toLowerCase();
@@ -925,7 +973,19 @@
     });
     const keys = allKeys.map((t) => formatBucketLabel(new Date(t * 1000), bucketS));
 
-    return { keys, total, bySub, subs, bucketS, bucketLabel };
+    /* Human-readable window length for the chart subtitle. */
+    const winSpan = maxT - minT;
+    let windowLabel;
+    if (winSpan < 86400) windowLabel = Math.max(1, Math.round(winSpan / 3600)) + "h";
+    else if (winSpan < 86400 * 30) windowLabel = Math.max(1, Math.round(winSpan / 86400)) + "d";
+    else if (winSpan < 86400 * 365) windowLabel = Math.max(1, Math.round(winSpan / (86400 * 30))) + "mo";
+    else windowLabel = (winSpan / (86400 * 365)).toFixed(1) + "y";
+
+    return {
+      keys, total, bySub, subs, bucketS, bucketLabel, windowLabel,
+      filteredCount: filteredPosts.length,
+      droppedCount: posts.length - filteredPosts.length,
+    };
   };
 
   function formatBucketLabel(d, bucketS) {

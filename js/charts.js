@@ -127,6 +127,26 @@
         pointHoverRadius: 3,
         stack: "subs",
       }));
+    } else if (mode === "density") {
+      /* Each sub's series normalised to its own peak (0..1). Lets the
+       * user compare cadence shapes across subs without volume-bias —
+       * a sub posting 2/day and a sub posting 200/day both top out at
+       * 1.0 so they overlay properly. */
+      datasets = data.subs.map((sub, i) => {
+        const series = data.bySub[sub];
+        const peak = Math.max(1, ...series);
+        return {
+          label: "r/" + sub,
+          data: series.map((v) => v / peak),
+          borderColor: paletteAt(i),
+          backgroundColor: hexA(paletteAt(i), 0.06),
+          borderWidth: 2,
+          fill: false,
+          tension: 0.30,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        };
+      });
     } else {
       /* "lines" — per-sub overlay, no stacking */
       datasets = data.subs.map((sub, i) => ({
@@ -143,6 +163,7 @@
     }
 
     const stacked = mode === "stacked";
+    const isDensity = mode === "density";
     return render(id, {
       type: "line",
       data: { labels: keys, datasets },
@@ -155,7 +176,7 @@
           },
           tooltip: commonOpts().plugins.tooltip,
         },
-        scales: timelineScales(t, keys.length, stacked),
+        scales: timelineScales(t, keys.length, stacked, { density: isDensity }),
         interaction: { mode: "index", intersect: false },
       }),
     });
@@ -163,13 +184,19 @@
 
   /* Reduce x-axis tick clutter on dense or narrow charts and respect
    * stacking when requested. */
-  function timelineScales(t, n, stacked) {
+  function timelineScales(t, n, stacked, opts) {
     const maxTicks = n > 60 ? 8 : n > 30 ? 10 : 14;
     return {
       x: { ...commonOpts().scales.x,
            ticks: { ...commonOpts().scales.x.ticks, maxTicksLimit: maxTicks, autoSkip: true } },
-      y: { ...commonOpts().scales.y, beginAtZero: true, stacked: !!stacked,
-           ticks: { ...commonOpts().scales.y.ticks, precision: 0 } },
+      y: opts && opts.density ? {
+        ...commonOpts().scales.y, beginAtZero: true, max: 1,
+        ticks: { ...commonOpts().scales.y.ticks,
+                 callback: (v) => Math.round(v * 100) + "%" },
+      } : {
+        ...commonOpts().scales.y, beginAtZero: true, stacked: !!stacked,
+        ticks: { ...commonOpts().scales.y.ticks, precision: 0 },
+      },
     };
   }
 
