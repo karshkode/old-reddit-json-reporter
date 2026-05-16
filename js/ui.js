@@ -40,7 +40,32 @@
       { label: "Total upvotes", value: Util.fmtNum(agg.totalScore), sub: `avg ${Util.fmtNum(agg.avgScore)} · median ${Util.fmtNum(agg.medianScore)}` },
       { label: "Total comments", value: Util.fmtNum(agg.totalComments), sub: `avg ${Util.fmtNum(agg.avgComments)} per post` },
       { label: "Avg upvote ratio", value: agg.avgUpvoteRatio == null ? "—" : Util.fmtPct(agg.avgUpvoteRatio), sub: "Reddit-reported sentiment" },
-      { label: "Total awards", value: Util.fmtNum(agg.totalAwards), sub: "across loaded posts" },
+      (function () {
+        /* "Best posting hour" — replaces the dead Awards KPI (Reddit
+         * removed awards in 2023; the field is always 0). Picks the
+         * hour with the highest avg score across the loaded posts.
+         * `agg.avgScoreByHour` is in local time and `agg.byHour` tells
+         * us how many posts seeded each bucket so we can avoid
+         * picking a 1-post hour as "best". */
+        let best = -1, bestVal = -Infinity;
+        const overall = agg.avgScore || 0;
+        for (let h = 0; h < 24; h++) {
+          if ((agg.byHour && agg.byHour[h] >= 1) && agg.avgScoreByHour[h] > bestVal) {
+            bestVal = agg.avgScoreByHour[h];
+            best = h;
+          }
+        }
+        if (best < 0) {
+          return { label: "Best posting hour", value: "—", sub: "needs more posts" };
+        }
+        const lift = overall ? Math.round((bestVal - overall) / overall * 100) : 0;
+        const tz = (typeof Util.getTzLabel === "function") ? Util.getTzLabel() : "";
+        return {
+          label: "Best posting hour",
+          value: String(best).padStart(2, "0") + ":00" + (tz ? " " + tz : ""),
+          sub: lift > 0 ? `+${lift}% above avg score` : `picked from avg score per hour`,
+        };
+      })(),
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
     ];
     row.innerHTML = kpis.map((k) => `
@@ -150,7 +175,6 @@
             <dt>Score</dt><dd>${Util.fmtNum(post.score)} (${post.ups != null ? Util.fmtNum(post.ups) + " ups" : "—"})</dd>
             <dt>UV ratio</dt><dd>${post.upvote_ratio == null ? "—" : Util.fmtPct(post.upvote_ratio)}</dd>
             <dt>Comments</dt><dd>${Util.fmtNum(post.num_comments)}</dd>
-            <dt>Awards</dt><dd>${Util.fmtNum(post.total_awards)}</dd>
             <dt>Views</dt><dd>${post.view_count == null ? "<em>hidden</em>" : Util.fmtNum(post.view_count)}</dd>
             <dt>Domain</dt><dd>${Util.escapeHtml(post.domain || "")}</dd>
             <dt>URL</dt><dd><a href="${Util.escapeHtml(post.url || "")}" target="_blank" rel="noopener">${Util.escapeHtml((post.url || "").slice(0, 80))}</a></dd>
@@ -497,7 +521,6 @@
         <div class="kpi"><div class="label">Posts tracked</div><div class="value">${campaign.postIds.length}</div><div class="sub">${agg.posts.length} resolved</div></div>
         <div class="kpi"><div class="label">Total upvotes</div><div class="value">${Util.fmtNum(agg.totalScore)}</div><div class="sub">${campaign.goalScore ? "goal " + Util.fmtNum(campaign.goalScore) : "no goal set"}</div></div>
         <div class="kpi"><div class="label">Total comments</div><div class="value">${Util.fmtNum(agg.totalComments)}</div><div class="sub">${campaign.goalComments ? "goal " + Util.fmtNum(campaign.goalComments) : "no goal set"}</div></div>
-        <div class="kpi"><div class="label">Total awards</div><div class="value">${Util.fmtNum(agg.totalAwards)}</div><div class="sub">across resolved posts</div></div>
         <div class="kpi"><div class="label">Subreddits</div><div class="value">${agg.subs.length}</div><div class="sub" title="${Util.escapeHtml(subList)}">${Util.escapeHtml(subList)}</div></div>
         <div class="kpi"><div class="label">Views</div><div class="value">${agg.totalViews ? Util.fmtNum(agg.totalViews) : "—"}</div><div class="sub">${agg.totalViews ? "where reported" : "Reddit hides this"}</div></div>
       </div>
