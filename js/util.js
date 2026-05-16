@@ -16,10 +16,33 @@
     return (n * 100).toFixed(0) + "%";
   };
 
+  /* Returns the user's short timezone label, e.g. "EDT", "PST", "GMT+1".
+   * Falls back to numeric "UTC±H[:MM]" if Intl can't resolve a name. */
+  let _cachedTzLabel = null;
+  Util.getTzLabel = function () {
+    if (_cachedTzLabel) return _cachedTzLabel;
+    try {
+      const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(new Date());
+      const tz = parts.find((p) => p.type === "timeZoneName");
+      if (tz && tz.value) return (_cachedTzLabel = tz.value);
+    } catch (_) {}
+    const off = -new Date().getTimezoneOffset();
+    const sign = off >= 0 ? "+" : "-";
+    const h = Math.floor(Math.abs(off) / 60);
+    const m = Math.abs(off) % 60;
+    return (_cachedTzLabel = m ? "UTC" + sign + h + ":" + String(m).padStart(2, "0") : "UTC" + sign + h);
+  };
+
+  /* Local-time short formatter: YYYY-MM-DD HH:MM in the user's timezone. */
   Util.fmtDateShort = function (epochSeconds) {
     if (!epochSeconds) return "—";
     const d = new Date(epochSeconds * 1000);
-    return d.toISOString().slice(0, 16).replace("T", " ");
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return yyyy + "-" + mm + "-" + dd + " " + hh + ":" + mi;
   };
 
   Util.relTime = function (epochSeconds) {

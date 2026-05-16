@@ -20,7 +20,7 @@ gauging how a list of cross-posts is performing across multiple subreddits.
   - score-vs-comments engagement scatter
   - subreddit comparison bars
   - score distribution histogram
-  - average score by hour of day (best posting times)
+  - average score by hour of day (local time)
   - day-of-week activity
   - score & comment velocity for the most recent posts
   - title-sentiment doughnut

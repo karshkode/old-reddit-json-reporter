@@ -518,7 +518,7 @@
     }
 
     if (profile.bestHour >= 0) {
-      parts.push(`<p>Posts in this campaign cluster around <strong>${String(profile.bestHour).padStart(2, "0")}:00 UTC</strong> (best avg score). Consider matching timing on future cross-posts.</p>`);
+      parts.push(`<p>Posts in this campaign cluster around <strong>${String(profile.bestHour).padStart(2, "0")}:00 ${Util.escapeHtml(Util.getTzLabel())}</strong> (best avg score, in your local timezone). Consider matching timing on future cross-posts.</p>`);
     }
 
     if (comparison && comparison.insights && comparison.insights.length) {
