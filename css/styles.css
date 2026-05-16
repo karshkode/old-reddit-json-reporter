@@ -1566,3 +1566,22 @@ footer {
 @media (max-width: 720px) {
   #discover-card .discover-mode { width: 100%; justify-content: center; }
 }
+
+/* Stack mode + window pickers neatly above the timeline */
+#timeline-card .chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+#timeline-card .chart-controls .chart-mode { margin: 0; }
+#timeline-card .chart-window button {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  #timeline-card .chart-controls { gap: 6px; }
+  #timeline-card .chart-mode { font-size: 10px; }
+  #timeline-card .chart-mode button { padding: 5px 9px; font-size: 11px; }
+}

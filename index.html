@@ -110,10 +110,21 @@
             <h2>Posts over time</h2>
             <span class="hint" id="timeline-hint">Submissions per bucket · per subreddit</span>
           </header>
-          <div class="chart-mode" role="tablist" aria-label="Posts-over-time mode">
-            <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
-            <button type="button" data-mode="stacked" role="tab">Stacked</button>
-            <button type="button" data-mode="total" role="tab">Total</button>
+          <div class="chart-controls">
+            <div class="chart-mode" role="tablist" aria-label="Posts-over-time mode">
+              <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
+              <button type="button" data-mode="stacked" role="tab">Stacked</button>
+              <button type="button" data-mode="density" role="tab" title="Each sub normalised to its own peak — compare cadence shapes without volume-bias.">Density</button>
+              <button type="button" data-mode="total" role="tab">Total</button>
+            </div>
+            <div class="chart-mode chart-window" role="tablist" aria-label="Time window">
+              <button type="button" data-window="auto" class="active" role="tab" title="Smallest window covering 80% of posts">Auto</button>
+              <button type="button" data-window="7d" role="tab">7d</button>
+              <button type="button" data-window="30d" role="tab">30d</button>
+              <button type="button" data-window="90d" role="tab">90d</button>
+              <button type="button" data-window="1y" role="tab">1y</button>
+              <button type="button" data-window="all" role="tab">All</button>
+            </div>
           </div>
           <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
         </div>

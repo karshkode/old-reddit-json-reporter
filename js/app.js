@@ -27,7 +27,8 @@
     lastErrors: [],
     /* deep analysis caches */
     subProfiles: {},
-    timelineMode: "lines",  /* lines | stacked | total — Posts-over-time chart mode */
+    timelineMode: "lines",  /* lines | stacked | density | total */
+    timelineWindow: "auto",  /* auto | 7d | 30d | 90d | 1y | all */
     discoverStrict: true,    /* drop off-topic / generic subs in the discovery card */
     targetingFor: {
       ai: null,         // selected campaign id for the AI Insights playground
@@ -171,13 +172,15 @@
     UI.renderPostsTable(posts, state.sortKey, state.sortDir, openPostDetail);
 
     if (window.Chart) {
-      const timelineData = Analysis.bucketByTimePerSub(posts);
+      const timelineData = Analysis.bucketByTimePerSub(posts, { window: state.timelineWindow });
       Charts.timeline("chart-timeline", timelineData, { mode: state.timelineMode });
       const hintEl = document.getElementById("timeline-hint");
       if (hintEl) {
         const subsCount = timelineData.subs.length;
-        const modeLabel = state.timelineMode === "total" ? "Total · all subs combined" : state.timelineMode === "stacked" ? "Stacked area · per subreddit" : "Per subreddit · overlay";
-        hintEl.textContent = `${modeLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}`;
+        const modeLabel = state.timelineMode === "total" ? "Total" : state.timelineMode === "stacked" ? "Stacked area" : state.timelineMode === "density" ? "Density · per-sub peak normalised" : "Per subreddit · overlay";
+        const winLabel = state.timelineWindow === "auto" ? `auto (${timelineData.windowLabel})` : state.timelineWindow === "all" ? "all data" : `last ${state.timelineWindow}`;
+        const droppedNote = timelineData.droppedCount ? ` · ${timelineData.droppedCount} older post${timelineData.droppedCount === 1 ? "" : "s"} hidden` : "";
+        hintEl.textContent = `${modeLabel} · ${winLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}${droppedNote}`;
       }
       Charts.scatter("chart-scatter", posts);
       Charts.subCompare("chart-sub-compare", agg);
@@ -750,13 +753,27 @@
       tab.addEventListener("click", () => UI.activateTab(tab.dataset.tab));
     });
 
-    /* Posts-over-time mode toggle */
-    document.querySelectorAll("#timeline-card .chart-mode button").forEach((btn) => {
+    /* Posts-over-time mode toggle (Per sub / Stacked / Density / Total) */
+    document.querySelectorAll("#timeline-card .chart-mode:not(.chart-window) button").forEach((btn) => {
       btn.addEventListener("click", () => {
         const m = btn.dataset.mode;
         if (!m || m === state.timelineMode) return;
         state.timelineMode = m;
-        document.querySelectorAll("#timeline-card .chart-mode button").forEach((b) => {
+        document.querySelectorAll("#timeline-card .chart-mode:not(.chart-window) button").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+        rerenderAll();
+      });
+    });
+
+    /* Posts-over-time window picker (Auto / 7d / 30d / 90d / 1y / All) */
+    document.querySelectorAll("#timeline-card .chart-window button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const w = btn.dataset.window;
+        if (!w || w === state.timelineWindow) return;
+        state.timelineWindow = w;
+        document.querySelectorAll("#timeline-card .chart-window button").forEach((b) => {
           b.classList.toggle("active", b === btn);
           b.setAttribute("aria-selected", b === btn ? "true" : "false");
         });
