@@ -123,11 +123,25 @@
 
   async function tryTransport(transport, redditUrl, attempt) {
     const target = transport.build(redditUrl);
-    const res = await fetch(target, {
-      method: "GET",
-      credentials: "omit",
-      headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.5" },
-    });
+    /* 8s hard timeout per proxy attempt — without this a slow proxy can
+     * block the entire fallback chain. AbortController is widely supported
+     * including iOS Safari 12.1+. */
+    const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    const tid = controller ? setTimeout(() => controller.abort(), 8000) : null;
+    let res;
+    try {
+      res = await fetch(target, {
+        method: "GET",
+        credentials: "omit",
+        headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.5" },
+        signal: controller && controller.signal,
+      });
+    } catch (e) {
+      if (e && e.name === "AbortError") throw new Error("timeout via " + transport.name);
+      throw new Error((e && e.message ? e.message : String(e)) + " via " + transport.name);
+    } finally {
+      if (tid) clearTimeout(tid);
+    }
     if (res.status === 429) {
       const retry = parseInt(res.headers.get("Retry-After") || "0", 10);
       await Util.sleep(Math.max(800 * Math.pow(2, attempt), retry * 1000));
@@ -146,8 +160,22 @@
     } catch (e) {
       throw new Error("non-JSON response via " + transport.name);
     }
-    if (data && typeof data === "object" && !Array.isArray(data) && data.error && (data.error === 403 || data.error === 404 || data.error === 429)) {
-      throw new Error("Reddit " + data.error + " via " + transport.name + (data.message ? ": " + data.message : ""));
+    /* Reject "proxy error" JSON shapes — corsproxy.io now returns
+     *   {"error":"Server-side requests are not allowed on your plan…"}
+     * which our old check accepted because `error` was a string, not
+     * the Reddit numeric error code. Reddit error responses are shaped
+     *   {"error": 403, "message": "Forbidden"}
+     * and never carry both `error` AND `data`/`kind`. */
+    if (data && typeof data === "object" && !Array.isArray(data) && data.error != null) {
+      const isReddit404Etc = data.error === 403 || data.error === 404 || data.error === 429;
+      const isProxyJunk = !data.data && !data.kind;
+      if (isReddit404Etc) {
+        throw new Error("Reddit " + data.error + " via " + transport.name + (data.message ? ": " + data.message : ""));
+      }
+      if (isProxyJunk) {
+        const msg = typeof data.error === "string" ? data.error.slice(0, 80) : "error " + data.error;
+        throw new Error("proxy error via " + transport.name + ": " + msg);
+      }
     }
     return { data, transport: transport.name };
   }
@@ -253,21 +281,44 @@
   /* Bulk fetch lightweight post info by IDs using the by_id endpoint.
    * Reddit allows up to 100 IDs per call.
    */
-  Reddit.fetchPostsByIds = async function (ids) {
+  Reddit.fetchPostsByIds = async function (ids, opts) {
+    opts = opts || {};
     const cleaned = Util.uniqBy(
       (ids || []).map((id) => String(id).replace(/^t3_/, "").trim()).filter(Boolean),
       (x) => x
     );
     if (!cleaned.length) return [];
-    const results = [];
-    for (let i = 0; i < cleaned.length; i += 100) {
-      const batch = cleaned.slice(i, i + 100).map((id) => "t3_" + id);
-      const json = await fetchJson(`/by_id/${batch.join(",")}.json`, {});
-      const children = (json && json.data && json.data.children) || [];
-      for (const c of children) {
-        if (c && c.kind === "t3" && c.data) results.push(normalizePost(c.data));
+
+    /* Preferred path: batch via /by_id (one request per up-to-100 IDs). */
+    try {
+      const results = [];
+      for (let i = 0; i < cleaned.length; i += 100) {
+        const batch = cleaned.slice(i, i + 100).map((id) => "t3_" + id);
+        const json = await fetchJson(`/by_id/${batch.join(",")}.json`, {});
+        const children = (json && json.data && json.data.children) || [];
+        for (const c of children) {
+          if (c && c.kind === "t3" && c.data) results.push(normalizePost(c.data));
+        }
       }
+      return results;
+    } catch (batchErr) {
+      console.warn("[fetchPostsByIds] /by_id batch failed, falling back to per-ID /comments:", batchErr && batchErr.message);
     }
+
+    /* Fallback: fetch each ID individually via /comments/<id>.json with
+     * concurrency 3. The proxy may have rate-limited the batch URL but
+     * cached or service individual lookups. We accept partial success —
+     * any IDs that still fail simply aren't included. */
+    const results = [];
+    await Util.pmap(cleaned, 3, async (id) => {
+      try {
+        const json = await fetchJson(`/comments/${id}.json`, { limit: 1 });
+        const postData = Array.isArray(json) && json[0] && json[0].data && json[0].data.children && json[0].data.children[0] && json[0].data.children[0].data;
+        if (postData) results.push(normalizePost(postData));
+      } catch (e) {
+        console.warn("[fetchPostsByIds] /comments/" + id + " failed:", e && e.message);
+      }
+    });
     return results;
   };
 

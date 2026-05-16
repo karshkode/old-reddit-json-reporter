@@ -269,7 +269,16 @@
     }
 
     rerenderAll();
-    refreshAllCampaignSummaries();
+    /* The local-first campaign aggregator can resolve campaign IDs from
+     * the just-fetched subreddit posts without any extra network calls.
+     * For IDs that aren't covered, give the proxy a brief breather (1.2s)
+     * before kicking off the network pass — back-to-back bursts are what
+     * trip codetabs's rate limiter. */
+    setTimeout(() => {
+      refreshAllCampaignSummaries().catch((err) => {
+        console.warn("[refreshData] campaign refresh failed:", err && err.message);
+      });
+    }, 1200);
   }
 
   function describeTransport() {
@@ -313,44 +322,100 @@
     }
     const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
     const summaries = {};
-    /* Each campaign is one /by_id batch (≤100 IDs). Keep concurrency modest
-     * so the proxy isn't slammed while the subreddit fetcher is also active. */
-    await Util.pmap(list, 2, async (c) => {
+
+    /* First pass: instant render using only the dashboard's already-loaded
+     * subreddit posts. No network. Lets the user see partial totals
+     * immediately even when the proxy is slow. */
+    for (const c of list) {
       try {
-        summaries[c.id] = await Campaigns.fetchAggregated(c);
-      } catch (err) {
-        console.warn(`[campaigns] ${c.name} fetch failed:`, err.message);
+        summaries[c.id] = await Campaigns.fetchAggregated(c, { fromPosts: state.posts, skipNetwork: true });
+      } catch (_) {
         summaries[c.id] = { totalScore: 0, totalComments: 0, posts: [], subs: [], missing: c.postIds };
       }
+    }
+    state.campaignSummaries = summaries;
+    UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
+    populateTargetingSelectors();
+
+    /* Second pass: fill in the rest from the network. Concurrency 2 keeps
+     * the proxy from being overwhelmed while the subreddit batch may have
+     * just finished. Local-first means most IDs already resolve here so
+     * this often does zero or one network calls per campaign. */
+    await Util.pmap(list, 2, async (c) => {
+      try {
+        const agg = await Campaigns.fetchAggregated(c, { fromPosts: state.posts });
+        summaries[c.id] = agg;
+      } catch (err) {
+        console.warn(`[campaigns] ${c.name} fetch failed:`, err && err.message);
+        /* Keep the local-only result we already rendered above. */
+      }
     });
-    const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
-    console.log(`[campaigns] refreshed ${list.length} in ${dur}ms`);
     state.campaignSummaries = summaries;
     UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
     populateTargetingSelectors();
     refreshTargeting("ai");
     refreshTargeting("campaigns");
+
+    const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
+    console.log(`[campaigns] refreshed ${list.length} in ${dur}ms`);
   }
 
   async function openCampaign(campaign) {
     const card = document.getElementById("campaign-detail");
     const body = document.getElementById("campaign-detail-body");
     card.hidden = false;
-    body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
     state.openCampaignId = campaign.id;
+
+    /* Instant first paint using whatever we already have locally. */
+    let localAgg = null;
     try {
-      const agg = await Campaigns.fetchAggregated(campaign);
+      localAgg = await Campaigns.fetchAggregated(campaign, { fromPosts: state.posts, skipNetwork: true });
+      const deepLocal = computeCampaignDeep(campaign, localAgg);
+      UI.renderCampaignDetail(campaign, localAgg, deepLocal);
+      const inlineLocal = document.getElementById("campaign-detail-targets");
+      if (inlineLocal) UI.renderTargeting(campaign, deepLocal ? deepLocal.targets : [], inlineLocal, { heading: false });
+    } catch (_) {
+      body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
+    }
+
+    /* Network pass: fetches anything we couldn't satisfy locally. */
+    try {
+      const agg = await Campaigns.fetchAggregated(campaign, { fromPosts: state.posts });
       state.campaignSummaries[campaign.id] = agg;
 
       const deep = computeCampaignDeep(campaign, agg);
       UI.renderCampaignDetail(campaign, agg, deep);
       UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
 
-      /* Render targeting recommendations *inside* the deep-analysis card. */
       const inlineEl = document.getElementById("campaign-detail-targets");
       if (inlineEl) UI.renderTargeting(campaign, deep ? deep.targets : [], inlineEl, { heading: false });
+
+      console.log(`[openCampaign] ${campaign.name}: local=${agg.resolvedFromLocal} network=${agg.resolvedFromNetwork} missing=${agg.missing.length}`);
     } catch (err) {
-      body.innerHTML = `<div class="empty">Failed to fetch campaign data: ${Util.escapeHtml(err.message)}</div>`;
+      const msg = (err && err.message) || String(err);
+      console.warn(`[openCampaign] ${campaign.name} network refresh failed:`, msg);
+      /* Keep the local-only render if we have it. Otherwise show retry. */
+      if (localAgg && localAgg.posts.length) {
+        Util.toast(`Couldn't refresh "${campaign.name}" from Reddit (${msg.slice(0, 60)}). Showing locally-resolved posts.`, "error");
+      } else {
+        body.innerHTML = `
+          <div class="empty">
+            <div>Couldn't fetch campaign data: <strong>${Util.escapeHtml(msg)}</strong></div>
+            <div class="hint" style="margin-top:6px">All public CORS proxies failed for this batch. Try switching <strong>Data source</strong> in the topbar, or wait a moment for the rate limit to clear.</div>
+            <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+              <button class="btn primary small" id="campaign-retry-btn">Retry</button>
+              <button class="btn small" id="campaign-retry-clear-btn">Clear cache &amp; retry</button>
+            </div>
+          </div>
+        `;
+        const retry = document.getElementById("campaign-retry-btn");
+        if (retry) retry.addEventListener("click", () => openCampaign(campaign));
+        const retryClear = document.getElementById("campaign-retry-clear-btn");
+        if (retryClear) retryClear.addEventListener("click", () => {
+          Reddit.clearCache();
+          openCampaign(campaign);
+        });
+      }
     }
   }
 
