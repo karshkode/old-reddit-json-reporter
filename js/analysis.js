@@ -409,6 +409,64 @@
   };
 
   /* ============================================================
+     7b. TIMING & ENGAGEMENT TREND HELPERS
+     ============================================================ */
+
+  /* Cosine similarity between two 24-element hour-of-day distributions.
+   * 1.0 = identical posting rhythm, 0 = completely disjoint hours. */
+  Analysis.timeAlignment = function (a, b) {
+    if (!a || !b) return 0;
+    let dot = 0, na = 0, nb = 0;
+    for (let h = 0; h < 24; h++) {
+      const ah = a[h] || 0, bh = b[h] || 0;
+      dot += ah * bh;
+      na += ah * ah;
+      nb += bh * bh;
+    }
+    if (!na || !nb) return 0;
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  };
+
+  /* Day-of-week alignment, same idea. */
+  Analysis.dowAlignment = function (a, b) {
+    if (!a || !b) return 0;
+    let dot = 0, na = 0, nb = 0;
+    for (let d = 0; d < 7; d++) {
+      const ad = a[d] || 0, bd = b[d] || 0;
+      dot += ad * bd;
+      na += ad * ad;
+      nb += bd * bd;
+    }
+    if (!na || !nb) return 0;
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  };
+
+  /* Engagement-trend over time: split posts in half by created_utc and
+   * compare the older half's avg score to the newer half's. Returns
+   * { direction: 'rising'/'flat'/'declining', slope, recentAvg, olderAvg }.
+   * 'slope' is normalised so a campaign-quality reading is robust to
+   * absolute score differences between subs. */
+  Analysis.engagementTrend = function (posts) {
+    if (!posts || posts.length < 4) {
+      return { direction: "flat", slope: 0, recentAvg: 0, olderAvg: 0 };
+    }
+    const sorted = posts.slice().filter((p) => p.created_utc).sort((a, b) => a.created_utc - b.created_utc);
+    if (sorted.length < 4) return { direction: "flat", slope: 0, recentAvg: 0, olderAvg: 0 };
+    const half = Math.floor(sorted.length / 2);
+    const older = sorted.slice(0, half);
+    const recent = sorted.slice(half);
+    const olderAvg = Util.average(older.map((p) => p.score || 0));
+    const recentAvg = Util.average(recent.map((p) => p.score || 0));
+    const baseline = Math.max(1, olderAvg);
+    const slope = (recentAvg - olderAvg) / baseline;
+    let direction;
+    if (slope > 0.20) direction = "rising";
+    else if (slope < -0.20) direction = "declining";
+    else direction = "flat";
+    return { direction, slope, recentAvg, olderAvg };
+  };
+
+  /* ============================================================
      8. TARGETING RECOMMENDER
      ------------------------------------------------------------
      Given a campaign profile and a map of subreddit profiles,
@@ -449,12 +507,26 @@
       else if (sp.style === "mixed" || campaignProfile.style === "mixed") style = 0.7;
       else style = 0.3;
 
+      /* New trend-aware dimensions */
+      const hourAlign = Analysis.timeAlignment(campaignProfile.byHour, sp.byHour);
+      const dowAlign = Analysis.dowAlignment(campaignProfile.byDow, sp.byDow);
+      const trend = sp._trend || (sp._trend = (function () {
+        /* The profile() builder doesn't have access to raw posts; we attach
+         * a placeholder here. The richer `recommendTargetsWithTrend` path
+         * sets _trend up front. */
+        return { direction: "flat", slope: 0 };
+      })());
+      const trendBoost = trend.direction === "rising" ? 1 : trend.direction === "flat" ? 0.5 : 0;
+
       const composite = clamp01(
-        0.40 * Math.min(1, themeJaccard * 4) +
-        0.20 * sentMatch +
-        0.18 * reception +
-        0.12 * activity +
-        0.10 * style
+        0.30 * Math.min(1, themeJaccard * 4) +
+        0.18 * sentMatch +
+        0.15 * reception +
+        0.08 * activity +
+        0.08 * style +
+        0.13 * hourAlign +
+        0.04 * dowAlign +
+        0.04 * trendBoost
       );
       const score = Math.round(composite * 100);
 
@@ -468,7 +540,10 @@
       reasons.push(`audience reception ${labelReception(reception)} (${(reception * 100).toFixed(0)}% upvote ratio)`);
       reasons.push(`sentiment ${describeSentDelta(camSent, sp.sentiment.average)}`);
       reasons.push(`engagement style: <strong>${sp.style}</strong> vs campaign <strong>${campaignProfile.style}</strong>`);
-      if (sp.bestHour >= 0) reasons.push(`peak hour <code>${String(sp.bestHour).padStart(2, "0")}:00 UTC</code>`);
+      reasons.push(`posting-time fit: <strong>${(hourAlign * 100).toFixed(0)}%</strong> hour-of-day overlap`);
+      if (trend.direction === "rising") reasons.push(`<span class="badge good">engagement trending up</span> (recent avg ${Util.fmtNum(trend.recentAvg)} vs older ${Util.fmtNum(trend.olderAvg)})`);
+      else if (trend.direction === "declining") reasons.push(`<span class="badge bad">engagement trending down</span> (recent avg ${Util.fmtNum(trend.recentAvg)} vs older ${Util.fmtNum(trend.olderAvg)})`);
+      if (sp.bestHour >= 0) reasons.push(`sub's peak hour <code>${String(sp.bestHour).padStart(2, "0")}:00 UTC</code>`);
       if (alreadyTargeted) reasons.unshift(`<span class="badge info">already targeted</span>`);
 
       return {
@@ -480,6 +555,9 @@
         reception,
         activity,
         styleMatch: style,
+        hourAlign,
+        dowAlign,
+        trend,
         alreadyTargeted,
         sharedKeys,
         sharedPhrases,
@@ -793,6 +871,104 @@
      Constants exposed for the UI layer
      ============================================================ */
   Analysis.DAY_NAMES = DAY_NAMES;
+
+  /* ============================================================
+     14. CANDIDATE DISCOVERY
+     ------------------------------------------------------------
+     Score brand-new subreddits (returned from /subreddits/search)
+     against a campaign profile, using only the candidate's
+     description, name and basic stats — no need to fetch its
+     posts up-front. Posts can be loaded later for deeper scoring
+     once the user adds the candidate to the dashboard.
+     ============================================================ */
+
+  Analysis.scoreCandidate = function (candidate, campaignProfile) {
+    if (!candidate || !campaignProfile) return null;
+    const text = ((candidate.title || "") + " " +
+                  (candidate.public_description || "") + " " +
+                  (candidate.display_name || "")).toLowerCase();
+
+    const camKeys = (campaignProfile.keywords || []).slice(0, 14).map((k) => k.word);
+    const camPhrases = (campaignProfile.bigrams || []).slice(0, 8).map((b) => b.phrase);
+
+    let kwHits = 0, phHits = 0;
+    const matchedKeys = [];
+    const matchedPhrases = [];
+    for (const k of camKeys) {
+      if (text.indexOf(k) >= 0) { kwHits++; matchedKeys.push(k); }
+    }
+    for (const p of camPhrases) {
+      if (text.indexOf(p) >= 0) { phHits++; matchedPhrases.push(p); }
+    }
+    const themeMatch = clamp01((kwHits / 6) + (phHits / 3) * 0.5);
+
+    const subs = candidate.subscribers || 0;
+    const popularity = clamp01(Math.log10(subs + 10) / 6);
+
+    const ratio = subs > 0 ? (candidate.active_user_count || 0) / subs : 0;
+    const engagement = clamp01(ratio * 1000);
+
+    const safety = candidate.over18 ? 0 : 1;
+
+    const composite = clamp01(
+      0.55 * themeMatch +
+      0.18 * popularity +
+      0.20 * engagement +
+      0.07 * safety
+    );
+    const score = Math.round(composite * 100);
+
+    const reasons = [];
+    if (matchedPhrases.length) reasons.push(`description matches <em>${matchedPhrases.map(htmlSafe).join(", ")}</em>`);
+    if (matchedKeys.length) reasons.push(`description keyword overlap <em>${matchedKeys.slice(0, 6).map(htmlSafe).join(", ")}</em>`);
+    if (!matchedPhrases.length && !matchedKeys.length) reasons.push(`<span class="meta">no direct keyword match — ranked on size + activity only</span>`);
+    reasons.push(`<strong>${Util.fmtNum(subs)}</strong> subscribers`);
+    if (candidate.active_user_count) {
+      const pct = (ratio * 100).toFixed(2);
+      reasons.push(`<strong>${Util.fmtNum(candidate.active_user_count)}</strong> active right now (${pct}% of subs)`);
+    }
+    return {
+      score, composite,
+      themeMatch, popularity, engagement,
+      matchedKeys, matchedPhrases,
+      reasons,
+    };
+  };
+
+  Analysis.discoverCandidates = function (rawSearchResults, campaignProfile, opts) {
+    opts = opts || {};
+    const exclude = new Set(((opts.excludeNames || []).map((s) => String(s).toLowerCase())));
+    const minSubs = opts.minSubs || 100;
+    const seen = new Set();
+    const out = [];
+    for (const c of (rawSearchResults || [])) {
+      if (!c || !c.display_name) continue;
+      const name = String(c.display_name).toLowerCase();
+      if (seen.has(name)) continue;
+      seen.add(name);
+      if (exclude.has(name)) continue;
+      if (c.over18) continue;
+      if ((c.subscribers || 0) < minSubs) continue;
+      const scored = Analysis.scoreCandidate(c, campaignProfile);
+      if (!scored) continue;
+      out.push({
+        name: c.display_name,
+        canonical: name,
+        candidate: c,
+        ...scored,
+      });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, opts.limit || 12);
+  };
+
+  /* Build a search query from a campaign's top phrases / keywords. */
+  Analysis.buildDiscoveryQuery = function (campaignProfile) {
+    const phrases = (campaignProfile.bigrams || []).slice(0, 2).map((b) => `"${b.phrase}"`);
+    const words = (campaignProfile.keywords || []).slice(0, 4).map((k) => k.word);
+    const parts = [...phrases, ...words.slice(0, 4 - phrases.length)];
+    return parts.join(" OR ");
+  };
 
   window.Analysis = Analysis;
 })();

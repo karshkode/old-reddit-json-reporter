@@ -334,6 +334,48 @@
     }).join("");
   };
 
+  /* Render new-subreddit candidates discovered via Reddit search. */
+  UI.renderDiscoveryCandidates = function (candidates, container, opts) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    opts = opts || {};
+    if (!candidates || !candidates.length) {
+      el.innerHTML = '<div class="empty">No candidate subreddits found. Try opening a campaign with richer post content first.</div>';
+      return;
+    }
+    el.innerHTML = candidates.map((c, i) => {
+      const cls = c.score >= 70 ? "good" : c.score >= 50 ? "info" : c.score >= 30 ? "warn" : "bad";
+      const reasons = c.reasons.map((r) => `<li>${r}</li>`).join("");
+      const desc = c.candidate.public_description ? `<div class="cand-desc">${Util.escapeHtml(c.candidate.public_description.slice(0, 220))}${c.candidate.public_description.length > 220 ? "…" : ""}</div>` : "";
+      const meters = `
+        <div class="meter">
+          ${meterRow("Theme", c.themeMatch, "var(--accent)")}
+          ${meterRow("Popularity", c.popularity, "var(--info)")}
+          ${meterRow("Activity", c.engagement, "var(--good)")}
+        </div>
+      `;
+      return `
+        <div class="target-row candidate" data-name="${Util.escapeHtml(c.canonical)}">
+          <div class="target-head">
+            <div>
+              <span class="rank">#${i + 1}</span>
+              <strong>r/${Util.escapeHtml(c.name)}</strong>
+              <span class="badge ${cls}">fit ${c.score}</span>
+            </div>
+            <div class="target-meta">${Util.fmtNum(c.candidate.subscribers)} subs${c.candidate.active_user_count ? ` · ${Util.fmtNum(c.candidate.active_user_count)} online` : ""}</div>
+          </div>
+          ${desc}
+          ${meters}
+          <ul class="target-reasons">${reasons}</ul>
+          <div class="cand-actions">
+            <button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>
+            <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
+          </div>
+        </div>
+      `;
+    }).join("");
+  };
+
   function meterRow(label, value, color) {
     const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
     return `<div class="meter-row"><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
@@ -440,6 +482,7 @@
     const themesHtml = (profile.themes || []).slice(0, 8).map((t) => `<span class="kw">${t.kind === "phrase" ? `"${Util.escapeHtml(t.term)}"` : Util.escapeHtml(t.term)}<span class="count">${t.count}</span></span>`).join("");
 
     const perSubRows = perSub && perSub.length ? `
+      <div class="table-wrap mini">
       <table class="mini-table">
         <thead><tr><th>Subreddit</th><th class="num">Posts</th><th class="num">Score</th><th class="num">Comments</th><th class="num">Avg score</th><th class="num">UV %</th></tr></thead>
         <tbody>
@@ -455,6 +498,7 @@
           `).join("")}
         </tbody>
       </table>
+      </div>
     ` : "";
 
     const compHtml = comparison ? `

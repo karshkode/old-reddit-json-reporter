@@ -367,6 +367,56 @@
   Reddit.normalizePost = normalizePost;
 
   /* ============================================================
+   * SUBREDDIT SEARCH & ABOUT
+   * ----------------------------------------------------------
+   * Used by the correlation engine to discover *new* candidate
+   * subreddits to recommend, beyond just the ones already loaded
+   * in the dashboard.
+   * ============================================================ */
+
+  Reddit.searchSubreddits = async function (query, opts) {
+    opts = opts || {};
+    const limit = Math.min(opts.limit || 25, 100);
+    const json = await fetchJson(`/subreddits/search.json`, {
+      q: query,
+      limit: limit,
+      sort: opts.sort || "relevance",
+      include_over_18: "off",
+    });
+    const children = (json && json.data && json.data.children) || [];
+    return children
+      .filter((c) => c && c.kind === "t5" && c.data)
+      .map((c) => ({
+        display_name: c.data.display_name,
+        name: c.data.name,
+        title: c.data.title || "",
+        public_description: c.data.public_description || c.data.description || "",
+        subscribers: c.data.subscribers || 0,
+        active_user_count: c.data.active_user_count || 0,
+        over18: !!c.data.over18,
+        url: c.data.url,
+        icon_img: c.data.icon_img || "",
+        created_utc: c.data.created_utc || 0,
+      }));
+  };
+
+  Reddit.fetchSubredditAbout = async function (name) {
+    const sub = Util.normalizeSubName(name);
+    const json = await fetchJson(`/r/${sub}/about.json`, {});
+    const d = json && json.data;
+    if (!d) return null;
+    return {
+      display_name: d.display_name,
+      title: d.title,
+      public_description: d.public_description || d.description || "",
+      subscribers: d.subscribers || 0,
+      active_user_count: d.active_user_count || 0,
+      over18: !!d.over18,
+      created_utc: d.created_utc || 0,
+    };
+  };
+
+  /* ============================================================
    * SHARE URL RESOLUTION
    * ----------------------------------------------------------
    * Reddit mobile-share links look like
