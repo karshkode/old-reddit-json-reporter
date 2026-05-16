@@ -28,6 +28,7 @@
     /* deep analysis caches */
     subProfiles: {},
     timelineMode: "lines",  /* lines | stacked | total — Posts-over-time chart mode */
+    discoverStrict: true,    /* drop off-topic / generic subs in the discovery card */
     targetingFor: {
       ai: null,         // selected campaign id for the AI Insights playground
       campaigns: null,  // selected campaign id for the Campaigns tab card
@@ -763,6 +764,19 @@
       });
     });
 
+    /* Discovery strictness toggle */
+    document.querySelectorAll("#discover-card .discover-mode button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const s = btn.dataset.strict === "1";
+        if (s === state.discoverStrict) return;
+        state.discoverStrict = s;
+        document.querySelectorAll("#discover-card .discover-mode button").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+      });
+    });
+
     document.querySelectorAll("#posts-table thead th.sortable").forEach((th) => {
       th.addEventListener("click", () => {
         const k = th.dataset.sort;
@@ -1204,17 +1218,23 @@
             limit: 20,
             queryHitsByName,
             postHitsByName,
+            strict: state.discoverStrict !== false,
           }
         );
 
         const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
-        console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded after scoring (${dur}ms)`);
+        const f = result.filtered || { offtopic: 0, weak: 0, mega: 0 };
+        const droppedTotal = f.offtopic + f.weak + f.mega;
+        console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · ${droppedTotal} dropped by ${result.strict ? "strict" : "loose"} filter (offtopic=${f.offtopic} weak=${f.weak} mega=${f.mega}) (${dur}ms)`);
 
         UI.renderDiscoveryCandidates(result, discoverResults);
 
+        const filterTail = result.strict && droppedTotal
+          ? ` · filtered out ${droppedTotal} off-topic / generic sub${droppedTotal === 1 ? "" : "s"} (toggle to All to see them)`
+          : "";
         const status = result.candidates.length
-          ? `Found ${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} matching this campaign — plus ${result.alreadyLoaded.length} of your existing subs that also rank highly.`
-          : `Scanned ${result.totalScanned} sub${result.totalScanned === 1 ? "" : "s"} — every match is already in your dashboard. Try removing a few subs from your filter chips and re-running, or run Discover on a campaign with broader themes.`;
+          ? `Found ${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} matching this campaign — plus ${result.alreadyLoaded.length} of your existing subs that also rank highly${filterTail}.`
+          : `Scanned ${result.totalScanned} sub${result.totalScanned === 1 ? "" : "s"} — every topical match is already in your dashboard${filterTail}. Try toggling to All, removing a filter chip, or running Discover on a campaign with broader themes.`;
         setDiscoverStatus(status, result.candidates.length ? "ok" : "warn");
       } catch (err) {
         console.warn("[discover] failed:", err && err.message);
