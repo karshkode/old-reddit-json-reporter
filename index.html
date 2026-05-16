@@ -90,6 +90,30 @@
       <select id="transport-select-mobile"></select>
       <button id="clear-cache-btn-mobile" class="btn small ghost" type="button">Clear cache</button>
     </div>
+
+    <div class="control-group sync-group">
+      <label class="group-label">Sync session</label>
+      <span class="hint">Move campaigns + subs + prefs to another device. No server, no account — the data lives in the link or file.</span>
+      <div class="sync-actions">
+        <button id="sync-copy-link" type="button" class="btn small primary">📋 Copy share link</button>
+        <button id="sync-export-json" type="button" class="btn small">⤓ Download JSON</button>
+        <button id="sync-show-import" type="button" class="btn small ghost">⤴ Import…</button>
+      </div>
+      <div id="sync-import-panel" hidden>
+        <textarea id="sync-import-text" rows="3" placeholder="Paste a share link OR a session JSON blob here…"></textarea>
+        <div class="sync-import-actions">
+          <label class="btn small ghost" for="sync-import-file">⤓ Pick file</label>
+          <input id="sync-import-file" type="file" accept="application/json,.json" hidden />
+          <span class="spacer"></span>
+          <label class="sync-merge-label" title="Merge keeps existing campaigns + adds new ones. Replace wipes current state first.">
+            <input id="sync-import-merge" type="checkbox" checked /> Merge
+          </label>
+          <button id="sync-import-apply" type="button" class="btn small primary">Apply</button>
+        </div>
+        <div id="sync-import-status" class="meta" hidden></div>
+      </div>
+      <div id="sync-status" class="meta"></div>
+    </div>
   </section>
 
   <main>
@@ -355,6 +379,7 @@
   </footer>
 
   <script src="./js/util.js"></script>
+  <script src="./js/sync.js"></script>
   <script src="./js/reddit.js"></script>
   <script src="./js/seeds.js"></script>
   <script src="./js/analysis.js"></script>
