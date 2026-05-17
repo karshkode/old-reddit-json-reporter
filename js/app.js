@@ -1512,45 +1512,116 @@ const crossPosts = Analysis.detectCrossPosts(posts);
       refreshAllCampaignSummaries();
     });
 
-    /* "+ Make campaign" buttons inside the cross-posts card.
-     * Each button carries data-cp-index referring to state.crossPosts.
-     * Clicking it: derives a default name from the group's title or URL,
-     * collects the post IDs, calls Campaigns.add, switches to the
-     * Campaigns tab, and opens the new campaign in the detail panel. */
+    /* Cross-posts card delegated handlers:
+     *  - toggle-crosspost-posts          -> reveal/hide per-post list
+     *  - make-campaign-from-crosspost    -> show inline goals form
+     *  - cancel-make-campaign            -> dismiss the inline form
+     *  - submit on the form              -> save with goals, switch tabs
+     * Each row carries data-cp-index pointing into state.crossPosts so
+     * we can resolve back to the original group regardless of filters
+     * or pagination. */
     const crosspostsEl = document.getElementById("crossposts");
     if (crosspostsEl) {
+      function getRowGroup(rowEl) {
+        if (!rowEl) return null;
+        const idx = parseInt(rowEl.dataset.cpIndex || "-1", 10);
+        return (state.crossPosts && state.crossPosts[idx]) || null;
+      }
+
       crosspostsEl.addEventListener("click", (e) => {
-        const btn = e.target && e.target.closest && e.target.closest('[data-action="make-campaign-from-crosspost"]');
-        if (!btn) return;
+        /* 1. Show / hide the per-post list for a group. */
+        const toggleBtn = e.target.closest && e.target.closest('[data-action="toggle-crosspost-posts"]');
+        if (toggleBtn) {
+          e.preventDefault();
+          const row = toggleBtn.closest(".crosspost-row");
+          if (!row) return;
+          const isExpanded = row.classList.toggle("expanded");
+          toggleBtn.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+          const list = row.querySelector(".crosspost-posts");
+          if (list) list.hidden = !isExpanded;
+          return;
+        }
+
+        /* 2. + Make campaign -> open inline goals form on this row. */
+        const makeBtn = e.target.closest && e.target.closest('[data-action="make-campaign-from-crosspost"]');
+        if (makeBtn) {
+          e.preventDefault();
+          const row = makeBtn.closest(".crosspost-row");
+          const group = getRowGroup(row);
+          if (!group) {
+            Util.toast("Cross-post data not available — try refreshing.", "error");
+            return;
+          }
+          /* Close any other open form so only one is in-flight at a time. */
+          crosspostsEl.querySelectorAll(".crosspost-row.editing").forEach((r) => {
+            r.classList.remove("editing");
+            UI.dismissCrossPostMakeCampaignForm(r);
+          });
+          row.classList.add("editing");
+          UI.renderCrossPostMakeCampaignForm(row, group);
+          return;
+        }
+
+        /* 3. Cancel button inside the form. */
+        const cancelBtn = e.target.closest && e.target.closest('[data-action="cancel-make-campaign"]');
+        if (cancelBtn) {
+          e.preventDefault();
+          const row = cancelBtn.closest(".crosspost-row");
+          if (!row) return;
+          row.classList.remove("editing");
+          UI.dismissCrossPostMakeCampaignForm(row);
+          return;
+        }
+      });
+
+      /* Form submit (delegated). Read name + goals, save, switch tabs. */
+      crosspostsEl.addEventListener("submit", (e) => {
+        const form = e.target.closest && e.target.closest(".crosspost-make-form");
+        if (!form) return;
         e.preventDefault();
-        const idx = parseInt(btn.dataset.cpIndex || "-1", 10);
-        const group = state.crossPosts && state.crossPosts[idx];
+        const row = form.closest(".crosspost-row");
+        const group = getRowGroup(row);
         if (!group) {
           Util.toast("Cross-post data not available — try refreshing.", "error");
           return;
         }
-        const titleSrc = group.kind === "url" ? group.key : (group.posts[0] && group.posts[0].title) || "Cross-post";
-        const trimmed = String(titleSrc).slice(0, 60).trim();
-        const name = `Cross-post: ${trimmed}${trimmed.length === 60 ? "…" : ""}`;
+        const nameInput = form.querySelector('input[data-field="name"]');
+        const scoreInput = form.querySelector('input[data-field="goalScore"]');
+        const commentsInput = form.querySelector('input[data-field="goalComments"]');
+        const name = (nameInput && nameInput.value || "").trim() || (() => {
+          const titleSrc = group.kind === "url" ? group.key : (group.posts[0] && group.posts[0].title) || "Cross-post";
+          return `Cross-post: ${String(titleSrc).slice(0, 60).trim()}`;
+        })();
+        const goalScore = scoreInput ? Number(scoreInput.value) || 0 : 0;
+        const goalComments = commentsInput ? Number(commentsInput.value) || 0 : 0;
         const postIds = group.posts.map((p) => p.id).filter(Boolean);
 
         try {
-          const c = Campaigns.add({ name, postIds });
+          const c = Campaigns.add({ name, goalScore, goalComments, postIds });
           if (Campaigns.persistErrorMessage()) {
             Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
           } else {
-            Util.toast(`Created campaign with ${postIds.length} post${postIds.length === 1 ? "" : "s"} from ${group.subs.length} subs`, "ok");
+            const goalBits = [];
+            if (goalScore) goalBits.push(`${Util.fmtNum(goalScore)} pts goal`);
+            if (goalComments) goalBits.push(`${Util.fmtNum(goalComments)} comments goal`);
+            const goalSuffix = goalBits.length ? ` (${goalBits.join(" · ")})` : "";
+            Util.toast(`Created "${name}" — ${postIds.length} post${postIds.length === 1 ? "" : "s"} from ${group.subs.length} subs${goalSuffix}`, "ok");
           }
-          /* Visual confirmation on the button so the user sees it stuck. */
-          btn.disabled = true;
-          btn.dataset.originalText = btn.textContent;
-          btn.textContent = "Created ✓";
+          row.classList.remove("editing");
+          UI.dismissCrossPostMakeCampaignForm(row);
+          /* Visual confirmation: turn the original action button into
+           * "Created ✓" so the user sees it stuck on this row. */
+          const origBtn = row.querySelector('[data-action="make-campaign-from-crosspost"]');
+          if (origBtn) {
+            origBtn.disabled = true;
+            origBtn.textContent = "Created ✓";
+          }
           UI.activateTab("campaigns");
           UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
           populateTargetingSelectors();
           refreshAllCampaignSummaries().catch((err) => console.warn("[crosspost->campaign] summary refresh failed:", err && err.message));
           openCampaign(c);
-          console.log(`[crosspost->campaign] "${name}" with ${postIds.length} ids in ${group.subs.length} subs`);
+          console.log(`[crosspost->campaign] "${name}" goals=(${goalScore}, ${goalComments}) ids=${postIds.length} subs=${group.subs.length}`);
         } catch (err) {
           console.error("[crosspost->campaign] failed:", err);
           Util.toast(`Couldn't create campaign: ${(err && err.message) || err}`, "error");
