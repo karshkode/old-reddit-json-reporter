@@ -966,22 +966,82 @@
   /* Best-effort clipboard write — falls back to a hidden textarea if
    * the Async Clipboard API isn't available (e.g. http://localhost in
    * some browsers). */
-  async function copyToClipboard(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
+  /* Robust clipboard-write that survives iOS Safari's user-gesture
+   * rule. Accepts either a string or a Promise<string>:
+   *
+   *   await copyToClipboard("hello")              // sync text
+   *   await copyToClipboard(Sync.toShareUrl())    // async-computed text
+   *
+   * The async case is critical on iOS Safari. If a click handler
+   * `await`s anything before calling navigator.clipboard.writeText,
+   * the user-gesture context is gone and Safari throws
+   *   NotAllowedError: The request is not allowed by the user agent
+   *   or the platform in the current context, possibly because the
+   *   user denied permission.
+   *
+   * The standard workaround is `navigator.clipboard.write` with a
+   * `ClipboardItem` whose value is a *Promise* — Safari awaits the
+   * promise inside the same gesture. We use that path whenever the
+   * caller passed a thenable. Then we have two more fallbacks:
+   *   - plain `clipboard.writeText` (for browsers without ClipboardItem)
+   *   - hidden <textarea> + document.execCommand("copy") for ancient
+   *     browsers / Safari edge cases that reject everything else.
+   */
+  async function copyToClipboard(textOrPromise) {
+    const isPromise = textOrPromise && typeof textOrPromise.then === "function";
+
+    /* Path 1 — ClipboardItem-with-Promise. Preserves iOS Safari's
+     * user-gesture context across async work like CompressionStream
+     * gzip. Supported macOS Safari 13.1+ / iOS Safari 13.4+ /
+     * Chrome 76+ / Firefox 116+. */
+    if (isPromise && typeof ClipboardItem !== "undefined"
+        && navigator.clipboard && typeof navigator.clipboard.write === "function") {
+      try {
+        const blobPromise = Promise.resolve(textOrPromise)
+          .then((t) => new Blob([String(t)], { type: "text/plain" }));
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blobPromise })]);
+        return true;
+      } catch (_) {
+        /* Fall through. If the ClipboardItem path fails (e.g. permission
+         * denied, or a browser that rejects this API), we still try
+         * the writeText + execCommand fallbacks below. */
+      }
     }
+
+    /* Resolve the text now. If we lost the gesture, the writeText
+     * call below may itself throw — handled in its own try/catch so
+     * we still reach the execCommand fallback. */
+    let text;
+    try { text = isPromise ? await textOrPromise : String(textOrPromise); }
+    catch (_) { return false; }
+
+    /* Path 2 — standard async writeText. */
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        /* Fall through. */
+      }
+    }
+
+    /* Path 3 — hidden textarea + execCommand. Last-resort, but
+     * surprisingly reliable on Safari when nothing else works. */
     try {
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.setAttribute("readonly", "");
       ta.style.position = "fixed";
       ta.style.opacity = "0";
+      ta.style.top = "0";
+      ta.style.left = "0";
       document.body.appendChild(ta);
+      ta.focus();
       ta.select();
+      ta.setSelectionRange(0, text.length);
       const ok = document.execCommand("copy");
       document.body.removeChild(ta);
-      return ok;
+      return !!ok;
     } catch (_) {
       return false;
     }
@@ -1134,18 +1194,38 @@
 
     if (linkBtn) linkBtn.addEventListener("click", async () => {
       try {
-        /* Sync.toShareUrl is now async because the short format
-         * gzip-compresses via CompressionStream when available. */
-        const url = await Sync.toShareUrl();
-        const ok = await copyToClipboard(url);
+        /* CRITICAL on iOS Safari: pass the Sync.toShareUrl() promise
+         * DIRECTLY into copyToClipboard so the ClipboardItem-with-Promise
+         * code path can preserve the user-gesture context across the
+         * async gzip step. Awaiting toShareUrl first then calling
+         * writeText breaks the gesture and Safari throws NotAllowedError.
+         *
+         * We also keep a reference to the promise so we can `await` it
+         * AFTER the clipboard call to format the success message. By
+         * then the value is cached in the resolved promise so this is
+         * essentially free. */
+        const urlPromise = Sync.toShareUrl();
+        const ok = await copyToClipboard(urlPromise);
+        const url = await urlPromise;
         const len = url.length;
         if (ok) {
           setSyncStatus(`Short share link copied (${len.toLocaleString()} chars). Paste it on another device — works in Signal, iMessage, etc.`, "ok");
           Util.toast("Share link copied to clipboard.", "ok");
         } else {
-          setSyncStatus("Could not access clipboard — link shown below; long-press to copy.", "err");
-          if (ta) ta.value = url;
+          /* Every clipboard path failed — show the URL inline,
+           * unhide the import panel (which holds the textarea),
+           * focus it, and select all so the user can hit ⌘C / iOS
+           * "Copy" from the context menu in one tap. */
+          setSyncStatus("Could not access clipboard — link shown below; tap & hold to copy.", "err");
           if (panel) panel.hidden = false;
+          if (ta) {
+            ta.value = url;
+            try {
+              ta.focus();
+              ta.setSelectionRange(0, url.length);
+              ta.scrollIntoView({ behavior: "smooth", block: "center" });
+            } catch (_) {}
+          }
         }
         /* New short format uses gzip + compact schema so a typical
          * session is well under a kilobyte. The 4 KB threshold below
