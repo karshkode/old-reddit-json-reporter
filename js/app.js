@@ -1882,6 +1882,24 @@
           return;
         }
 
+        /* 1b. Inner "Show all N" / "Show top 5 only" toggle inside an
+         *     already-expanded group. Reveals/hides the overflow rows
+         *     so a YouTube link with 40+ cross-posts doesn't unfurl
+         *     into a 40-card scroll-fest the moment the user opens it. */
+        const overflowBtn = e.target.closest && e.target.closest('[data-action="toggle-crosspost-overflow"]');
+        if (overflowBtn) {
+          e.preventDefault();
+          const row = overflowBtn.closest(".crosspost-row");
+          if (!row) return;
+          const overflow = row.querySelector(".crosspost-posts-overflow");
+          if (!overflow) return;
+          const willShow = overflow.hidden;
+          overflow.hidden = !willShow;
+          overflowBtn.setAttribute("aria-expanded", willShow ? "true" : "false");
+          row.classList.toggle("overflow-shown", willShow);
+          return;
+        }
+
         /* 2. + Make campaign -> open inline goals form on this row. */
         const makeBtn = e.target.closest && e.target.closest('[data-action="make-campaign-from-crosspost"]');
         if (makeBtn) {

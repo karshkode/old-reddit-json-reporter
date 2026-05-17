@@ -2262,12 +2262,17 @@ select { max-width: 100%; min-width: 0; }
   padding-top: 8px;
   border-top: 1px dashed var(--border);
 }
+/* Per-post mini-row inside an expanded cross-post group.
+ *
+ * Compact single-line layout — was tall multi-line cards before, which
+ * unfolded into a multi-screen scroll for a YouTube link with 40+
+ * cross-posts. The stats are right-aligned in a tight cluster so the
+ * sub name still has room to breathe on the left. */
 .crosspost-post-row {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 6px 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -2275,6 +2280,8 @@ select { max-width: 100%; min-width: 0; }
   color: var(--text-dim);
   text-decoration: none;
   transition: border-color 0.15s ease, background 0.15s ease;
+  min-height: 32px;
+  line-height: 1.3;
 }
 .crosspost-post-row:hover {
   border-color: var(--accent);
@@ -2284,14 +2291,38 @@ select { max-width: 100%; min-width: 0; }
 .crosspost-post-row .cpp-sub {
   color: var(--text);
   font-weight: 600;
-  min-width: 90px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.crosspost-post-row .cpp-score { color: var(--accent-2); font-weight: 700; min-width: 56px; }
-.crosspost-post-row .cpp-comments { min-width: 56px; }
-.crosspost-post-row .cpp-uv { color: var(--text-mute); min-width: 60px; }
-.crosspost-post-row .cpp-when { color: var(--text-mute); margin-left: auto; }
-.crosspost-post-row .cpp-id { color: var(--text-mute); font-size: 11px; }
-.crosspost-post-row .cpp-id code { background: transparent; border: 0; padding: 0; }
+.crosspost-post-row .cpp-score    { color: var(--accent-2); font-weight: 700; flex: 0 0 auto; }
+.crosspost-post-row .cpp-comments { flex: 0 0 auto; }
+.crosspost-post-row .cpp-uv       { color: var(--text-mute); flex: 0 0 auto; }
+.crosspost-post-row .cpp-when     { color: var(--text-mute); flex: 0 0 auto; }
+
+/* "Show all N more" inner expander button. Subtler than the outer
+ * toggle so the visual hierarchy stays: outer toggle reveals the
+ * group; inner toggle reveals the long tail. */
+.crosspost-show-more {
+  width: auto;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+}
+.crosspost-show-more .hide-label { display: none; }
+.crosspost-row.overflow-shown .crosspost-show-more .show-label { display: none; }
+.crosspost-row.overflow-shown .crosspost-show-more .hide-label { display: inline; }
+
+/* Source meta line under the headline (e.g. "YouTube · Channel · youtube.com"). */
+.crosspost-row .crosspost-source {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin: 2px 0 4px;
+  word-break: break-word;
+}
 
 /* Inline goals form (replaces the action buttons during edit) */
 .crosspost-actions.hidden-during-edit { display: none; }
@@ -2349,9 +2380,22 @@ select { max-width: 100%; min-width: 0; }
   .crosspost-make-form .cmf-row { grid-template-columns: 1fr; }
   .crosspost-make-form .cmf-row label.full { grid-column: span 1; }
   .crosspost-make-form input { font-size: 16px; min-height: 38px; }
-  .crosspost-post-row { font-size: 11px; gap: 6px; padding: 6px 8px; }
-  .crosspost-post-row .cpp-sub { min-width: 70px; }
-  .crosspost-post-row .cpp-when { width: 100%; margin-left: 0; }
+  /* Mobile single-line — keep stats compact + suppress UV column
+   * (it's the least essential and the row is only ~32px tall now). */
+  .crosspost-post-row {
+    font-size: 11px;
+    gap: 6px;
+    padding: 4px 8px;
+    min-height: 30px;
+  }
+  .crosspost-post-row .cpp-sub { flex: 1 1 auto; }
+  .crosspost-post-row .cpp-uv,
+  .crosspost-post-row .cpp-when {
+    /* Hide the secondary stats on phones — the sub name + score +
+     * comment count is the essential signal; the rest fits when the
+     * user taps through to the actual thread. */
+    display: none;
+  }
 }
 
 /* ---------- Posts-table "+ Campaign" action ---------- */

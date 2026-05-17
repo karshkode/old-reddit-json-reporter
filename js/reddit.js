@@ -404,6 +404,24 @@
   }
 
   function normalizePost(d) {
+    /* Embedded-media metadata.
+     *
+     * For posts that LINK to external video/article sources (YouTube,
+     * Vimeo, news sites, Twitter, etc.), Reddit returns oEmbed data
+     * inside `data.media.oembed` — this is the ACTUAL title of the
+     * linked resource, often far more descriptive than the post's
+     * own title (e.g. a Reddit post "Watch this!" linking to a
+     * 10-minute video titled "Senator Sanders speaks on healthcare
+     * policy").  `secure_media_embed` is the encrypted-iframe variant
+     * Reddit uses for the same content. Reddit-native videos populate
+     * `data.media.reddit_video` instead (no oembed.title).
+     *
+     * If neither oEmbed source has a title (Reddit-native videos,
+     * direct image links, self-text posts) these stay null and the
+     * UI falls back to the post's own title. */
+    const m = d.media || {};
+    const oe = (m && m.oembed) || {};
+    const sm = d.secure_media_embed || {};
     return {
       id: d.id,
       fullname: d.name,
@@ -422,7 +440,8 @@
       permalink: "https://www.reddit.com" + (d.permalink || ""),
       domain: d.domain,
       is_self: d.is_self,
-      is_video: d.is_video,
+      is_video: !!d.is_video,
+      is_gallery: !!d.is_gallery,
       over_18: d.over_18,
       stickied: d.stickied,
       spoiler: d.spoiler,
@@ -433,6 +452,11 @@
       crosspost_parent_id: d.crosspost_parent,
       selftext: d.selftext || "",
       thumbnail: d.thumbnail,
+      /* Embedded-media metadata (see comment above). */
+      media_title:    oe.title         || sm.title         || null,
+      media_author:   oe.author_name   || null,
+      media_provider: oe.provider_name || (m && m.type) || null,
+      media_thumbnail: oe.thumbnail_url || null,
     };
   }
 
