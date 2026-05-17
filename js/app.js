@@ -47,6 +47,13 @@
     postsSubFilter: "",
     /* Min-score chip filter for the Posts tab (0 = All). */
     postsScoreMin: 0,
+    /* True whenever the user has changed something that affects the
+     * fetched dataset (subs, listing, time window, limit) since the
+     * last successful refreshData. Drives the visibility of the Go
+     * banner. Starts true on page load so the user explicitly opts
+     * into fetching instead of getting an auto-stream they didn't
+     * ask for. */
+    pendingChanges: true,
     /* Cross-posts pagination + sub filter (Campaigns tab). */
     crossPostsPage: 0,
     crossPostsPageSize: 10,
@@ -374,6 +381,44 @@
     /* Refresh both targeting playgrounds whenever the dataset changes. */
   }
 
+  /* ---------- Go banner (manual-trigger gating) ---------- */
+
+  /* Mark the dataset stale and reveal the Go banner so the user can
+   * trigger the fetch when they're ready. Called whenever filters,
+   * sub list, listing, time window, or limit change — anything that
+   * would have previously auto-fired refreshData(). The reason string
+   * is shown as the banner's subtitle so the user knows WHY they're
+   * being prompted to refetch. */
+  function markPending(reason) {
+    state.pendingChanges = true;
+    showGoBanner(reason);
+  }
+
+  function showGoBanner(reason) {
+    const banner = document.getElementById("go-banner");
+    if (!banner) return;
+    /* Don't shove the Go banner over a fetch in progress — the
+     * progress banner takes precedence. The Go banner re-shows once
+     * the fetch completes if pendingChanges flipped true again
+     * mid-fetch (rare but possible). */
+    const progress = document.getElementById("progress-bar");
+    if (progress && !progress.hidden) return;
+    const sub = document.getElementById("go-banner-sub");
+    if (sub) {
+      const subCount = state.activeSubs ? state.activeSubs.size : 0;
+      const subBit = subCount
+        ? `${subCount} subreddit${subCount === 1 ? "" : "s"} queued · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`
+        : "Add at least one subreddit, then tap Go.";
+      sub.textContent = reason ? `${reason} — ${subBit}` : subBit;
+    }
+    banner.hidden = false;
+  }
+
+  function hideGoBanner() {
+    const banner = document.getElementById("go-banner");
+    if (banner) banner.hidden = true;
+  }
+
   /* ---------- Data fetch ---------- */
 
   async function refreshData(force) {
@@ -382,10 +427,16 @@
       Util.setStatus("No active subreddits selected.", "err");
       Util.hideProgress();
       hideBanner();
+      /* No subs to fetch but the user might still want to add some —
+       * keep the Go banner visible so they're prompted once they do. */
+      showGoBanner();
       rerenderAll();
       return;
     }
     if (force) Reddit.clearCache();
+
+    /* Hide the Go banner — the progress banner takes over from here. */
+    hideGoBanner();
 
     const subs = Array.from(state.activeSubs);
     const myToken = ++state.fetchToken;
@@ -482,6 +533,11 @@
     state.posts = Util.uniqBy(collected, (p) => p.id);
     state.lastTransport = Reddit._lastTransport || state.lastTransport;
     state.rendering.light = false;
+    /* Fetch finished — the dataset now matches the user's settings, so
+     * pendingChanges is cleared and the Go banner stays hidden until
+     * the next mutation. */
+    state.pendingChanges = false;
+    hideGoBanner();
     Util.hideProgress(`Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}`);
 
     const totalMs = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
@@ -1349,19 +1405,40 @@
     }
 
     document.getElementById("refresh-btn").addEventListener("click", () => refreshData(true));
+
+    /* Brand button — same affordance as a logo home link. Activates
+     * the Overview tab and scrolls the page to the top so the user
+     * gets back to the highest-level summary in one tap. */
+    const brandHome = document.getElementById("brand-home");
+    if (brandHome) brandHome.addEventListener("click", () => {
+      try { UI.activateTab("overview"); } catch (_) {}
+      try { window.scrollTo({ top: 0, behavior: "smooth" }); }
+      catch (_) { window.scrollTo(0, 0); }
+    });
+
+    /* Go button — explicit, user-initiated trigger that replaces the
+     * old auto-fetch on page load + filter changes. Same code path as
+     * the topbar Refresh button so the two buttons are interchangeable
+     * (Go just lives in the more prominent banner spot). */
+    const goBtn = document.getElementById("go-btn");
+    if (goBtn) goBtn.addEventListener("click", () => refreshData(true));
+
     const clearBtn = document.getElementById("clear-cache-btn");
     if (clearBtn) clearBtn.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
     const clearBtnMobile = document.getElementById("clear-cache-btn-mobile");
     if (clearBtnMobile) clearBtnMobile.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
 
+    /* Filter changes (listing / time / limit) no longer auto-trigger
+     * a fetch. They mark the dataset stale and reveal the Go banner;
+     * the user opts into refetching with one explicit click. */
     document.getElementById("listing-select").addEventListener("change", (e) => {
-      state.listing = e.target.value; persist(); refreshData();
+      state.listing = e.target.value; persist(); markPending("Listing changed");
     });
     document.getElementById("time-select").addEventListener("change", (e) => {
-      state.timeWindow = e.target.value; persist(); refreshData();
+      state.timeWindow = e.target.value; persist(); markPending("Time window changed");
     });
     document.getElementById("limit-select").addEventListener("change", (e) => {
-      state.limit = Number(e.target.value); persist(); refreshData();
+      state.limit = Number(e.target.value); persist(); markPending("Per-sub limit changed");
     });
 
     document.getElementById("listing-select").value = state.listing;
@@ -1378,7 +1455,7 @@
       input.value = "";
       persist();
       renderChips();
-      refreshData();
+      markPending(`Added r/${name}`);
     });
 
     const debouncedFilter = Util.debounce(() => { rerenderAll(); }, 200);
@@ -2782,14 +2859,14 @@ const bestCampaignPost = (summary.posts || [])
         if (state.activeSubs.has(sub)) state.activeSubs.delete(sub); else state.activeSubs.add(sub);
         persist();
         renderChips();
-        refreshData();
+        markPending(`Toggled r/${sub}`);
       },
       (sub) => {
         state.knownSubs = state.knownSubs.filter((s) => s !== sub);
         state.activeSubs.delete(sub);
         persist();
         renderChips();
-        refreshData();
+        markPending(`Removed r/${sub}`);
       }
     );
   }
@@ -2868,7 +2945,12 @@ const bestCampaignPost = (summary.posts || [])
     safeRun("wireSyncSession", wireSyncSession);
     safeRun("renderChips", renderChips);
     safeRun("rerenderAll", rerenderAll);
-    safeRun("refreshData", () => refreshData());
+    /* Page load no longer auto-fires refreshData. Instead we show the
+     * Go banner so the user explicitly opts in. The Refresh button in
+     * the topbar and the Go button in the banner trigger the same
+     * code path. Campaign summaries still load eagerly because they
+     * read from local cache + by_id (small, cheap, predictable). */
+    safeRun("showInitialGoBanner", () => showGoBanner("Ready to fetch"));
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
     safeRun("checkStorageAvailability", checkStorageAvailability);
   }
