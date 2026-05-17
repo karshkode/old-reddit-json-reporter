@@ -196,8 +196,7 @@ button { font-family: inherit; }
   display: grid;
   grid-template-columns: minmax(280px, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
-    "subs    listing find"
-    "sync    sync    sync";
+    "subs    listing find";
   gap: 14px;
   padding: 14px max(16px, var(--safe-left));
   border-bottom: 1px solid var(--border);
@@ -2492,8 +2491,7 @@ select { max-width: 100%; min-width: 0; }
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       "subs    subs"
-      "listing find"
-      "sync    sync";
+      "listing find";
   }
 }
 
@@ -2505,12 +2503,172 @@ select { max-width: 100%; min-width: 0; }
       "subs"
       "listing"
       "find"
-      "datasource"
-      "sync";
+      "datasource";
   }
   .controls .cg-data-source-mobile {
     display: flex;
     grid-area: datasource;
   }
   .cg-row { gap: 8px; }
+}
+
+/* =====================================================================
+   SESSION MODAL — toggled from the topbar "Session" button
+   ===================================================================== */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: max(16px, var(--safe-top)) max(16px, var(--safe-right))
+           max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
+  animation: modal-fade-in 0.15s ease-out;
+}
+.modal[hidden] { display: none; }
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 13, 18, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  cursor: pointer;
+}
+
+.modal-card {
+  position: relative;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5), var(--shadow);
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0;
+  animation: modal-pop 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes modal-pop {
+  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+  z-index: 1;
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+.modal-header h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+}
+.modal-header .btn {
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.modal-hint {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* Sync action buttons inside the modal — wrap on mobile, stack flush. */
+.modal .sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.modal .sync-actions .btn { flex: 1 1 auto; }
+
+/* Import panel inside the modal */
+.modal #sync-import-panel {
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal #sync-import-text {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  resize: vertical;
+  min-height: 90px;
+  outline: none;
+}
+.modal #sync-import-text:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18);
+}
+.modal .sync-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.modal .sync-import-actions .spacer { flex: 1; }
+.modal .sync-merge-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.modal #sync-status:empty,
+.modal #sync-import-status[hidden] { display: none; }
+.modal #sync-status.ok, .modal #sync-import-status.ok   { color: var(--good); }
+.modal #sync-status.err, .modal #sync-import-status.err { color: var(--bad); }
+.modal #sync-status.warn, .modal #sync-import-status.warn { color: var(--warn); }
+
+/* Lock body scroll while modal is open */
+body.modal-open { overflow: hidden; }
+
+@media (max-width: 720px) {
+  .modal-card { max-height: calc(100vh - 32px); }
+  .modal-header { padding: 12px 14px; }
+  .modal-header h2 { font-size: 14px; }
+  .modal-body { padding: 14px; gap: 10px; }
+  .modal .sync-actions .btn { flex: 1 1 100%; }
 }

@@ -993,8 +993,54 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     });
   }
 
+  /* Session modal — opens via the topbar 'Session' button.
+   * Closes on backdrop click, [data-action=close-session-modal] click,
+   * Escape, or after a successful import. */
+  function openSessionModal() {
+    const modal = document.getElementById("session-modal");
+    if (!modal) return;
+    modal.hidden = false;
+    /* Focus the first interactive element so keyboard users land inside. */
+    const first = modal.querySelector("button, input, textarea, select, a");
+    if (first) try { first.focus({ preventScroll: true }); } catch (_) {}
+    document.body.classList.add("modal-open");
+  }
+
+  function closeSessionModal() {
+    const modal = document.getElementById("session-modal");
+    if (!modal) return;
+    modal.hidden = true;
+    document.body.classList.remove("modal-open");
+    /* Return focus to the toggle for keyboard users. */
+    const toggle = document.getElementById("session-toggle");
+    if (toggle) try { toggle.focus({ preventScroll: true }); } catch (_) {}
+  }
+
+  function wireSessionModal() {
+    const toggle = document.getElementById("session-toggle");
+    const modal = document.getElementById("session-modal");
+    if (toggle && modal) {
+      toggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (modal.hidden) openSessionModal(); else closeSessionModal();
+      });
+      modal.addEventListener("click", (e) => {
+        const closer = e.target && e.target.closest && e.target.closest('[data-action="close-session-modal"]');
+        if (closer) {
+          e.preventDefault();
+          closeSessionModal();
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !modal.hidden) closeSessionModal();
+      });
+    }
+  }
+
   function wireSyncSession() {
     if (typeof Sync === "undefined") return;
+
+    wireSessionModal();
 
     /* On init: if URL has a session payload, surface a banner. */
     try {
