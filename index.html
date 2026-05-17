@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
   <link rel="preconnect" href="https://api.allorigins.win" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260517n" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260517o" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4500'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
@@ -33,9 +33,9 @@
       <button id="session-toggle" class="btn ghost" type="button" title="Sync session across devices: copy share link, download / paste JSON, import">
         <span class="icon" aria-hidden="true">⇄</span><span class="btn-label">Session</span>
       </button>
-      <button id="refresh-btn" class="btn primary" title="Refetch from Reddit" aria-label="Refresh data">
-        <span class="icon" aria-hidden="true">↻</span><span class="btn-label">Refresh</span>
-      </button>
+      <!-- Refresh button removed — its job is now done by the single
+           Go/Refresh button inside the action banner below the topbar.
+           See <div id="action-banner"> further down. -->
       <label class="topbar-select hide-mobile" title="Reddit doesn't send CORS headers for *.json so the browser cannot fetch directly. Requests are routed through a public proxy; switch if one stops working.">
         <span>Data source</span>
         <select id="transport-select"></select>
@@ -114,26 +114,30 @@
 
   </section>
 
-  <!-- Go banner: shown when there are pending changes that haven't been
-       fetched yet (page just loaded, filter changed, sub added, etc.).
-       Tapping Go fires refreshData(true). Sits in the same docked spot
-       as the progress banner; mutually exclusive with it (the progress
-       banner takes over once a fetch is running). -->
-  <div id="go-banner" class="go-banner" hidden aria-live="polite">
-    <div class="go-banner-text">
-      <strong class="go-banner-title">Ready when you are</strong>
-      <span class="go-banner-sub" id="go-banner-sub">Tap Go to fetch posts.</span>
+  <!-- Unified ACTION BANNER.
+       One sticky bar that combines what used to be three elements:
+         - the topbar's Refresh button
+         - a separate "Go banner" prompt with Ready when you are text
+         - a separate streaming progress banner
+       The status text + the optional thin progress fill share the
+       left side; ONE mode-switching button hugs the right edge:
+         pending  -> "Go ▶"
+         loading  -> "Loading…"  (disabled, progress fill animates)
+         loaded   -> "Refresh ↻"
+       -->
+  <div id="action-banner" class="action-banner" hidden aria-live="polite">
+    <div class="action-banner-row">
+      <div class="action-banner-status">
+        <div class="action-banner-text" id="action-banner-text"></div>
+        <div class="action-progress-track" id="action-progress-track" hidden>
+          <div class="action-progress-fill" id="action-progress-fill"></div>
+        </div>
+      </div>
+      <button id="action-btn" class="btn primary action-btn" type="button" aria-label="Run search">
+        <span class="action-btn-icon" aria-hidden="true">▶</span>
+        <span class="action-btn-label">Go</span>
+      </button>
     </div>
-    <button id="go-btn" class="btn primary go-btn" type="button" aria-label="Run the search now">
-      <span class="icon" aria-hidden="true">▶</span><span class="btn-label">Go</span>
-    </button>
-  </div>
-
-  <!-- Streaming progress banner: docks under the topbar regardless of
-       whether the filter drawer is open or closed. Hidden when idle. -->
-  <div id="progress-bar" class="progress-banner" hidden aria-hidden="true" aria-live="polite" role="status">
-    <div class="progress-track"><div class="progress-fill"></div></div>
-    <div class="progress-text">Working…</div>
   </div>
 
   <main>
@@ -526,14 +530,14 @@
     </div>
   </div>
 
-  <script src="./js/util.js?v=20260517n"></script>
-  <script src="./js/sync.js?v=20260517n"></script>
-  <script src="./js/reddit.js?v=20260517n"></script>
-  <script src="./js/seeds.js?v=20260517n"></script>
-  <script src="./js/analysis.js?v=20260517n"></script>
-  <script src="./js/charts.js?v=20260517n"></script>
-  <script src="./js/campaigns.js?v=20260517n"></script>
-  <script src="./js/ui.js?v=20260517n"></script>
-  <script src="./js/app.js?v=20260517n"></script>
+  <script src="./js/util.js?v=20260517o"></script>
+  <script src="./js/sync.js?v=20260517o"></script>
+  <script src="./js/reddit.js?v=20260517o"></script>
+  <script src="./js/seeds.js?v=20260517o"></script>
+  <script src="./js/analysis.js?v=20260517o"></script>
+  <script src="./js/charts.js?v=20260517o"></script>
+  <script src="./js/campaigns.js?v=20260517o"></script>
+  <script src="./js/ui.js?v=20260517o"></script>
+  <script src="./js/app.js?v=20260517o"></script>
 </body>
 </html>

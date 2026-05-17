@@ -381,42 +381,31 @@
     /* Refresh both targeting playgrounds whenever the dataset changes. */
   }
 
-  /* ---------- Go banner (manual-trigger gating) ---------- */
+  /* ---------- Action banner (manual-trigger gating) ---------- */
 
-  /* Mark the dataset stale and reveal the Go banner so the user can
-   * trigger the fetch when they're ready. Called whenever filters,
-   * sub list, listing, time window, or limit change — anything that
-   * would have previously auto-fired refreshData(). The reason string
-   * is shown as the banner's subtitle so the user knows WHY they're
-   * being prompted to refetch. */
+  /* Build the standard "N subs queued · hot · week · limit X" tail
+   * shown in the action banner whenever the dataset is stale or just
+   * loaded — gives the user immediate context for what the next fetch
+   * (or the last fetch) will / did cover. */
+  function describePendingFetch() {
+    const subCount = state.activeSubs ? state.activeSubs.size : 0;
+    if (!subCount) return "Add at least one subreddit, then tap Go.";
+    return `${subCount} subreddit${subCount === 1 ? "" : "s"} queued · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`;
+  }
+
+  /* Mark the dataset stale and flip the action banner into the
+   * "pending" phase so the button reads Go ▶ and the user can trigger
+   * the fetch when they're ready. Called whenever filters, sub list,
+   * listing, time window, or limit change — anything that would have
+   * previously auto-fired refreshData(). */
   function markPending(reason) {
     state.pendingChanges = true;
-    showGoBanner(reason);
-  }
-
-  function showGoBanner(reason) {
-    const banner = document.getElementById("go-banner");
-    if (!banner) return;
-    /* Don't shove the Go banner over a fetch in progress — the
-     * progress banner takes precedence. The Go banner re-shows once
-     * the fetch completes if pendingChanges flipped true again
-     * mid-fetch (rare but possible). */
-    const progress = document.getElementById("progress-bar");
-    if (progress && !progress.hidden) return;
-    const sub = document.getElementById("go-banner-sub");
-    if (sub) {
-      const subCount = state.activeSubs ? state.activeSubs.size : 0;
-      const subBit = subCount
-        ? `${subCount} subreddit${subCount === 1 ? "" : "s"} queued · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`
-        : "Add at least one subreddit, then tap Go.";
-      sub.textContent = reason ? `${reason} — ${subBit}` : subBit;
-    }
-    banner.hidden = false;
-  }
-
-  function hideGoBanner() {
-    const banner = document.getElementById("go-banner");
-    if (banner) banner.hidden = true;
+    /* Don't override the loading phase mid-fetch; pendingChanges will
+     * be re-checked when the fetch completes. */
+    const banner = document.getElementById("action-banner");
+    if (banner && banner.classList.contains("phase-loading")) return;
+    const tail = describePendingFetch();
+    Util.setActionPhase("pending", reason ? `${reason} — ${tail}` : tail);
   }
 
   /* ---------- Data fetch ---------- */
@@ -425,18 +414,18 @@
     if (!state.activeSubs.size) {
       state.posts = [];
       Util.setStatus("No active subreddits selected.", "err");
-      Util.hideProgress();
       hideBanner();
       /* No subs to fetch but the user might still want to add some —
-       * keep the Go banner visible so they're prompted once they do. */
-      showGoBanner();
+       * leave the action banner in pending mode so the Go button
+       * stays visible once they do. */
+      Util.setActionPhase("pending", "Add at least one subreddit, then tap Go.");
       rerenderAll();
       return;
     }
     if (force) Reddit.clearCache();
 
-    /* Hide the Go banner — the progress banner takes over from here. */
-    hideGoBanner();
+    /* The action banner now switches to "loading" via the first
+     * Util.setProgress() call below. No separate hide step needed. */
 
     const subs = Array.from(state.activeSubs);
     const myToken = ++state.fetchToken;
@@ -534,11 +523,12 @@
     state.lastTransport = Reddit._lastTransport || state.lastTransport;
     state.rendering.light = false;
     /* Fetch finished — the dataset now matches the user's settings, so
-     * pendingChanges is cleared and the Go banner stays hidden until
-     * the next mutation. */
+     * pendingChanges is cleared. Util.hideProgress transitions the
+     * action banner from "loading" -> "loaded" (button becomes
+     * Refresh ↻, fill bar fades, text shows the load summary). */
     state.pendingChanges = false;
-    hideGoBanner();
-    Util.hideProgress(`Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}`);
+    const tail = ` · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`;
+    Util.hideProgress(`Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}${tail}`);
 
     const totalMs = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
     console.log(`[refreshData] complete: ${state.posts.length} unique posts in ${totalMs}ms (errors=${errors})`);
@@ -1404,8 +1394,6 @@
       });
     }
 
-    document.getElementById("refresh-btn").addEventListener("click", () => refreshData(true));
-
     /* Brand button — same affordance as a logo home link. Activates
      * the Overview tab and scrolls the page to the top so the user
      * gets back to the highest-level summary in one tap. */
@@ -1416,12 +1404,15 @@
       catch (_) { window.scrollTo(0, 0); }
     });
 
-    /* Go button — explicit, user-initiated trigger that replaces the
-     * old auto-fetch on page load + filter changes. Same code path as
-     * the topbar Refresh button so the two buttons are interchangeable
-     * (Go just lives in the more prominent banner spot). */
-    const goBtn = document.getElementById("go-btn");
-    if (goBtn) goBtn.addEventListener("click", () => refreshData(true));
+    /* The single ACTION button inside the action banner. Same handler
+     * regardless of which phase the banner is showing — the button is
+     * always "fetch / refetch with current settings". CSS + the phase
+     * class flip the icon and label between Go ▶ / Loading… / Refresh ↻. */
+    const actionBtn = document.getElementById("action-btn");
+    if (actionBtn) actionBtn.addEventListener("click", () => {
+      if (actionBtn.disabled) return;
+      refreshData(true);
+    });
 
     const clearBtn = document.getElementById("clear-cache-btn");
     if (clearBtn) clearBtn.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
@@ -2950,7 +2941,9 @@ const bestCampaignPost = (summary.posts || [])
      * the topbar and the Go button in the banner trigger the same
      * code path. Campaign summaries still load eagerly because they
      * read from local cache + by_id (small, cheap, predictable). */
-    safeRun("showInitialGoBanner", () => showGoBanner("Ready to fetch"));
+    /* Page load shows the action banner in pending mode so the user
+     * explicitly opts into fetching. They click Go ▶ when ready. */
+    safeRun("showInitialActionBanner", () => Util.setActionPhase("pending", describePendingFetch()));
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
     safeRun("checkStorageAvailability", checkStorageAvailability);
   }

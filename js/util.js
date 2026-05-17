@@ -182,22 +182,66 @@
     el.innerHTML = `<span class="left ${kind || ""}">${Util.escapeHtml(msg)}</span><span class="right">${right}<span>${new Date().toLocaleTimeString()}</span></span>`;
   };
 
-  /* Progress banner.
-   *   setProgress(percent, message)        — 0..100 fill width
-   *   setProgress(null, message)           — indeterminate animation
-   *   hideProgress()                       — fills to 100% then fades out
+  /* Unified ACTION BANNER controller.
    *
-   * The banner element is sticky just under the topbar+tabs and only
-   * visible during loads. Replaces the previous always-on fixed-bottom
-   * status bar so the page no longer looks like it has two footers
-   * stacking together on iOS. */
-  Util.setProgress = function (percent, message) {
-    const banner = document.getElementById("progress-bar");
+   * One sticky bar combines what used to be three separate UI surfaces
+   * (topbar Refresh button + Go-banner + progress banner). The phase
+   * dictates what the button shows and whether the thin progress fill
+   * is visible. setProgress / hideProgress / setActionPhase all drive
+   * the same DOM element so callers can keep using the existing API.
+   *
+   *   setActionPhase("pending", text)  Go ▶ button, no fill bar
+   *   setProgress(pct, text)           Loading… disabled button +
+   *                                    progress fill at pct (or
+   *                                    indeterminate when pct == null)
+   *   hideProgress(text)               Fills to 100%, then transitions
+   *                                    to "loaded" phase with text and
+   *                                    the Refresh ↻ button.
+   *
+   * The banner stays visible after init — it's the primary action
+   * surface for the page, not a transient toast. */
+  Util.setActionPhase = function (phase, message) {
+    const banner = document.getElementById("action-banner");
     if (!banner) return;
     banner.hidden = false;
-    banner.removeAttribute("aria-hidden");
-    const fill = banner.querySelector(".progress-fill");
-    const text = banner.querySelector(".progress-text");
+    /* Phase classes drive button label/icon and progress fill
+     * visibility via CSS. */
+    banner.classList.remove("phase-pending", "phase-loading", "phase-loaded", "phase-empty");
+    banner.classList.add("phase-" + phase);
+
+    const text = document.getElementById("action-banner-text");
+    if (text && message != null) text.textContent = message;
+
+    const btn = document.getElementById("action-btn");
+    const icon = btn && btn.querySelector(".action-btn-icon");
+    const label = btn && btn.querySelector(".action-btn-label");
+    const track = document.getElementById("action-progress-track");
+    if (track) track.hidden = phase !== "loading";
+    if (btn) {
+      btn.disabled = phase === "loading";
+      banner.classList.toggle("is-loading", phase === "loading");
+    }
+    if (phase === "loading") {
+      if (icon) icon.textContent = "⟳";
+      if (label) label.textContent = "Loading…";
+      if (btn) btn.setAttribute("aria-label", "Loading…");
+    } else if (phase === "loaded") {
+      if (icon) icon.textContent = "↻";
+      if (label) label.textContent = "Refresh";
+      if (btn) btn.setAttribute("aria-label", "Refresh data");
+    } else {
+      /* pending or empty */
+      if (icon) icon.textContent = "▶";
+      if (label) label.textContent = "Go";
+      if (btn) btn.setAttribute("aria-label", "Run search");
+    }
+  };
+
+  Util.setProgress = function (percent, message) {
+    const banner = document.getElementById("action-banner");
+    if (!banner) return;
+    Util.setActionPhase("loading", message != null ? message : null);
+    const fill = document.getElementById("action-progress-fill");
     if (percent == null) {
       banner.classList.add("indeterminate");
       if (fill) fill.style.width = "";
@@ -205,8 +249,6 @@
       banner.classList.remove("indeterminate");
       if (fill) fill.style.width = Math.max(0, Math.min(100, percent)) + "%";
     }
-    if (text && message != null) text.textContent = message;
-    /* Cancel any pending hide timer so a new tick stays visible. */
     if (Util._progressHideT) {
       clearTimeout(Util._progressHideT);
       Util._progressHideT = null;
@@ -214,20 +256,20 @@
   };
 
   Util.hideProgress = function (finalMessage) {
-    const banner = document.getElementById("progress-bar");
+    const banner = document.getElementById("action-banner");
     if (!banner) return;
     banner.classList.remove("indeterminate");
-    const fill = banner.querySelector(".progress-fill");
-    const text = banner.querySelector(".progress-text");
+    const fill = document.getElementById("action-progress-fill");
     if (fill) fill.style.width = "100%";
-    if (text && finalMessage) text.textContent = finalMessage;
+    /* Briefly leave the fill at 100% so the user sees the load
+     * complete, then transition to the "loaded" phase which hides
+     * the fill bar and switches the button to Refresh ↻. */
     if (Util._progressHideT) clearTimeout(Util._progressHideT);
     Util._progressHideT = setTimeout(() => {
-      banner.hidden = true;
-      banner.setAttribute("aria-hidden", "true");
+      Util.setActionPhase("loaded", finalMessage || "Done");
       if (fill) fill.style.width = "0%";
       Util._progressHideT = null;
-    }, finalMessage ? 1200 : 600);
+    }, finalMessage ? 600 : 300);
   };
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
