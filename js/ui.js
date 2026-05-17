@@ -257,23 +257,119 @@
        * back to the absolute position in state.crossPosts even when the
        * displayed list is filtered/paginated. */
       const cpIndex = g._origIndex != null ? g._origIndex : 0;
+      /* Per-post mini-rows shown when the group is expanded. Each row is
+       * a clickable link to the live Reddit thread with score / comments
+       * / UV % so the user can see what each individual instance is
+       * actually doing. */
+      const postsList = g.posts.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).map((p) => `
+        <a class="crosspost-post-row"
+           href="${Util.escapeHtml(p.permalink)}"
+           target="_blank" rel="noopener"
+           title="Open in Reddit">
+          <span class="cpp-sub">r/${Util.escapeHtml(p.subreddit)}</span>
+          <span class="cpp-score">▲ ${Util.fmtNum(p.score)}</span>
+          <span class="cpp-comments">💬 ${Util.fmtNum(p.num_comments)}</span>
+          <span class="cpp-uv">${p.upvote_ratio == null ? "" : Util.fmtPct(p.upvote_ratio) + " UV"}</span>
+          <span class="cpp-when">${Util.escapeHtml(Util.relTime(p.created_utc))}</span>
+          <span class="cpp-id"><code>${Util.escapeHtml(p.id)}</code></span>
+        </a>
+      `).join("");
+
       return `
-        <div class="crosspost-row" data-spread="${spread}">
+        <div class="crosspost-row" data-spread="${spread}" data-cp-index="${cpIndex}">
           <div class="crosspost-head">
             <strong>${Util.escapeHtml(headline)}</strong>
             <span class="badge ${tier}" title="Cross-posted across ${spread} subreddits">in ${spread} sub${spread === 1 ? "" : "s"}</span>
           </div>
           <div class="subs">${g.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(" · ")} · ${Util.fmtNum(g.totalScore)} pts · ${Util.fmtNum(g.totalComments)} comments</div>
           <div class="crosspost-actions">
+            <button class="btn small ghost"
+                    type="button"
+                    data-action="toggle-crosspost-posts"
+                    data-cp-index="${cpIndex}"
+                    aria-expanded="false">
+              <span class="show-label">▾ Show ${g.posts.length} post${g.posts.length === 1 ? "" : "s"}</span>
+              <span class="hide-label">▴ Hide posts</span>
+            </button>
             <button class="btn small primary"
                     type="button"
                     data-action="make-campaign-from-crosspost"
                     data-cp-index="${cpIndex}"
                     aria-label="Convert this cross-post group into a new campaign">+ Make campaign</button>
           </div>
+          <div class="crosspost-posts" hidden>${postsList}</div>
+          <div class="crosspost-form-slot"></div>
         </div>
       `;
     }).join("");
+  };
+
+  /* Render an inline "Set goals + Save" form into a crosspost-row when
+   * the user taps "+ Make campaign". This replaces the action-button row
+   * with a small form so the user can choose goals before committing. */
+  UI.renderCrossPostMakeCampaignForm = function (rowEl, group, opts) {
+    if (!rowEl || !group) return;
+    opts = opts || {};
+    const slot = rowEl.querySelector(".crosspost-form-slot");
+    const actions = rowEl.querySelector(".crosspost-actions");
+    if (!slot) return;
+
+    const titleSrc = group.kind === "url" ? group.key : (group.posts[0] && group.posts[0].title) || "Cross-post";
+    const trimmed = String(titleSrc).slice(0, 60).trim();
+    const defaultName = `Cross-post: ${trimmed}${trimmed.length === 60 ? "…" : ""}`;
+    /* Suggest goals as roughly 1.5× the current totals — a stretch but
+     * not absurd. Round to a nice number. */
+    function niceCeil(n) {
+      if (n <= 0) return 0;
+      const target = n * 1.5;
+      const mag = Math.pow(10, Math.max(0, Math.floor(Math.log10(target)) - 1));
+      return Math.ceil(target / mag) * mag;
+    }
+    const suggestedScore = niceCeil(group.totalScore || 0);
+    const suggestedComments = niceCeil(group.totalComments || 0);
+
+    if (actions) actions.classList.add("hidden-during-edit");
+
+    slot.innerHTML = `
+      <form class="crosspost-make-form" data-cp-index="${rowEl.dataset.cpIndex || ""}">
+        <div class="cmf-row">
+          <label class="full">
+            <span class="group-label">Campaign name</span>
+            <input type="text" data-field="name" value="${Util.escapeHtml(defaultName)}" required maxlength="120" />
+          </label>
+        </div>
+        <div class="cmf-row">
+          <label>
+            <span class="group-label">Goal upvotes</span>
+            <input type="number" data-field="goalScore" min="0" inputmode="numeric" placeholder="optional" value="${suggestedScore || ""}" />
+          </label>
+          <label>
+            <span class="group-label">Goal comments</span>
+            <input type="number" data-field="goalComments" min="0" inputmode="numeric" placeholder="optional" value="${suggestedComments || ""}" />
+          </label>
+        </div>
+        <div class="cmf-meta">
+          ${group.posts.length} post${group.posts.length === 1 ? "" : "s"} across ${group.subs.length} sub${group.subs.length === 1 ? "" : "s"} · current totals: <strong>${Util.fmtNum(group.totalScore)}</strong> pts · <strong>${Util.fmtNum(group.totalComments)}</strong> comments
+        </div>
+        <div class="cmf-actions">
+          <button type="button" class="btn small ghost" data-action="cancel-make-campaign">Cancel</button>
+          <button type="submit" class="btn small primary" data-action="confirm-make-campaign">Save campaign</button>
+        </div>
+      </form>
+    `;
+    /* Focus the name input so keyboard users can edit it immediately. */
+    const nameInput = slot.querySelector('input[data-field="name"]');
+    if (nameInput && opts.focus !== false) {
+      try { nameInput.focus(); nameInput.select(); } catch (_) {}
+    }
+  };
+
+  UI.dismissCrossPostMakeCampaignForm = function (rowEl) {
+    if (!rowEl) return;
+    const slot = rowEl.querySelector(".crosspost-form-slot");
+    const actions = rowEl.querySelector(".crosspost-actions");
+    if (slot) slot.innerHTML = "";
+    if (actions) actions.classList.remove("hidden-during-edit");
   };
 
   UI.renderRecommendations = function (lines) {
