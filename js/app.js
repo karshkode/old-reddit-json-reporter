@@ -1289,30 +1289,172 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     /* Collapsible cards. Any element with [data-collapsible] gets a
      * chevron in its card-header; click toggles .collapsed. Cards with
      * [data-collapsed-default] start hidden so first-load is calm. */
-    /* Card-help "?" tooltip. CSS handles desktop hover; this handler
-     * adds tap-to-toggle on mobile and dismisses any open help when the
-     * user taps elsewhere. Hover-tooltips on touch devices also briefly
-     * stick around because of :focus, which we want. */
+    /* Card-help "?" tooltip — viewport-aware shared popover.
+     *
+     * Earlier version used a CSS pseudo-element on the button with
+     * `right: -4px`, which only worked when the button sat near the
+     * right edge of the screen. When a card-header laid the button on
+     * the LEFT (e.g. the narrative card on Overview), the popover
+     * extended past the left viewport edge and got clipped.
+     *
+     * New approach: a single fixed-position <div> shared across all
+     * help buttons. We measure the button's bounding rect on show and
+     * place the popover so it stays inside the viewport — preferred
+     * placement is below + right-aligned with the button, fallback to
+     * left-alignment, and ultimately centered. The pointer triangle
+     * slides along the top edge so it always points at the button.
+     */
+    let helpTooltip = document.getElementById("card-help-tooltip");
+    if (!helpTooltip) {
+      helpTooltip = document.createElement("div");
+      helpTooltip.id = "card-help-tooltip";
+      helpTooltip.className = "card-help-tooltip";
+      helpTooltip.setAttribute("role", "tooltip");
+      helpTooltip.hidden = true;
+      const inner = document.createElement("div");
+      inner.className = "card-help-tooltip-body";
+      const pointer = document.createElement("span");
+      pointer.className = "card-help-tooltip-pointer";
+      helpTooltip.appendChild(pointer);
+      helpTooltip.appendChild(inner);
+      document.body.appendChild(helpTooltip);
+    }
+
+    function positionHelpTooltip(btn) {
+      if (!btn || !helpTooltip) return;
+      const body = helpTooltip.querySelector(".card-help-tooltip-body");
+      if (body) body.textContent = btn.dataset.help || "";
+      helpTooltip.hidden = false;
+
+      const margin = 8;
+      const vw = window.innerWidth || 320;
+      const vh = window.innerHeight || 480;
+      const maxW = Math.min(320, vw - 2 * margin);
+      helpTooltip.style.maxWidth = maxW + "px";
+      /* Reset before measuring so previous run's position doesn't bias
+       * the layout pass. */
+      helpTooltip.style.left = "0px";
+      helpTooltip.style.top = "0px";
+      helpTooltip.style.right = "auto";
+
+      const tw = helpTooltip.offsetWidth;
+      const th = helpTooltip.offsetHeight;
+      const r = btn.getBoundingClientRect();
+
+      /* Horizontal placement: prefer right-aligned with button, fall
+       * back to left-aligned, then center. Always staying margin px
+       * away from each edge. */
+      let left;
+      const rightAligned = r.right - tw;
+      const leftAligned = r.left;
+      if (rightAligned >= margin && rightAligned + tw <= vw - margin) {
+        left = rightAligned;
+      } else if (leftAligned >= margin && leftAligned + tw <= vw - margin) {
+        left = leftAligned;
+      } else {
+        left = Math.max(margin, Math.min(vw - tw - margin, (vw - tw) / 2));
+      }
+
+      /* Vertical placement: below by default, above if it would clip. */
+      let top = r.bottom + 8;
+      let placement = "below";
+      if (top + th > vh - margin) {
+        top = r.top - th - 8;
+        placement = "above";
+        if (top < margin) {
+          /* Force below; let the user scroll if needed. */
+          top = Math.min(r.bottom + 8, vh - th - margin);
+          placement = "below";
+        }
+      }
+
+      helpTooltip.style.left = left + "px";
+      helpTooltip.style.top = top + "px";
+      helpTooltip.dataset.placement = placement;
+
+      /* Slide the pointer to the horizontal middle of the button. */
+      const pointer = helpTooltip.querySelector(".card-help-tooltip-pointer");
+      if (pointer) {
+        const buttonCenterX = r.left + r.width / 2;
+        const localX = buttonCenterX - left;
+        const clamped = Math.max(10, Math.min(tw - 10, localX));
+        pointer.style.left = clamped + "px";
+      }
+    }
+
+    function hideHelpTooltip() {
+      if (helpTooltip) helpTooltip.hidden = true;
+      document.querySelectorAll(".card-help.help-open").forEach((b) => b.classList.remove("help-open"));
+    }
+
+    /* Hover (desktop): show on mouseenter, hide on mouseleave. We bind
+     * via event delegation on body so dynamically-rendered buttons work. */
+    document.body.addEventListener("mouseover", (e) => {
+      const btn = e.target.closest && e.target.closest(".card-help");
+      if (!btn) return;
+      positionHelpTooltip(btn);
+    });
+    document.body.addEventListener("mouseout", (e) => {
+      const btn = e.target.closest && e.target.closest(".card-help");
+      if (!btn) return;
+      /* Don't hide if the user is keyboard-focused on the button OR
+       * if any button is in the click-toggled "help-open" state. */
+      if (document.activeElement === btn) return;
+      if (document.querySelector(".card-help.help-open")) return;
+      hideHelpTooltip();
+    });
+
+    /* Keyboard focus: same treatment for accessibility. */
+    document.body.addEventListener("focusin", (e) => {
+      const btn = e.target.closest && e.target.closest(".card-help");
+      if (btn) positionHelpTooltip(btn);
+    });
+    document.body.addEventListener("focusout", (e) => {
+      const btn = e.target.closest && e.target.closest(".card-help");
+      if (!btn) return;
+      if (document.querySelector(".card-help.help-open")) return;
+      hideHelpTooltip();
+    });
+
+    /* Click toggles a sticky-open state for mobile (no hover). */
     document.body.addEventListener("click", (e) => {
-      const btn = e.target && e.target.closest && e.target.closest(".card-help");
+      const btn = e.target.closest && e.target.closest(".card-help");
       if (btn) {
         e.preventDefault();
         e.stopPropagation();
-        document.querySelectorAll(".card-help.help-open").forEach((b) => {
-          if (b !== btn) b.classList.remove("help-open");
-        });
-        btn.classList.toggle("help-open");
+        const wasOpen = btn.classList.contains("help-open");
+        document.querySelectorAll(".card-help.help-open").forEach((b) => b.classList.remove("help-open"));
+        if (wasOpen) {
+          hideHelpTooltip();
+        } else {
+          btn.classList.add("help-open");
+          positionHelpTooltip(btn);
+        }
         return;
       }
-      /* Click outside any help button closes them all */
-      document.querySelectorAll(".card-help.help-open").forEach((b) => b.classList.remove("help-open"));
+      /* Click anywhere else dismisses any open help. */
+      hideHelpTooltip();
     });
-    /* Escape also closes help popovers */
+
+    /* Escape closes any open help popover. */
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        document.querySelectorAll(".card-help.help-open").forEach((b) => b.classList.remove("help-open"));
-      }
+      if (e.key === "Escape") hideHelpTooltip();
     });
+
+    /* Reposition on scroll/resize so the popover keeps tracking the
+     * button (or hides if the button moves out of view). */
+    function repositionOpenHelp() {
+      const btn = document.querySelector(".card-help.help-open");
+      if (!btn) return hideHelpTooltip();
+      const r = btn.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) {
+        hideHelpTooltip();
+        return;
+      }
+      positionHelpTooltip(btn);
+    }
+    window.addEventListener("scroll", repositionOpenHelp, { passive: true });
+    window.addEventListener("resize", repositionOpenHelp);
 
     document.querySelectorAll("[data-collapsible]").forEach((card) => {
       if (card.hasAttribute("data-collapsed-default")) card.classList.add("collapsed");
