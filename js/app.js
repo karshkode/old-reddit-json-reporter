@@ -45,6 +45,8 @@
     postsPage: 0,
     postsPageSize: 25,
     postsSubFilter: "",
+    /* Min-score chip filter for the Posts tab (0 = All). */
+    postsScoreMin: 0,
     /* Cross-posts pagination + sub filter (Campaigns tab). */
     crossPostsPage: 0,
     crossPostsPageSize: 10,
@@ -172,6 +174,13 @@
     if (state.postsSubFilter) {
       const sub = state.postsSubFilter.toLowerCase();
       list = list.filter((p) => (p.subreddit || "").toLowerCase() === sub);
+    }
+    /* Score-range chip filter (constraint, distinct from free-text
+     * search). state.postsScoreMin is a numeric threshold; 0 means no
+     * filter. Chips on the Posts tab toggle this. */
+    if (state.postsScoreMin && state.postsScoreMin > 0) {
+      const min = state.postsScoreMin;
+      list = list.filter((p) => (p.score || 0) >= min);
     }
     list = list.slice().sort((a, b) => {
       const k = state.sortKey;
@@ -1509,8 +1518,14 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     window.addEventListener("scroll", repositionOpenHelp, { passive: true });
     window.addEventListener("resize", repositionOpenHelp);
 
+    /* `data-collapsed-on-mobile` cards start collapsed only on phones
+     * (≤ 720px). On desktop they stay expanded by default. The viewport
+     * is checked once at init; we don't reactively re-collapse on resize
+     * because that would yank the page out from under a user mid-scroll. */
+    const isMobileViewport = (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches) || (window.innerWidth || 0) <= 720;
     document.querySelectorAll("[data-collapsible]").forEach((card) => {
       if (card.hasAttribute("data-collapsed-default")) card.classList.add("collapsed");
+      if (isMobileViewport && card.hasAttribute("data-collapsed-on-mobile")) card.classList.add("collapsed");
       const header = card.querySelector(".card-header");
       if (!header) return;
       header.classList.add("collapsible-toggle");
@@ -2134,6 +2149,50 @@ const crossPosts = Analysis.detectCrossPosts(posts);
       state.postsPageSize = e.target.value === "all" ? "all" : Number(e.target.value) || 25;
       state.postsPage = 0;
       rerenderLight();
+    });
+
+    /* Posts tab — Min-score chip filter (constraint, distinct from
+     * free-text search). The chips behave like a radio group: clicking
+     * any chip activates that threshold and clears the others. */
+    document.querySelectorAll('.pc-filter .chip-group [data-score-min]').forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const v = Number(chip.dataset.scoreMin || 0) || 0;
+        if (state.postsScoreMin === v) return;
+        state.postsScoreMin = v;
+        document.querySelectorAll('.pc-filter .chip-group [data-score-min]').forEach((c) => {
+          const isOn = Number(c.dataset.scoreMin || 0) === v;
+          c.classList.toggle("active", isOn);
+          c.setAttribute("aria-checked", isOn ? "true" : "false");
+        });
+        state.postsPage = 0;
+        rerenderLight();
+      });
+    });
+
+    /* In-tab jump-nav: pill links above each tab panel that smooth-scroll
+     * to a section's [data-anchor="…"] landmark. Eliminates scroll-
+     * hunting when a tab has many cards. */
+    document.querySelectorAll(".subnav a[data-jump]").forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        const key = link.dataset.jump;
+        if (!key) return;
+        const target = document.querySelector(`[data-anchor="${key}"]`) || document.getElementById(key);
+        if (!target) return;
+        /* If the section is collapsed, expand it first so the jump
+         * lands on something visible. */
+        if (target.classList.contains("collapsed")) {
+          target.classList.remove("collapsed");
+          const header = target.querySelector(".card-header");
+          if (header) header.setAttribute("aria-expanded", "true");
+        }
+        try { target.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) { target.scrollIntoView(); }
+        /* Visually flash the target so the user knows where they
+         * landed (especially helpful when the section is empty or
+         * still loading). */
+        target.classList.add("just-jumped");
+        setTimeout(() => target.classList.remove("just-jumped"), 900);
+      });
     });
 
     /* Cross-posts (Campaigns tab) — sub filter + per-page. */

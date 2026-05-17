@@ -489,7 +489,22 @@
       el.innerHTML = '<div class="empty">Not enough variety to identify themes.</div>';
       return;
     }
-    el.innerHTML = themes.slice(0, 14).map((t) => {
+    /* Show the top N first; the rest is hidden behind a "Show all"
+     * button. Lets the user scan the most-important themes without
+     * scrolling past 14 rows of low-relevance noise. State is held in
+     * the DOM via data-truncated so re-renders don't lose the user's
+     * choice unexpectedly. */
+    const TRUNC = 5;
+    const max = Math.min(14, themes.length);
+    const showAll = el.dataset.truncated === "false";
+    const visible = (showAll || max <= TRUNC) ? themes.slice(0, max) : themes.slice(0, TRUNC);
+    el.dataset.truncated = (showAll || max <= TRUNC) ? "false" : "true";
+    const expanderHtml = max > TRUNC && !showAll
+      ? `<button type="button" class="list-expand" data-action="expand-themes">Show all ${max} themes</button>`
+      : (max > TRUNC && showAll
+          ? `<button type="button" class="list-expand" data-action="collapse-themes">Show top ${TRUNC} only</button>`
+          : "");
+    el.innerHTML = visible.map((t) => {
       const sentClass = t.sentiment.average > 0.1 ? "good" : t.sentiment.average < -0.1 ? "bad" : "info";
       const sentLabel = t.sentiment.average > 0.1 ? "positive" : t.sentiment.average < -0.1 ? "negative" : "neutral";
       const examples = t.examples.slice(0, 2).map((p) =>
@@ -505,7 +520,18 @@
           <div class="theme-meta">avg ${Util.fmtNum(t.avgScore)} score · top in r/${Util.escapeHtml(t.topSub || "—")} · ${examples}</div>
         </div>
       `;
-    }).join("");
+    }).join("") + expanderHtml;
+
+    /* Wire the expand/collapse button (re-renders the same list with
+     * the inverted truncated state). One-shot — re-attached on every
+     * render because innerHTML clobbers it. */
+    const btn = el.querySelector('[data-action="expand-themes"], [data-action="collapse-themes"]');
+    if (btn) {
+      btn.addEventListener("click", () => {
+        el.dataset.truncated = el.dataset.truncated === "true" ? "false" : "true";
+        UI.renderThemes(themes);
+      });
+    }
   };
 
   /* ---------- Subreddit profiles ---------- */
@@ -516,7 +542,21 @@
     const list = Object.values(profiles || {});
     if (!list.length) { el.innerHTML = '<div class="empty">Load at least one subreddit to see profiles.</div>'; return; }
     list.sort((a, b) => b.totalScore - a.totalScore);
-    el.innerHTML = list.map((p) => {
+    /* Show the top 3 by total upvotes; rest hidden behind "Show all".
+     * 3 is enough to spot the headline patterns without becoming a
+     * scroll-fest. State stored on the element via data-truncated so
+     * re-renders preserve the user's choice. */
+    const TRUNC = 3;
+    const max = list.length;
+    const showAll = el.dataset.truncated === "false";
+    const visible = (showAll || max <= TRUNC) ? list : list.slice(0, TRUNC);
+    el.dataset.truncated = (showAll || max <= TRUNC) ? "false" : "true";
+    const expanderHtml = max > TRUNC && !showAll
+      ? `<button type="button" class="list-expand" data-action="expand-profiles">Show all ${max} subreddits</button>`
+      : (max > TRUNC && showAll
+          ? `<button type="button" class="list-expand" data-action="collapse-profiles">Show top ${TRUNC} only</button>`
+          : "");
+    el.innerHTML = visible.map((p) => {
       const sentClass = p.sentiment.average > 0.1 ? "good" : p.sentiment.average < -0.1 ? "bad" : "info";
       const sentLabel = p.sentiment.average > 0.1 ? "positive" : p.sentiment.average < -0.1 ? "negative" : "neutral";
       const recCls = p.reception === "warm" ? "good" : p.reception === "healthy" ? "info" : p.reception === "mixed" ? "warn" : p.reception === "contentious" ? "bad" : "info";
@@ -544,7 +584,15 @@
           ${keys ? `<div class="profile-line"><span class="profile-label">Top words</span><div>${keys}</div></div>` : ""}
         </div>
       `;
-    }).join("");
+    }).join("") + expanderHtml;
+
+    const btn = el.querySelector('[data-action="expand-profiles"], [data-action="collapse-profiles"]');
+    if (btn) {
+      btn.addEventListener("click", () => {
+        el.dataset.truncated = el.dataset.truncated === "true" ? "false" : "true";
+        UI.renderSubProfiles(profiles);
+      });
+    }
   };
 
   /* ---------- Targeting recommendations ---------- */
