@@ -2340,9 +2340,40 @@ const bestCampaignPost = (summary.posts || [])
     }
   }
 
+  /* Measure the topbar's rendered height and write it into a CSS
+   * variable so the sticky progress banner always docks at the right
+   * Y position. Re-runs on resize and when the topbar's content
+   * changes (e.g. the user toggles the filters button).
+   *
+   * Using ResizeObserver where available for pixel-accurate updates;
+   * falling back to a debounced resize listener otherwise. */
+  function wireTopbarHeightVar() {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+    function update() {
+      const h = topbar.getBoundingClientRect().height;
+      if (!h) return;
+      document.documentElement.style.setProperty("--topbar-h", h + "px");
+    }
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(topbar);
+    }
+    window.addEventListener("resize", update);
+    /* Re-measure after the page settles + after the next animation
+     * frame, since web-fonts loading later can change topbar height. */
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(update);
+    }
+    setTimeout(update, 200);
+    setTimeout(update, 1000);
+  }
+
   function init() {
     safeRun("loadPersisted", loadPersisted);
     safeRun("bind", bind);
+    safeRun("wireTopbarHeightVar", wireTopbarHeightVar);
     /* Wire sync FIRST so the buttons + URL-hash banner are always live,
      * even if a later render step throws on a slow / weird browser. */
     safeRun("wireSyncSession", wireSyncSession);
