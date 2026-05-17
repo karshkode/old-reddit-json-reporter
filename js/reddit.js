@@ -44,7 +44,13 @@
   ];
   Reddit.TRANSPORTS = TRANSPORTS;
 
-  const AUTO_ORDER = ["codetabs", "allorigins", "corsproxy", "isomorphic"];
+  /* Auto-rotation order. `isomorphic` (cors.isomorphic-git.org) was
+   * removed because the public deployment now returns 403 + 0 bytes
+   * for every Reddit URL — it pollutes the auto chain with
+   * "Load failed" errors that aren't actually informative. It's still
+   * available as a manual option via the Data Source dropdown in
+   * case the upstream comes back online. */
+  const AUTO_ORDER = ["codetabs", "allorigins", "corsproxy"];
 
   let preferredTransport = "auto";
   try { preferredTransport = localStorage.getItem(STORAGE_KEY) || "auto"; } catch (_) {}
@@ -121,6 +127,35 @@
     return false;
   }
 
+  /* Normalize browser-specific fetch failure messages into a single
+   * plain-language label. Without this, users see Safari's
+   * "TypeError: Load failed" or Chrome's "Failed to fetch" or
+   * Firefox's "NetworkError when attempting to fetch resource" and
+   * can't tell whether it's a parsing problem, a CORS reject, or
+   * a dead proxy. The actual root cause is identical for all three:
+   * the browser refused or couldn't complete the network request. */
+  function normalizeFetchKind(e) {
+    if (!e) return "fetch failed";
+    if (e.name === "AbortError") return "timeout";
+    const m = String(e.message || e || "").trim();
+    if (m === "Load failed" || m === "Failed to fetch" || /networkerror/i.test(m)) {
+      return "network/CORS rejected";
+    }
+    return m || "fetch failed";
+  }
+
+  /* Throw an Error tagged with .transport, .kind, .attempt so
+   * fetchJson() can build a per-transport summary at the end of
+   * the chain. Without these tags we'd be string-parsing the
+   * messages downstream — fragile. */
+  function throwTransportError(transport, kind, attempt) {
+    const err = new Error(kind + " via " + transport.name);
+    err.transport = transport.name;
+    err.kind = kind;
+    err.attempt = attempt;
+    return err;
+  }
+
   async function tryTransport(transport, redditUrl, attempt) {
     const target = transport.build(redditUrl);
     /* 8s hard timeout per proxy attempt — without this a slow proxy can
@@ -137,28 +172,27 @@
         signal: controller && controller.signal,
       });
     } catch (e) {
-      if (e && e.name === "AbortError") throw new Error("timeout via " + transport.name);
-      throw new Error((e && e.message ? e.message : String(e)) + " via " + transport.name);
+      throw throwTransportError(transport, normalizeFetchKind(e), attempt);
     } finally {
       if (tid) clearTimeout(tid);
     }
     if (res.status === 429) {
       const retry = parseInt(res.headers.get("Retry-After") || "0", 10);
       await Util.sleep(Math.max(800 * Math.pow(2, attempt), retry * 1000));
-      throw new Error("rate limited (429) via " + transport.name);
+      throw throwTransportError(transport, "rate limited (429)", attempt);
     }
     if (!res.ok) {
-      throw new Error("HTTP " + res.status + " via " + transport.name);
+      throw throwTransportError(transport, "HTTP " + res.status, attempt);
     }
     const text = await res.text();
     if (looksLikeBlockedHtml(text)) {
-      throw new Error("Reddit blocked page via " + transport.name);
+      throw throwTransportError(transport, "Reddit blocked page", attempt);
     }
     let data;
     try {
       data = JSON.parse(text);
     } catch (e) {
-      throw new Error("non-JSON response via " + transport.name);
+      throw throwTransportError(transport, "non-JSON response", attempt);
     }
     /* Reject "proxy error" JSON shapes — corsproxy.io now returns
      *   {"error":"Server-side requests are not allowed on your plan…"}
@@ -170,11 +204,11 @@
       const isReddit404Etc = data.error === 403 || data.error === 404 || data.error === 429;
       const isProxyJunk = !data.data && !data.kind;
       if (isReddit404Etc) {
-        throw new Error("Reddit " + data.error + " via " + transport.name + (data.message ? ": " + data.message : ""));
+        throw throwTransportError(transport, "Reddit " + data.error + (data.message ? ": " + data.message : ""), attempt);
       }
       if (isProxyJunk) {
         const msg = typeof data.error === "string" ? data.error.slice(0, 80) : "error " + data.error;
-        throw new Error("proxy error via " + transport.name + ": " + msg);
+        throw throwTransportError(transport, "proxy error: " + msg, attempt);
       }
     }
     return { data, transport: transport.name };
@@ -195,8 +229,12 @@
     if (inflight.has(key)) return inflight.get(key);
 
     const promise = (async () => {
-      let lastErr;
       const transports = transportsToTry();
+      /* Per-transport latest failure. The map is keyed by transport
+       * name; later attempts overwrite the kind for the same name so
+       * we end up with one row per *transport* (not one per attempt),
+       * deduplicated for display. */
+      const lastByTransport = new Map();
       for (let attempt = 0; attempt < 2; attempt++) {
         for (const t of transports) {
           try {
@@ -206,12 +244,34 @@
             if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
             return out.data;
           } catch (err) {
-            lastErr = err;
+            const tName = (err && err.transport) || (t && t.name) || "?";
+            const kind = (err && err.kind) || (err && err.message) || String(err);
+            lastByTransport.set(tName, kind);
           }
         }
         await Util.sleep(250 * Math.pow(2, attempt));
       }
-      throw lastErr || new Error("All proxies failed");
+
+      /* Build a rich summary error so the UI doesn't show one
+       * arbitrary "via X" message that hides the real picture.
+       *
+       * If every transport failed with the SAME kind (e.g. all
+       * timed out), simplify to "all N proxies — <kind>".
+       * Otherwise list each transport(kind) so the user sees
+       * exactly what each proxy did. */
+      const entries = Array.from(lastByTransport.entries());
+      let summary;
+      const kinds = new Set(entries.map(([, k]) => k));
+      if (entries.length === 0) {
+        summary = "all proxies failed";
+      } else if (kinds.size === 1) {
+        summary = `all ${entries.length} prox${entries.length === 1 ? "y" : "ies"} ${entries[0][1]}`;
+      } else {
+        summary = `all ${entries.length} proxies failed — ${entries.map(([t, k]) => `${t}(${k})`).join(" · ")}`;
+      }
+      const err = new Error(summary);
+      err.attempts = entries.map(([t, k]) => ({ transport: t, kind: k }));
+      throw err;
     })();
     inflight.set(key, promise);
     try {
@@ -474,7 +534,11 @@
 
   Reddit.resolveShareUrl = async function (shareUrl) {
     const transports = transportsToTry();
-    let lastErr;
+    /* Mirrors fetchJson's per-transport tracking so the user sees the
+     * full chain of failures instead of just whichever proxy was last
+     * in line. */
+    const lastByTransport = new Map();
+    function note(name, kind) { lastByTransport.set(name, kind); }
     for (const t of transports) {
       const target = t.build(shareUrl);
       const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
@@ -486,12 +550,12 @@
           headers: { Accept: "text/html, */*;q=0.5" },
           signal: ctrl && ctrl.signal,
         });
-        if (!res.ok) { lastErr = new Error("HTTP " + res.status + " via " + t.name); continue; }
+        if (!res.ok) { note(t.name, "HTTP " + res.status); continue; }
         const text = await res.text();
         if (looksLikeBlockedHtml(text)) {
           /* Reddit's "Blocked" interstitial has no canonical comments link.
            * Fall through to the next proxy. */
-          lastErr = new Error("Reddit blocked page via " + t.name);
+          note(t.name, "Reddit blocked page");
           continue;
         }
         const m = text.match(/comments\/([a-z0-9]{4,12})/i);
@@ -499,15 +563,22 @@
           Reddit._lastTransport = t.name;
           return m[1].toLowerCase();
         }
-        lastErr = new Error("no canonical id in response via " + t.name);
+        note(t.name, "no canonical id in response");
       } catch (e) {
-        if (e && e.name === "AbortError") lastErr = new Error("timeout via " + t.name);
-        else lastErr = new Error((e && e.message ? e.message : String(e)) + " via " + t.name);
+        note(t.name, normalizeFetchKind(e));
       } finally {
         if (tid) clearTimeout(tid);
       }
     }
-    throw lastErr || new Error("All proxies failed for share URL");
+    const entries = Array.from(lastByTransport.entries());
+    const kinds = new Set(entries.map(([, k]) => k));
+    let summary;
+    if (entries.length === 0) summary = "share URL resolution failed";
+    else if (kinds.size === 1) summary = `share URL — all ${entries.length} prox${entries.length === 1 ? "y" : "ies"} ${entries[0][1]}`;
+    else summary = `share URL — ${entries.map(([t, k]) => `${t}(${k})`).join(" · ")}`;
+    const err = new Error(summary);
+    err.attempts = entries.map(([t, k]) => ({ transport: t, kind: k }));
+    throw err;
   };
 
   /* Resolve many share URLs concurrently. Returns
