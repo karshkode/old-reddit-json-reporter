@@ -188,8 +188,16 @@ button { font-family: inherit; }
 /* ---------- Controls ---------- */
 
 .controls {
+  /* 12-column-style grid using named areas. Subreddits column on the
+   * left holds the chips + add input (variable height). Right side
+   * stacks "Fetch settings" over "Find posts" so the controls are
+   * legible in tidy rows instead of wrapping all over the screen.
+   * Sync session is a full-width footer band beneath. */
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(280px, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "subs    listing find"
+    "sync    sync    sync";
   gap: 14px;
   padding: 14px max(16px, var(--safe-left));
   border-bottom: 1px solid var(--border);
@@ -202,11 +210,20 @@ button { font-family: inherit; }
  * query's rules below). */
 .controls.collapsed { display: none !important; }
 
+.controls .cg-subs    { grid-area: subs; }
+.controls .cg-listing { grid-area: listing; }
+.controls .cg-find    { grid-area: find; }
+.controls .cg-sync    { grid-area: sync; }
+/* Mobile-only data-source dropdown lives in this section but should
+ * never participate in the desktop grid. */
+.controls .cg-data-source-mobile { display: none; }
+
 .control-group {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
+  align-content: flex-start;
 }
 
 .group-label, .control-group > label {
@@ -2364,4 +2381,136 @@ select { max-width: 100%; min-width: 0; }
   .hero-card .card-header .hint { font-size: 11px; }
   .hero-card .targeting-picker { padding: 8px; gap: 6px; }
   .hero-card #discover-run { min-height: 36px; font-size: 13px; padding: 8px 12px; }
+}
+
+/* =====================================================================
+   FILTER DRAWER — clean desktop layout (Subreddits / Fetch / Find / Sync)
+   ===================================================================== */
+
+/* Each control-group is a stack: group label + content. */
+.control-group .group-label {
+  flex: 0 0 100%;
+  margin-bottom: 0;
+}
+
+/* Subreddits column */
+.cg-subs .chips {
+  flex: 0 0 100%;
+  align-self: stretch;
+}
+.cg-subs .inline-form {
+  flex: 0 0 100%;
+}
+
+/* "Fetch settings" + "Find posts" sub-rows:
+ * cg-row is a horizontal flex row holding cg-field stacks (label + input).
+ * On narrow widths fields wrap to their own line. */
+.cg-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 0 0 100%;
+  align-items: flex-end;
+}
+.cg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 100px;
+  min-width: 0;
+}
+.cg-field-grow { flex: 1 1 220px; }
+.cg-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-mute);
+  font-weight: 600;
+  line-height: 1;
+}
+.cg-field select,
+.cg-field input {
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+/* Sync session footer — separate from the top-row grid via a divider */
+.cg-sync {
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+  margin-top: 0;
+  flex-direction: column;
+}
+.cg-sync .sync-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.cg-sync .sync-head .group-label { flex: 0 0 auto; margin-bottom: 0; }
+.cg-sync .sync-head .hint { color: var(--text-mute); font-size: 12px; }
+.cg-sync .sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cg-sync .sync-actions .btn { flex: 0 0 auto; }
+.cg-sync #sync-import-panel {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cg-sync #sync-import-text {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
+  min-height: 70px;
+  outline: none;
+}
+.cg-sync #sync-import-text:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18);
+}
+.cg-sync .sync-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Tablet (≤980px): collapse to 2-column with sync below */
+@media (max-width: 980px) {
+  .controls {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "subs    subs"
+      "listing find"
+      "sync    sync";
+  }
+}
+
+/* Mobile (≤720px): everything stacks; show the mobile-only data-source row */
+@media (max-width: 720px) {
+  .controls {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "subs"
+      "listing"
+      "find"
+      "datasource"
+      "sync";
+  }
+  .controls .cg-data-source-mobile {
+    display: flex;
+    grid-area: datasource;
+  }
+  .cg-row { gap: 8px; }
 }

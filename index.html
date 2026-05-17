@@ -20,7 +20,7 @@
       <div class="logo" aria-hidden="true">R</div>
       <div class="brand-text">
         <h1>Reddit Campaign Reporter</h1>
-        <p class="tagline">old.reddit <code>/json</code> · trends · AI insights · campaigns</p>
+        <p class="tagline">old.reddit <code>/json</code> · trends · discovery · campaigns</p>
       </div>
     </div>
     <div class="topbar-actions">
@@ -40,7 +40,8 @@
   </header>
 
   <section class="controls" id="controls" aria-label="Filters">
-    <div class="control-group">
+    <!-- Subreddits column (left side, takes the full height it needs) -->
+    <div class="control-group cg-subs">
       <label class="group-label">Subreddits</label>
       <div id="subreddit-chips" class="chips"></div>
       <form id="add-sub-form" class="inline-form">
@@ -49,51 +50,70 @@
       </form>
     </div>
 
-    <div class="control-group">
-      <label for="listing-select" class="group-label">Listing</label>
-      <select id="listing-select">
-        <option value="new">New</option>
-        <option value="hot" selected>Hot</option>
-        <option value="top">Top</option>
-        <option value="rising">Rising</option>
-      </select>
-
-      <label for="time-select" class="group-label">Top window</label>
-      <select id="time-select">
-        <option value="day">Day</option>
-        <option value="week" selected>Week</option>
-        <option value="month">Month</option>
-        <option value="year">Year</option>
-        <option value="all">All</option>
-      </select>
-
-      <label for="limit-select" class="group-label">Limit</label>
-      <select id="limit-select">
-        <option>25</option>
-        <option selected>100</option>
-        <option>250</option>
-        <option>500</option>
-      </select>
+    <!-- Listing / Top window / Limit on a single row, each labeled above -->
+    <div class="control-group cg-listing">
+      <label class="group-label">Fetch settings</label>
+      <div class="cg-row">
+        <label class="cg-field">
+          <span class="cg-field-label">Listing</span>
+          <select id="listing-select">
+            <option value="new">New</option>
+            <option value="hot" selected>Hot</option>
+            <option value="top">Top</option>
+            <option value="rising">Rising</option>
+          </select>
+        </label>
+        <label class="cg-field">
+          <span class="cg-field-label">Top window</span>
+          <select id="time-select">
+            <option value="day">Day</option>
+            <option value="week" selected>Week</option>
+            <option value="month">Month</option>
+            <option value="year">Year</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label class="cg-field">
+          <span class="cg-field-label">Limit</span>
+          <select id="limit-select">
+            <option>25</option>
+            <option selected>100</option>
+            <option>250</option>
+            <option>500</option>
+          </select>
+        </label>
+      </div>
     </div>
 
-    <div class="control-group">
-      <label for="post-id-filter" class="group-label">Filter by post ID</label>
-      <input id="post-id-filter" type="text" placeholder="paste post URLs or IDs — extracted automatically" autocomplete="off" inputmode="text" />
+    <!-- Filter by post ID + Search side-by-side, each labeled above -->
+    <div class="control-group cg-find">
+      <label class="group-label">Find posts</label>
+      <div class="cg-row">
+        <label class="cg-field cg-field-grow">
+          <span class="cg-field-label">Filter by post ID</span>
+          <input id="post-id-filter" type="text" placeholder="paste post URLs or IDs" autocomplete="off" inputmode="text" />
+        </label>
+        <label class="cg-field cg-field-grow">
+          <span class="cg-field-label">Search</span>
+          <input id="search-input" type="search" placeholder="title, author, flair…" autocomplete="off" />
+        </label>
+      </div>
       <div id="post-id-filter-preview" class="paste-preview tiny" hidden></div>
-
-      <label for="search-input" class="group-label">Search</label>
-      <input id="search-input" type="search" placeholder="title, author, flair…" autocomplete="off" />
     </div>
 
-    <div class="control-group only-mobile">
+    <!-- Mobile-only data-source dropdown (the topbar select hides on mobile) -->
+    <div class="control-group only-mobile cg-data-source-mobile">
       <label for="transport-select-mobile" class="group-label">Data source</label>
       <select id="transport-select-mobile"></select>
       <button id="clear-cache-btn-mobile" class="btn small ghost" type="button">Clear cache</button>
     </div>
 
-    <div class="control-group sync-group">
-      <label class="group-label">Sync session</label>
-      <span class="hint">Move campaigns + subs + prefs to another device. No server, no account — the data lives in the link or file.</span>
+    <!-- Sync session as a self-contained footer row (full width) -->
+    <div class="control-group sync-group cg-sync">
+      <div class="sync-head">
+        <label class="group-label">Sync session</label>
+        <span class="hint">Move campaigns + subs + prefs to another device — no server, no account.</span>
+      </div>
       <div class="sync-actions">
         <button id="sync-copy-link" type="button" class="btn small primary">📋 Copy share link</button>
         <button id="sync-export-json" type="button" class="btn small">⤓ Download JSON</button>
