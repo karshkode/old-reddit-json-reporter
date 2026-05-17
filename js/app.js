@@ -1107,6 +1107,37 @@
     }, 200);
   }
 
+  /* Strip every recognised share-payload fragment from the URL without
+   * triggering a navigation. Handles BOTH formats:
+   *   #s=…       new short (gzip + compact array)        — PR #45
+   *   #session=… legacy verbose                          — pre-PR #45
+   * Idempotent + tolerant of multi-fragment hashes (#a=1&s=…&b=2).
+   * Returns true if the URL was modified, false otherwise. */
+  function clearShareHashFromUrl() {
+    if (typeof location === "undefined") return false;
+    const before = location.hash || "";
+    if (!/(?:^|[#&])(?:s|session)=/.test(before)) return false;
+    try {
+      const url = new URL(location.href);
+      url.hash = url.hash
+        .replace(/(?:^|[#&])s=[^&]+/, "")
+        .replace(/(?:^|[#&])session=[^&]+/, "")
+        .replace(/^#&/, "#")
+        .replace(/^#$/, "");
+      history.replaceState(null, "", url.pathname + url.search + (url.hash || ""));
+      return true;
+    } catch (_) { return false; }
+  }
+
+  /* Dismiss the in-page session-import banner if it's currently shown.
+   * Used by the brand-home click handler so a single tap of the logo
+   * clears both the visual banner AND the URL fragment that produces
+   * it on reload. */
+  function dismissSessionImportBanner() {
+    const banner = document.getElementById("sync-import-banner");
+    if (banner) banner.remove();
+  }
+
   function showSessionImportBanner(decoded, encoded) {
     const main = document.querySelector("main");
     if (!main) return;
@@ -1132,12 +1163,10 @@
     `;
     function done() {
       banner.remove();
-      /* Strip the session= fragment so a reload doesn't re-prompt. */
-      try {
-        const url = new URL(location.href);
-        url.hash = url.hash.replace(/(?:^|[#&])session=[^&]+/, "").replace(/^#&/, "#").replace(/^#$/, "");
-        history.replaceState(null, "", url.pathname + url.search + (url.hash || ""));
-      } catch (_) {}
+      /* Strip BOTH share-payload formats so a reload doesn't re-prompt
+       * regardless of whether the link was the new `#s=…` short URL
+       * or the legacy `#session=…` verbose one. */
+      clearShareHashFromUrl();
     }
     banner.addEventListener("click", (e) => {
       const btn = e.target && e.target.closest && e.target.closest("[data-action]");
@@ -1396,10 +1425,20 @@
 
     /* Brand button — same affordance as a logo home link. Activates
      * the Overview tab and scrolls the page to the top so the user
-     * gets back to the highest-level summary in one tap. */
+     * gets back to the highest-level summary in one tap.
+     *
+     * Also clears any share-link fragment from the URL (#s=… or
+     * #session=…) and dismisses the in-page import banner. Without
+     * this, every refresh after a friend opened a shared link would
+     * keep re-prompting "Found a shared session in this URL" — even
+     * after they've already accepted or dismissed it. The brand tap
+     * is the natural moment to say "I'm done with that link, this is
+     * my dashboard now". */
     const brandHome = document.getElementById("brand-home");
     if (brandHome) brandHome.addEventListener("click", () => {
       try { UI.activateTab("overview"); } catch (_) {}
+      try { clearShareHashFromUrl(); } catch (_) {}
+      try { dismissSessionImportBanner(); } catch (_) {}
       try { window.scrollTo({ top: 0, behavior: "smooth" }); }
       catch (_) { window.scrollTo(0, 0); }
     });
