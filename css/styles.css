@@ -196,6 +196,12 @@ button { font-family: inherit; }
   background: var(--bg-elev);
 }
 
+/* Desktop collapse state — symmetric with mobile's .expanded model so
+ * one toggle button covers both viewports. .collapsed wins everywhere
+ * (the !important keeps it from being clobbered by the mobile media
+ * query's rules below). */
+.controls.collapsed { display: none !important; }
+
 .control-group {
   display: flex;
   flex-wrap: wrap;
