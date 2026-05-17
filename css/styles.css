@@ -827,15 +827,45 @@ footer {
   .btn.primary { padding: 8px 12px; }
   .btn.expanded { background: rgba(255, 87, 34, 0.18); }
 
-  /* Filter drawer — closed by default on mobile */
+  /* Filter drawer on mobile.
+   *
+   * Desktop uses a 2-column grid with named template-areas
+   * ("subs find / listing find"). On phones we MUST flatten that to a
+   * single vertical column or the "find" area gets pushed into an
+   * implicit second column off the right edge of the viewport
+   * (manifested as Filter-by-post-ID + Search appearing far off
+   * screen with empty space at left). Override BOTH grid-template-
+   * columns and grid-template-areas, then drop the grid entirely so
+   * the page can scroll vertically with no horizontal pan needed.
+   *
+   * Switching display from grid -> flex column is the simplest
+   * guarantee: no implicit columns, no template-areas math, just one
+   * stacked group after another. The body scroll handles overflow. */
   .controls {
-    grid-template-columns: 1fr;
+    display: none;
     gap: 14px;
     padding: 14px 12px;
-    display: none;
     border-bottom: 2px solid var(--accent);
+    /* Keep horizontal overflow contained — nothing inside should ever
+     * force a sideways scroll on mobile. */
+    max-width: 100%;
+    overflow-x: hidden;
   }
-  .controls.expanded { display: grid; }
+  .controls.expanded {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* Cancel desktop's grid-template-areas so the children stack in
+   * source order regardless of which `cg-*` class they carry. */
+  .controls.expanded .cg-subs,
+  .controls.expanded .cg-listing,
+  .controls.expanded .cg-find,
+  .controls.expanded .cg-sync {
+    grid-area: auto;
+    width: 100%;
+    min-width: 0;
+  }
   .control-group { gap: 8px; }
   .control-group > label { width: 100%; }
   .control-group input[type="text"],
@@ -845,8 +875,10 @@ footer {
   .control-group textarea {
     flex: 1 1 100%;
     font-size: 16px; /* avoid iOS zoom on focus */
+    max-width: 100%;
+    box-sizing: border-box;
   }
-  .inline-form { flex: 1 1 100%; }
+  .inline-form { flex: 1 1 100%; max-width: 100%; }
 
   /* Tabs — pinned right under topbar, full-bleed scroll */
   .tabs {
