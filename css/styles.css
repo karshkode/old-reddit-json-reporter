@@ -3134,3 +3134,21 @@ body.modal-open { overflow: hidden; }
   .posts-controls .pc-filter { width: 100%; justify-content: space-between; }
   .posts-controls .pc-filter select { flex: 1 1 auto; min-width: 0; }
 }
+
+/* ---------- Cross-posts result-count meta line ---------- */
+
+/* Live "X of Y match" counter that appears below the cross-post
+ * controls when any filter is active. Sits flush with the controls
+ * so it reads as a continuation of the filter UI rather than a new
+ * card section. */
+.crossposts-meta {
+  padding: 0 14px 8px;
+  font-size: 12px;
+  color: var(--text-mute);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.crossposts-meta:empty { display: none; }
+@media (max-width: 720px) {
+  .crossposts-meta { padding: 0 12px 8px; }
+}

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
   <link rel="preconnect" href="https://api.allorigins.win" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260517g" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260517h" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4500'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
@@ -410,19 +410,56 @@
       <!-- Cross-post detection — campaign-relevant signal across loaded subs -->
       <div class="card" id="crossposts-card" data-anchor="crossposts-card" data-collapsible data-collapsed-default>
         <header class="card-header"><h2>The same post in multiple subreddits</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="When the same title or URL appears in more than one sub, we group them here. Ranked by spread (number of subs) first, then total upvotes — so a post in 5 subs ranks above a single viral post even if the latter has more points. Tap &quot;+ Make campaign&quot; on any group to instantly track it as a saved campaign — the post IDs and sub list get prefilled.">?</button><span class="hint">Tap to expand · spotted across your loaded data</span></header>
-        <div class="crossposts-controls">
-          <label class="group-label" for="crossposts-sub-filter">Sub</label>
-          <select id="crossposts-sub-filter" aria-label="Filter cross-posts by subreddit">
-            <option value="">All</option>
-          </select>
-          <label class="group-label" for="crossposts-page-size">Per page</label>
-          <select id="crossposts-page-size" aria-label="Cross-posts per page">
-            <option value="10" selected>10</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="all">All</option>
-          </select>
+
+        <!-- Cross-posts controls mirror the Posts-tab pattern:
+             ROW 1 = SEARCH (free-text — matches title or URL key)
+             ROW 2 = FILTERS (sub dropdown · min-spread chips · per-page)
+             A long list of cross-post groups is the worst scroll-fest
+             on this tab; this lets the user narrow down by topic
+             keyword OR by spread (which sub-count is interesting). -->
+        <div class="posts-controls crossposts-controls">
+          <div class="pc-search">
+            <label class="group-label" for="crossposts-search">Search</label>
+            <input id="crossposts-search" type="search" placeholder="title or URL keyword…" autocomplete="off" aria-label="Search cross-posts by title or URL" />
+          </div>
+
+          <div class="pc-filters">
+            <div class="pc-filter">
+              <label class="group-label" for="crossposts-sub-filter">Sub</label>
+              <select id="crossposts-sub-filter" aria-label="Filter cross-posts by subreddit">
+                <option value="">All</option>
+              </select>
+            </div>
+
+            <!-- Minimum-spread chips. A "cross-post" lives in ≥ 2 subs
+                 by definition; chips let the user filter for groups
+                 spread to 2+, 3+, 5+ subs to surface the most-shared
+                 content quickly. -->
+            <div class="pc-filter">
+              <span class="group-label">Min spread</span>
+              <div class="chip-group" role="radiogroup" aria-label="Minimum number of subs">
+                <button type="button" class="chip active" data-min-spread="0" role="radio" aria-checked="true">All</button>
+                <button type="button" class="chip" data-min-spread="3" role="radio" aria-checked="false">≥3 subs</button>
+                <button type="button" class="chip" data-min-spread="5" role="radio" aria-checked="false">≥5 subs</button>
+                <button type="button" class="chip" data-min-spread="10" role="radio" aria-checked="false">≥10 subs</button>
+              </div>
+            </div>
+
+            <div class="pc-filter">
+              <label class="group-label" for="crossposts-page-size">Per page</label>
+              <select id="crossposts-page-size" aria-label="Cross-posts per page">
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+          </div>
         </div>
+
+        <!-- Live result-count line so the user knows how many groups
+             matched the current search/filter combination. -->
+        <div id="crossposts-meta" class="meta crossposts-meta" hidden></div>
         <div id="crossposts" class="crosspost-list"></div>
         <div id="crossposts-pagination" class="pagination" hidden></div>
       </div>
@@ -471,14 +508,14 @@
     </div>
   </div>
 
-  <script src="./js/util.js?v=20260517g"></script>
-  <script src="./js/sync.js?v=20260517g"></script>
-  <script src="./js/reddit.js?v=20260517g"></script>
-  <script src="./js/seeds.js?v=20260517g"></script>
-  <script src="./js/analysis.js?v=20260517g"></script>
-  <script src="./js/charts.js?v=20260517g"></script>
-  <script src="./js/campaigns.js?v=20260517g"></script>
-  <script src="./js/ui.js?v=20260517g"></script>
-  <script src="./js/app.js?v=20260517g"></script>
+  <script src="./js/util.js?v=20260517h"></script>
+  <script src="./js/sync.js?v=20260517h"></script>
+  <script src="./js/reddit.js?v=20260517h"></script>
+  <script src="./js/seeds.js?v=20260517h"></script>
+  <script src="./js/analysis.js?v=20260517h"></script>
+  <script src="./js/charts.js?v=20260517h"></script>
+  <script src="./js/campaigns.js?v=20260517h"></script>
+  <script src="./js/ui.js?v=20260517h"></script>
+  <script src="./js/app.js?v=20260517h"></script>
 </body>
 </html>

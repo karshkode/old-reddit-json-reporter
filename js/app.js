@@ -51,6 +51,13 @@
     crossPostsPage: 0,
     crossPostsPageSize: 10,
     crossPostsSubFilter: "",
+    /* Cross-posts free-text search (title / URL key). Distinct from the
+     * sub dropdown; mirrors the Posts-tab "search vs filter" split. */
+    crossPostsSearchQuery: "",
+    /* Cross-posts min-spread chip filter (0 = no minimum). The chips
+     * threshold the number of distinct subs the same content appeared
+     * in; ≥ 3 / ≥ 5 / ≥ 10 surface the most-shared groups quickly. */
+    crossPostsMinSpread: 0,
     /* Manually-chosen sphere keys to seed Discover with, on top of
      * Seeds.detectSpheres()'s auto-detection. Stored in localStorage
      * under "rj.activeSpheres". */
@@ -193,6 +200,64 @@
     return list;
   }
 
+  /* Cross-post groups filtering pipeline. Mirrors filteredPosts() —
+   * applies sub filter, free-text search, and min-spread chips in
+   * sequence. The original sort order from Analysis.detectCrossPosts
+   * (spread DESC, then totalScore DESC) is preserved. */
+  function filteredCrossPosts() {
+    let list = state.crossPosts || [];
+    if (state.crossPostsSubFilter) {
+      const sub = state.crossPostsSubFilter.toLowerCase();
+      list = list.filter((g) => g.subs.includes(sub));
+    }
+    if (state.crossPostsSearchQuery) {
+      const q = state.crossPostsSearchQuery.toLowerCase();
+      list = list.filter((g) => {
+        if (g.kind === "url" && g.key && g.key.toLowerCase().includes(q)) return true;
+        return (g.posts || []).some((p) => (p.title || "").toLowerCase().includes(q));
+      });
+    }
+    if (state.crossPostsMinSpread && state.crossPostsMinSpread > 0) {
+      const min = state.crossPostsMinSpread;
+      list = list.filter((g) => (g.subs || []).length >= min);
+    }
+    return list;
+  }
+
+  /* Render the cross-posts list + its pagination + the result-count
+   * meta line. Called from rerenderAll() and from the search/filter/
+   * chip event handlers so the view updates without a full data
+   * refetch. */
+  function renderCrossPostsView() {
+    const xpFiltered = filteredCrossPosts();
+    UI.renderCrossPosts(xpFiltered, {
+      page: state.crossPostsPage,
+      pageSize: state.crossPostsPageSize === "all" ? "all" : Number(state.crossPostsPageSize),
+    });
+    UI.renderPagination("crossposts-pagination", {
+      page: state.crossPostsPage,
+      totalItems: xpFiltered.length,
+      pageSize: state.crossPostsPageSize === "all" ? "all" : Number(state.crossPostsPageSize),
+      onChange: (newPage) => { state.crossPostsPage = newPage; renderCrossPostsView(); },
+    });
+    /* Update the live result-count line. Hidden when no filter is
+     * active so the empty state stays clean. */
+    const meta = document.getElementById("crossposts-meta");
+    if (meta) {
+      const total = (state.crossPosts || []).length;
+      const filterActive = !!(state.crossPostsSubFilter || state.crossPostsSearchQuery || state.crossPostsMinSpread);
+      if (!filterActive || !total) {
+        meta.hidden = true;
+        meta.textContent = "";
+      } else {
+        meta.hidden = false;
+        meta.textContent = xpFiltered.length === total
+          ? `${total} cross-post group${total === 1 ? "" : "s"}`
+          : `${xpFiltered.length} of ${total} cross-post group${total === 1 ? "" : "s"} match`;
+      }
+    }
+  }
+
   /* ---------- Render pipeline ---------- */
 
   /* One-stop render of the Posts table + its pagination strip. Both
@@ -295,26 +360,12 @@
     }
 
     UI.renderKeywords(Analysis.extractKeywords(posts, 30));
-const crossPosts = Analysis.detectCrossPosts(posts);
+    const crossPosts = Analysis.detectCrossPosts(posts);
     /* Tag each group with its absolute index so render-after-filter/page
      * still resolves back to state.crossPosts[idx] from the click handler. */
     crossPosts.forEach((g, i) => { g._origIndex = i; });
     state.crossPosts = crossPosts;
-    let xpFiltered = crossPosts;
-    if (state.crossPostsSubFilter) {
-      const sub = state.crossPostsSubFilter.toLowerCase();
-      xpFiltered = xpFiltered.filter((g) => g.subs.includes(sub));
-    }
-    UI.renderCrossPosts(xpFiltered, {
-      page: state.crossPostsPage,
-      pageSize: state.crossPostsPageSize === "all" ? "all" : Number(state.crossPostsPageSize),
-    });
-    UI.renderPagination("crossposts-pagination", {
-      page: state.crossPostsPage,
-      totalItems: xpFiltered.length,
-      pageSize: state.crossPostsPageSize === "all" ? "all" : Number(state.crossPostsPageSize),
-      onChange: (newPage) => { state.crossPostsPage = newPage; rerenderAll(); },
-    });
+    renderCrossPostsView();
     UI.renderRecommendations(Analysis.recommendations(agg, sentiment, posts));
     UI.renderNarrative(Analysis.narrative(agg, sentiment, Array.from(state.activeSubs)));
     UI.renderThemes(themes);
@@ -2195,18 +2246,48 @@ const crossPosts = Analysis.detectCrossPosts(posts);
       });
     });
 
-    /* Cross-posts (Campaigns tab) — sub filter + per-page. */
+    /* Cross-posts (Campaigns tab) — search + sub filter + min-spread
+     * chips + per-page. The list of cross-post groups can grow into
+     * the hundreds on a busy dashboard, so all four controls feed
+     * into renderCrossPostsView() (which calls filteredCrossPosts())
+     * and skip the heavier rerenderAll() so they're snappy. */
+    const xpSearch = document.getElementById("crossposts-search");
+    if (xpSearch) {
+      const debouncedXpSearch = Util.debounce(() => { renderCrossPostsView(); }, 200);
+      xpSearch.addEventListener("input", (e) => {
+        state.crossPostsSearchQuery = (e.target.value || "").trim();
+        state.crossPostsPage = 0;
+        debouncedXpSearch();
+      });
+    }
     const xpSubSel = document.getElementById("crossposts-sub-filter");
     if (xpSubSel) xpSubSel.addEventListener("change", (e) => {
       state.crossPostsSubFilter = e.target.value || "";
       state.crossPostsPage = 0;
-      rerenderAll();
+      renderCrossPostsView();
     });
     const xpPageSizeSel = document.getElementById("crossposts-page-size");
     if (xpPageSizeSel) xpPageSizeSel.addEventListener("change", (e) => {
       state.crossPostsPageSize = e.target.value === "all" ? "all" : Number(e.target.value) || 10;
       state.crossPostsPage = 0;
-      rerenderAll();
+      renderCrossPostsView();
+    });
+
+    /* Min-spread chips for cross-posts (radio-style group). Constraint
+     * filter, distinct from the free-text search above. */
+    document.querySelectorAll('.crossposts-controls .chip-group [data-min-spread]').forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const v = Number(chip.dataset.minSpread || 0) || 0;
+        if (state.crossPostsMinSpread === v) return;
+        state.crossPostsMinSpread = v;
+        document.querySelectorAll('.crossposts-controls .chip-group [data-min-spread]').forEach((c) => {
+          const isOn = Number(c.dataset.minSpread || 0) === v;
+          c.classList.toggle("active", isOn);
+          c.setAttribute("aria-checked", isOn ? "true" : "false");
+        });
+        state.crossPostsPage = 0;
+        renderCrossPostsView();
+      });
     });
 
     closeOnSelect(document.getElementById("listing-select"));
