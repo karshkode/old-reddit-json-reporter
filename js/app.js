@@ -1109,15 +1109,19 @@
 
     wireSessionModal();
 
-    /* On init: if URL has a session payload, surface a banner. */
-    try {
-      const found = Sync.parseHashPayload();
-      if (found && found.payload) {
-        showSessionImportBanner(found.payload, found.encoded);
-      }
-    } catch (err) {
-      console.warn("[sync] hash parse failed:", err && err.message);
-    }
+    /* On init: if URL has a session payload, surface a banner.
+     * parseHashPayload is async because the new short format may
+     * need DecompressionStream-gunzip. We don't block init on it —
+     * the banner pops in a few ms after the rest of the UI mounts. */
+    Sync.parseHashPayload()
+      .then((found) => {
+        if (found && found.payload) {
+          showSessionImportBanner(found.payload, found.encoded);
+        }
+      })
+      .catch((err) => {
+        console.warn("[sync] hash parse failed:", err && err.message);
+      });
 
     const linkBtn = document.getElementById("sync-copy-link");
     const jsonBtn = document.getElementById("sync-export-json");
@@ -1130,21 +1134,25 @@
 
     if (linkBtn) linkBtn.addEventListener("click", async () => {
       try {
-        const url = Sync.toShareUrl();
+        /* Sync.toShareUrl is now async because the short format
+         * gzip-compresses via CompressionStream when available. */
+        const url = await Sync.toShareUrl();
         const ok = await copyToClipboard(url);
         const len = url.length;
         if (ok) {
-          setSyncStatus(`Share link copied (${len.toLocaleString()} chars). Paste it on another device to import this session.`, "ok");
+          setSyncStatus(`Short share link copied (${len.toLocaleString()} chars). Paste it on another device — works in Signal, iMessage, etc.`, "ok");
           Util.toast("Share link copied to clipboard.", "ok");
         } else {
           setSyncStatus("Could not access clipboard — link shown below; long-press to copy.", "err");
-          /* Fall back to showing the URL in the import textarea so the
-           * user can long-press it on iOS. */
           if (ta) ta.value = url;
           if (panel) panel.hidden = false;
         }
-        if (len > 30000) {
-          setSyncStatus("Heads up: this share link is long (" + len.toLocaleString() + " chars). Some chat apps truncate URLs over ~30k characters — Download JSON is more reliable for big sessions.", "warn");
+        /* New short format uses gzip + compact schema so a typical
+         * session is well under a kilobyte. The 4 KB threshold below
+         * is conservative — only gigantic campaign sets (hundreds of
+         * post IDs) would ever exceed it. */
+        if (len > 4000) {
+          setSyncStatus("Heads up: link is " + len.toLocaleString() + " chars. Some chat apps truncate URLs over a few kilobytes — Download JSON is more reliable for very large sessions.", "warn");
         }
       } catch (err) {
         setSyncStatus("Couldn't build share link: " + ((err && err.message) || err), "err");
@@ -1202,26 +1210,16 @@
       reader.readAsText(f);
     });
 
-    if (applyBtn && ta) applyBtn.addEventListener("click", () => {
+    if (applyBtn && ta) applyBtn.addEventListener("click", async () => {
       const raw = (ta.value || "").trim();
       if (!raw) { setImportStatus("Paste a share link or session JSON first.", "err"); return; }
-      let payload = null;
-      /* Try URL form first. */
-      const m = raw.match(/[#&?]session=([^&\s]+)/);
-      if (m) {
-        payload = Sync.decode(m[1]);
-      }
-      /* Else try base64 alone. */
-      if (!payload && /^[-_A-Za-z0-9]+$/.test(raw) && raw.length > 40) {
-        payload = Sync.decode(raw);
-      }
-      /* Else try JSON. */
-      if (!payload) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed && parsed.app === "old-reddit-json-reporter") payload = parsed;
-        } catch (_) {}
-      }
+      /* Single dispatcher recognises new short URLs (#s=…), legacy
+       * URLs (#session=…), bare base64 of either, or raw JSON.
+       * Async because the short format may need DecompressionStream. */
+      let result;
+      try { result = await Sync.decodeFromAnyText(raw); }
+      catch (err) { setImportStatus("Couldn't import: " + ((err && err.message) || err), "err"); return; }
+      const payload = result && result.payload;
       if (!payload) { setImportStatus("Couldn't recognise that as a session. Paste a share link, a JSON blob, or upload a downloaded file.", "err"); return; }
       try {
         const stats = Sync.applyPayload(payload, { mode: mergeBox && mergeBox.checked ? "merge" : "replace" });
@@ -1230,7 +1228,8 @@
         rerenderAll();
         refreshAllCampaignSummaries();
         if (!mergeBox || !mergeBox.checked) refreshData(true);
-        setImportStatus(`Imported · ${stats.campaignsAdded} campaign${stats.campaignsAdded === 1 ? "" : "s"} added (${stats.mode}). Active subs: ${stats.activeSubs}.`, "ok");
+        const fmtNote = result.format === "short" ? " · short format" : (result.format === "legacy" ? " · legacy format" : "");
+        setImportStatus(`Imported${fmtNote} · ${stats.campaignsAdded} campaign${stats.campaignsAdded === 1 ? "" : "s"} added (${stats.mode}). Active subs: ${stats.activeSubs}.`, "ok");
         Util.toast(`Imported session (${stats.mode}).`, "ok");
         ta.value = "";
         if (fileInput) fileInput.value = "";
