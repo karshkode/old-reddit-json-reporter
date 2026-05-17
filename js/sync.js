@@ -136,7 +136,13 @@
   }
   function decompactify(arr) {
     if (!Array.isArray(arr) || arr.length < 6 || arr[0] !== 2) return null;
-    const ts = arr[1] | 0;
+    /* CRITICAL: Number(), not `| 0`. JavaScript's bitwise OR truncates
+     * to a 32-bit signed integer. Date.now() is ~1.7e12 (way above the
+     * 32-bit max of ~2.1e9), so `ts | 0` lops off the high bits and
+     * wraps the timestamp back into early 1970. The "Found a shared
+     * session" import banner then read e.g. '1/11/1970, 10:27:33 AM'
+     * even though the session was just saved seconds ago. */
+    const ts = Number(arr[1]) || 0;
     const campaignsCompact = arr[2] || [];
     const subsArr = arr[3] || [];
     const spheres = arr[4] || [];
