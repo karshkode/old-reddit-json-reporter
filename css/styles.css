@@ -194,9 +194,13 @@ button { font-family: inherit; }
    * legible in tidy rows instead of wrapping all over the screen.
    * Sync session is a full-width footer band beneath. */
   display: grid;
-  grid-template-columns: minmax(280px, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  /* 2-column: Subreddits (and Fetch settings beneath it) on the left
+   * half, Find Posts on the right half. Subreddits gets the bigger
+   * share of the row since the chip cluster needs the room. */
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   grid-template-areas:
-    "subs    listing find";
+    "subs    find"
+    "listing find";
   gap: 14px;
   padding: 14px max(16px, var(--safe-left));
   border-bottom: 1px solid var(--border);
@@ -2488,10 +2492,8 @@ select { max-width: 100%; min-width: 0; }
 /* Tablet (≤980px): collapse to 2-column with sync below */
 @media (max-width: 980px) {
   .controls {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas:
-      "subs    subs"
-      "listing find";
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    /* Same shape as desktop but a bit denser. */
   }
 }
 
@@ -2671,4 +2673,45 @@ body.modal-open { overflow: hidden; }
   .modal-header h2 { font-size: 14px; }
   .modal-body { padding: 14px; gap: 10px; }
   .modal .sync-actions .btn { flex: 1 1 100%; }
+}
+
+
+/* =====================================================================
+   FILTERS — 2-column with Find Posts in its own right column
+   ===================================================================== */
+
+/* Find Posts column — vertical stack of label+input cg-field pairs.
+ * Without this override the inner inputs inherit the .control-group
+ * input rule (flex: 1 1 160px) which stretches them VERTICALLY inside
+ * a column-flex parent — that's why they looked like blocky text-areas
+ * in the previous screenshot. */
+.cg-find {
+  flex-direction: column;
+  align-items: stretch;
+  align-content: flex-start;
+}
+.cg-find .cg-field {
+  width: 100%;
+  flex: 0 0 auto;
+}
+.cg-field input,
+.cg-field select {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+}
+
+/* Subreddits column should breathe with the chips. */
+.cg-subs {
+  align-content: flex-start;
+}
+.cg-subs .chips { width: 100%; }
+
+/* Fetch Settings sits BELOW the subreddits column on the left.
+ * Keep its row of 3 selects compact. */
+.cg-listing {
+  align-self: start;
+}
+.cg-listing .cg-row {
+  width: 100%;
 }
