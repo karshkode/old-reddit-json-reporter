@@ -116,15 +116,34 @@
 
   /* ---------- Filter drawer ---------- */
 
+  /* Filter drawer visibility.
+   * Mobile uses an .expanded class on .controls (default hidden);
+   * desktop uses .collapsed (default shown) so a single toggle button
+   * works in both worlds without breaking either default. */
   function setControlsExpanded(expanded) {
     const controls = document.getElementById("controls");
     const toggle = document.getElementById("filters-toggle");
     if (!controls) return;
-    controls.classList.toggle("expanded", expanded);
+    if (isMobile()) {
+      controls.classList.toggle("expanded", expanded);
+      controls.classList.remove("collapsed");
+    } else {
+      controls.classList.toggle("collapsed", !expanded);
+      controls.classList.remove("expanded");
+    }
     if (toggle) {
       toggle.classList.toggle("expanded", expanded);
       toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
     }
+  }
+
+  /* Helper for closeOnSelect callers — checks the current visibility
+   * of the controls drawer regardless of which class drives it. */
+  function controlsAreVisible() {
+    const controls = document.getElementById("controls");
+    if (!controls) return false;
+    if (isMobile()) return controls.classList.contains("expanded");
+    return !controls.classList.contains("collapsed");
   }
 
   /* ---------- Filtering ---------- */
@@ -1131,9 +1150,9 @@ const crossPosts = Analysis.detectCrossPosts(posts);
     const filtersToggle = document.getElementById("filters-toggle");
     if (filtersToggle) {
       filtersToggle.addEventListener("click", () => {
-        const controls = document.getElementById("controls");
-        const expanded = !controls.classList.contains("expanded");
-        setControlsExpanded(expanded);
+        /* Use controlsAreVisible() so toggling works on both viewports
+         * — mobile uses .expanded, desktop uses .collapsed. */
+        setControlsExpanded(!controlsAreVisible());
       });
     }
 
@@ -1682,10 +1701,14 @@ const crossPosts = Analysis.detectCrossPosts(posts);
 
 
     /* Close filters drawer when user finishes a filter action on mobile */
+    /* Auto-hide the filter drawer after the user picks a listing /
+     * window / limit value on EITHER viewport. Mobile already had this;
+     * desktop now matches. Skipped if the drawer is already hidden so
+     * the toggle button can stay in its current visual state. */
     const closeOnSelect = (el) => {
       if (!el) return;
       el.addEventListener("change", () => {
-        if (isMobile()) setControlsExpanded(false);
+        if (controlsAreVisible()) setControlsExpanded(false);
       });
     };
     /* Posts tab — title search input (mirrors the global search input). */
