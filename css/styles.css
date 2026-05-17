@@ -1807,15 +1807,20 @@ footer {
    ===================================================================== */
 
 .progress-banner {
+  /* Lives OUTSIDE <main>, between the topbar and main content. Docks to
+   * the bottom edge of the topbar regardless of whether the filter
+   * drawer is open or closed. The --topbar-h variable is set by JS
+   * after the topbar is measured (or after a resize), so the dock point
+   * stays correct on phone, tablet, and desktop without media queries. */
   position: sticky;
-  top: 110px; /* under the sticky topbar (≈64px) + tabs (≈46px) */
-  z-index: 9;
+  top: var(--topbar-h, 64px);
+  z-index: 19;            /* above tabs (z:5) but below the topbar (z:20) */
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-top: 2px solid var(--accent);
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  padding: 8px 12px 10px;
-  margin: 0 0 12px;
+  padding: 8px 16px 10px;
+  margin: 0 max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1861,8 +1866,11 @@ footer {
 
 @media (max-width: 720px) {
   .progress-banner {
-    top: 56px; /* tighter on mobile where topbar is shorter */
-    margin: 0 -12px 10px;
+    /* On phones span flush to the screen edge — the topbar height value
+     * is driven by --topbar-h above, so just override paddings here. */
+    margin: 0;
+    border-left-width: 0;
+    border-right-width: 0;
     border-radius: 0;
     padding: 8px 12px 10px;
   }
