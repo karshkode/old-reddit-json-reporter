@@ -345,32 +345,116 @@
       el.innerHTML = '<div class="empty">No cross-posts on this page — try Prev or change filters.</div>';
       return;
     }
+    /* Default visible rows when the user expands a group. Anything
+     * beyond this gets hidden behind a "Show all N" inner expander —
+     * a typical YouTube link can collect 40+ cross-posts and rendering
+     * all of them every time was the dominant scroll-creep on the
+     * Campaigns tab. */
+    const POSTS_VISIBLE_PER_GROUP = 5;
+
     el.innerHTML = visible.map((g) => {
-      const headline = g.kind === "url" ? truncate(g.key, 90) : truncate(g.posts[0].title, 110);
-      /* Spread-tier badge: 2 subs = info, 3-4 subs = warn, 5+ subs = good. */
       const spread = g.subs.length;
       const tier = spread >= 5 ? "good" : spread >= 3 ? "warn" : "info";
-      /* `_origIndex` is set by the caller so + Make campaign can resolve
-       * back to the absolute position in state.crossPosts even when the
-       * displayed list is filtered/paginated. */
       const cpIndex = g._origIndex != null ? g._origIndex : 0;
-      /* Per-post mini-rows shown when the group is expanded. Each row is
-       * a clickable link to the live Reddit thread with score / comments
-       * / UV % so the user can see what each individual instance is
-       * actually doing. */
-      const postsList = g.posts.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).map((p) => `
-        <a class="crosspost-post-row"
-           href="${Util.escapeHtml(p.permalink)}"
-           target="_blank" rel="noopener"
-           title="Open in Reddit">
-          <span class="cpp-sub">r/${Util.escapeHtml(p.subreddit)}</span>
-          <span class="cpp-score">▲ ${Util.fmtNum(p.score)}</span>
-          <span class="cpp-comments">💬 ${Util.fmtNum(p.num_comments)}</span>
-          <span class="cpp-uv">${p.upvote_ratio == null ? "" : Util.fmtPct(p.upvote_ratio) + " UV"}</span>
-          <span class="cpp-when">${Util.escapeHtml(Util.relTime(p.created_utc))}</span>
-          <span class="cpp-id"><code>${Util.escapeHtml(p.id)}</code></span>
-        </a>
-      `).join("");
+
+      /* Headline picker.
+       *
+       *   kind=title  -> the (already-shared) post title is the key
+       *   kind=url    -> the URL is the key, but a raw URL is a poor
+       *                  headline. Prefer (in order):
+       *                    1. media.oembed.title from any post in the
+       *                       group (actual YouTube/Vimeo/article title)
+       *                    2. the most-common post title across the
+       *                       group (more readable than a single
+       *                       arbitrary one)
+       *                    3. fall back to the URL truncated
+       *
+       *  We also surface the source (provider + URL host) as a small
+       *  meta line so the user can still see what was shared without
+       *  needing to expand the group. */
+      let headline, source = "";
+      if (g.kind === "title") {
+        headline = truncate(g.posts[0].title || g.key, 110);
+      } else {
+        let mediaTitle = null, mediaProvider = null, mediaAuthor = null;
+        for (const p of g.posts) {
+          if (p.media_title) {
+            mediaTitle = p.media_title;
+            mediaProvider = p.media_provider;
+            mediaAuthor = p.media_author;
+            break;
+          }
+        }
+        if (mediaTitle) {
+          headline = truncate(mediaTitle, 110);
+          /* Compact source line: "YouTube · Channel name · youtube.com" */
+          const bits = [];
+          if (mediaProvider) bits.push(mediaProvider);
+          if (mediaAuthor) bits.push(mediaAuthor);
+          try {
+            const host = new URL(g.key).host.replace(/^www\./, "");
+            if (host && !bits.some((b) => String(b).toLowerCase().includes(host.split(".")[0]))) {
+              bits.push(host);
+            }
+          } catch (_) {}
+          source = bits.join(" · ");
+        } else {
+          /* No oEmbed title — pick the most common post title. */
+          const titleCounts = {};
+          for (const p of g.posts) {
+            const t = (p.title || "").trim();
+            if (t) titleCounts[t] = (titleCounts[t] || 0) + 1;
+          }
+          const top = Object.entries(titleCounts).sort((a, b) => b[1] - a[1])[0];
+          if (top && top[0]) {
+            headline = truncate(top[0], 110);
+            try {
+              const host = new URL(g.key).host.replace(/^www\./, "");
+              if (host) source = host;
+            } catch (_) {}
+          } else {
+            headline = truncate(g.key, 90);
+          }
+        }
+      }
+
+      /* Per-post mini-rows. Sorted by score; truncated to top
+       * POSTS_VISIBLE_PER_GROUP behind a "Show all N" inner expander.
+       * Each row is a single-line link to the live thread. */
+      const sortedPosts = g.posts.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+      const truncated = sortedPosts.length > POSTS_VISIBLE_PER_GROUP;
+      function renderRow(p) {
+        return `
+          <a class="crosspost-post-row"
+             href="${Util.escapeHtml(p.permalink)}"
+             target="_blank" rel="noopener"
+             title="Open in Reddit">
+            <span class="cpp-sub">r/${Util.escapeHtml(p.subreddit)}</span>
+            <span class="cpp-score">▲ ${Util.fmtNum(p.score)}</span>
+            <span class="cpp-comments">💬 ${Util.fmtNum(p.num_comments)}</span>
+            <span class="cpp-uv">${p.upvote_ratio == null ? "" : Util.fmtPct(p.upvote_ratio) + " UV"}</span>
+            <span class="cpp-when">${Util.escapeHtml(Util.relTime(p.created_utc))}</span>
+          </a>
+        `;
+      }
+      const initialRowsHtml  = sortedPosts.slice(0, POSTS_VISIBLE_PER_GROUP).map(renderRow).join("");
+      const overflowRowsHtml = truncated
+        ? `<div class="crosspost-posts-overflow" hidden>${sortedPosts.slice(POSTS_VISIBLE_PER_GROUP).map(renderRow).join("")}</div>`
+        : "";
+      const innerExpander = truncated
+        ? `<button type="button"
+                   class="list-expand crosspost-show-more"
+                   data-action="toggle-crosspost-overflow"
+                   data-cp-index="${cpIndex}"
+                   aria-expanded="false">
+             <span class="show-label">+ ${sortedPosts.length - POSTS_VISIBLE_PER_GROUP} more — show all ${sortedPosts.length}</span>
+             <span class="hide-label">Show top ${POSTS_VISIBLE_PER_GROUP} only</span>
+           </button>`
+        : "";
+
+      const sourceHtml = source
+        ? `<div class="crosspost-source meta">${Util.escapeHtml(source)}</div>`
+        : "";
 
       return `
         <div class="crosspost-row" data-spread="${spread}" data-cp-index="${cpIndex}">
@@ -378,6 +462,7 @@
             <strong>${Util.escapeHtml(headline)}</strong>
             <span class="badge ${tier}" title="Cross-posted across ${spread} subreddits">in ${spread} sub${spread === 1 ? "" : "s"}</span>
           </div>
+          ${sourceHtml}
           <div class="subs">${g.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(" · ")} · ${Util.fmtNum(g.totalScore)} pts · ${Util.fmtNum(g.totalComments)} comments</div>
           <div class="crosspost-actions">
             <button class="btn small ghost"
@@ -385,8 +470,8 @@
                     data-action="toggle-crosspost-posts"
                     data-cp-index="${cpIndex}"
                     aria-expanded="false">
-              <span class="show-label">▾ Show ${g.posts.length} post${g.posts.length === 1 ? "" : "s"}</span>
-              <span class="hide-label">▴ Hide posts</span>
+              <span class="show-label">▾ Show ${truncated ? "top " + POSTS_VISIBLE_PER_GROUP : sortedPosts.length} of ${sortedPosts.length}</span>
+              <span class="hide-label">▴ Hide</span>
             </button>
             <button class="btn small primary"
                     type="button"
@@ -394,7 +479,11 @@
                     data-cp-index="${cpIndex}"
                     aria-label="Convert this cross-post group into a new campaign">+ Make campaign</button>
           </div>
-          <div class="crosspost-posts" hidden>${postsList}</div>
+          <div class="crosspost-posts" hidden>
+            ${initialRowsHtml}
+            ${overflowRowsHtml}
+            ${innerExpander}
+          </div>
           <div class="crosspost-form-slot"></div>
         </div>
       `;
