@@ -99,11 +99,11 @@
     });
 
     if (!posts.length) {
-      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No posts match the current filter.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No posts match the current filter.</div></td></tr>`;
       return;
     }
     if (!visible.length) {
-      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No posts on this page — try Prev or change filters.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No posts on this page — try Prev or change filters.</div></td></tr>`;
       return;
     }
 
@@ -113,6 +113,10 @@
       tr.dataset.id = p.id;
       tr.tabIndex = 0;
       tr.setAttribute("role", "button");
+      /* The 9th column is an inline action button — "+ Campaign". Click
+       * doesn't bubble to the row's onRowClick because we stop
+       * propagation in the click handler. The action expands an inline
+       * form-row below this <tr> (see UI.renderPostMakeCampaignForm). */
       tr.innerHTML = `
         <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">${Util.escapeHtml(Util.relTime(p.created_utc))}</td>
         <td data-label="Sub"><span class="tag">r/${Util.escapeHtml(p.subreddit)}</span></td>
@@ -125,15 +129,108 @@
         <td data-label="UV %" class="num">${p.upvote_ratio == null ? "—" : Util.fmtPct(p.upvote_ratio)}</td>
         <td data-label="Comments" class="num">${Util.fmtNum(p.num_comments)}</td>
         <td data-label="ID"><code>${Util.escapeHtml(p.id)}</code></td>
+        <td data-label="Action" class="row-action">
+          <button class="btn small primary"
+                  type="button"
+                  data-action="make-campaign-from-post"
+                  data-post-id="${Util.escapeHtml(p.id)}"
+                  title="Create a campaign from this post and search for recommended subreddits to cross-post to"
+                  aria-label="Make a campaign from this post">+ Campaign</button>
+        </td>
       `;
-      tr.addEventListener("click", () => onRowClick(p));
+      tr.addEventListener("click", (ev) => {
+        /* Don't open detail when the user clicks our action button or
+         * lands on its inline form. */
+        if (ev.target.closest && ev.target.closest('[data-action="make-campaign-from-post"], .post-make-form, .post-make-form-row')) return;
+        onRowClick(p);
+      });
       tr.addEventListener("keydown", (e) => {
+        if (e.target !== tr) return; /* let buttons / inputs handle keys */
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRowClick(p); }
       });
       frag.appendChild(tr);
     }
     tbody.innerHTML = "";
     tbody.appendChild(frag);
+  };
+
+  /* Insert an inline form-row below `rowEl` (the post's <tr>) so the
+   * user can name a campaign + set goals before saving. The form-row
+   * is itself a <tr><td colspan="9"> so the table layout stays sane.
+   * Mirrors the cross-post → campaign form pattern. */
+  UI.renderPostMakeCampaignForm = function (rowEl, post, opts) {
+    if (!rowEl || !post) return;
+    opts = opts || {};
+    UI.dismissPostMakeCampaignForm(rowEl);
+
+    const titleSrc = String(post.title || "Untitled").trim();
+    const trimmed = titleSrc.slice(0, 60);
+    const defaultName = `From r/${post.subreddit}: ${trimmed}${titleSrc.length > 60 ? "…" : ""}`;
+    /* Suggest goals as ~1.5× the post's current performance. */
+    function niceCeil(n) {
+      if (n <= 0) return 0;
+      const target = n * 1.5;
+      const mag = Math.pow(10, Math.max(0, Math.floor(Math.log10(target)) - 1));
+      return Math.ceil(target / mag) * mag;
+    }
+    const suggestedScore = niceCeil(post.score || 0);
+    const suggestedComments = niceCeil(post.num_comments || 0);
+
+    const formRow = document.createElement("tr");
+    formRow.className = "post-make-form-row";
+    formRow.dataset.forPost = post.id;
+    formRow.innerHTML = `
+      <td colspan="9">
+        <form class="post-make-form" data-post-id="${Util.escapeHtml(post.id)}">
+          <div class="pmf-headline">
+            <strong>Make a campaign from this post</strong>
+            <span class="meta">We'll create the campaign, switch to the Campaigns tab, and immediately search for subreddits that match this post's themes — each will get a one-tap link to cross-post.</span>
+          </div>
+          <div class="pmf-row">
+            <label class="full">
+              <span class="group-label">Campaign name</span>
+              <input type="text" data-field="name" value="${Util.escapeHtml(defaultName)}" required maxlength="120" />
+            </label>
+          </div>
+          <div class="pmf-row">
+            <label>
+              <span class="group-label">Goal upvotes</span>
+              <input type="number" data-field="goalScore" min="0" inputmode="numeric" placeholder="optional" value="${suggestedScore || ""}" />
+            </label>
+            <label>
+              <span class="group-label">Goal comments</span>
+              <input type="number" data-field="goalComments" min="0" inputmode="numeric" placeholder="optional" value="${suggestedComments || ""}" />
+            </label>
+          </div>
+          <div class="pmf-meta">
+            Tracking <strong>1</strong> post · current: <strong>${Util.fmtNum(post.score)}</strong> pts · <strong>${Util.fmtNum(post.num_comments)}</strong> comments · in r/${Util.escapeHtml(post.subreddit)}
+          </div>
+          <div class="pmf-actions">
+            <button type="button" class="btn small ghost" data-action="cancel-make-campaign-from-post">Cancel</button>
+            <button type="submit" class="btn small primary" data-action="confirm-make-campaign-from-post">Save &amp; find subreddits</button>
+          </div>
+        </form>
+      </td>
+    `;
+    rowEl.classList.add("editing");
+    rowEl.parentNode.insertBefore(formRow, rowEl.nextSibling);
+
+    if (opts.focus !== false) {
+      const nameInput = formRow.querySelector('input[data-field="name"]');
+      if (nameInput) {
+        try { nameInput.focus(); nameInput.select(); } catch (_) {}
+      }
+    }
+    return formRow;
+  };
+
+  UI.dismissPostMakeCampaignForm = function (rowEl) {
+    if (!rowEl) return;
+    rowEl.classList.remove("editing");
+    const next = rowEl.nextSibling;
+    if (next && next.classList && next.classList.contains("post-make-form-row")) {
+      next.parentNode.removeChild(next);
+    }
   };
 
   /* ---------- Post detail ---------- */
@@ -549,16 +646,50 @@
         : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>`;
 
       /* Submit-to-Reddit link (only when we have a campaign post template
-       * AND the candidate sub doesn't already host it). */
-      let submitLink = "";
+       * AND the candidate sub doesn't already host it). The button is
+       * paired with an inline "paste-back" input: after the user
+       * submits on Reddit, they can paste the new post's URL right
+       * here and we'll add it to the campaign so its stats start
+       * tracking immediately. */
+      let submitBlock = "";
       if (bestPost && !campaignSubs.has(c.canonical)) {
         const submitUrl = Util.buildSubmitUrl(c.canonical, bestPost);
         if (submitUrl) {
           const titleHint = String(bestPost.title || "").slice(0, 120);
           const tip = `Open Reddit's compose page in r/${c.canonical} pre-filled with "${titleHint}"${campaignName ? ` from "${campaignName}"` : ""}`;
-          submitLink = `<a class="btn small submit-link" href="${Util.escapeHtml(submitUrl)}" target="_blank" rel="noopener" title="${Util.escapeHtml(tip)}">↪ Cross-post here</a>`;
+          submitBlock = `
+            <a class="btn small submit-link"
+               data-action="open-submit"
+               data-canonical="${Util.escapeHtml(c.canonical)}"
+               href="${Util.escapeHtml(submitUrl)}"
+               target="_blank" rel="noopener"
+               title="${Util.escapeHtml(tip)}">↪ Cross-post here</a>`;
         }
       }
+
+      /* The paste-back tracker is rendered for any candidate that has a
+       * campaign context (the discover panel was opened for a campaign).
+       * It's hidden by default; click on submit-link reveals it (also
+       * see app.js delegated handler). The user can also click the
+       * "I posted it" button manually if they already cross-posted in a
+       * separate tab. */
+      const trackerBlock = (campaignName && bestPost && !campaignSubs.has(c.canonical)) ? `
+        <details class="cand-tracker" data-canonical="${Util.escapeHtml(c.canonical)}">
+          <summary>↪ I posted to r/${Util.escapeHtml(c.canonical)} — track it in this campaign</summary>
+          <div class="cand-tracker-body">
+            <label class="group-label">Paste your new Reddit post URL</label>
+            <div class="cand-tracker-row">
+              <input type="text"
+                     data-action="track-post-url"
+                     placeholder="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/comments/..."
+                     autocomplete="off"
+                     spellcheck="false" />
+              <button type="button" class="btn small primary" data-action="track-post-confirm">Add to campaign</button>
+            </div>
+            <div class="cand-tracker-status meta" hidden></div>
+          </div>
+        </details>
+      ` : "";
 
       return `
         <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.canonical)}">
@@ -575,9 +706,10 @@
           <ul class="target-reasons">${reasons}</ul>
           <div class="cand-actions">
             ${action}
-            ${submitLink}
+            ${submitBlock}
             <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
           </div>
+          ${trackerBlock}
         </div>
       `;
     }

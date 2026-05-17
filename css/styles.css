@@ -2354,6 +2354,178 @@ select { max-width: 100%; min-width: 0; }
   .crosspost-post-row .cpp-when { width: 100%; margin-left: 0; }
 }
 
+/* ---------- Posts-table "+ Campaign" action ---------- */
+
+#posts-table th.action-col,
+#posts-table td.row-action {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+#posts-table tr.editing { background: rgba(255, 87, 34, 0.06); }
+
+/* The inline form-row dropped beneath a post when the user clicks
+ * "+ Campaign". Mirrors the cross-post → campaign form so the visual
+ * language is consistent across both creation paths. */
+.post-make-form-row > td {
+  background: rgba(255, 87, 34, 0.04);
+  border-top: 1px dashed var(--accent);
+  border-bottom: 1px dashed var(--accent);
+  padding: 12px 14px !important;
+}
+.post-make-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+.post-make-form .pmf-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.post-make-form .pmf-headline strong { color: var(--accent-2); font-size: 14px; }
+.post-make-form .pmf-headline .meta { color: var(--text-mute); font-size: 12px; }
+.post-make-form .pmf-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.post-make-form .pmf-row label.full { grid-column: span 2; }
+.post-make-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.post-make-form input {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  min-height: 36px;
+}
+.post-make-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18);
+}
+.post-make-form .pmf-meta {
+  font-size: 11px;
+  color: var(--text-mute);
+}
+.post-make-form .pmf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Discover candidate "I posted it" tracker ---------- */
+
+.cand-tracker {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  font-size: 12px;
+}
+.cand-tracker > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--accent-2);
+  user-select: none;
+  padding: 2px 0;
+}
+.cand-tracker > summary::-webkit-details-marker { display: none; }
+.cand-tracker > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.cand-tracker[open] > summary::before { transform: rotate(90deg); }
+.cand-tracker-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cand-tracker-body .group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-mute);
+}
+.cand-tracker-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cand-tracker-row input {
+  flex: 1 1 240px;
+  min-width: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  min-height: 36px;
+}
+.cand-tracker-row input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18);
+}
+.cand-tracker-status { font-size: 11px; }
+.cand-tracker-status.ok  { color: var(--good); }
+.cand-tracker-status.err { color: var(--bad); }
+
+@media (max-width: 720px) {
+  .post-make-form .pmf-row { grid-template-columns: 1fr; }
+  .post-make-form .pmf-row label.full { grid-column: span 1; }
+  .post-make-form input { font-size: 16px; min-height: 38px; }
+  .cand-tracker-row input { font-size: 16px; min-height: 38px; flex-basis: 100%; }
+  .cand-tracker-row .btn { flex: 1 1 100%; }
+
+  /* On mobile, the table is rendered as stacked rows with data-label
+   * showing each cell's label. Make the action button full-width and
+   * a clear primary button so it's the obvious next step. */
+  #posts-table td.row-action {
+    display: block !important;
+    text-align: left;
+    width: auto;
+    margin: 8px 0 0;
+  }
+  #posts-table td.row-action .btn { width: 100%; justify-content: center; }
+
+  /* Editing-state highlight survives the mobile card layout */
+  #posts-table tbody tr.editing { background: rgba(255, 87, 34, 0.10); }
+
+  /* The form-row is a sibling <tr> rendered as its own card on mobile.
+   * Override the dashed border-top/bottom (those look weird on a card)
+   * and treat it as a normal accent-bordered card. */
+  #posts-table tbody tr.post-make-form-row {
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+  #posts-table tbody tr.post-make-form-row > td {
+    display: block;
+    border-radius: var(--radius-sm);
+    border-top-width: 2px;
+    border-bottom-width: 2px;
+  }
+}
+
 /* =====================================================================
    UX REFINEMENT — denser Discover hero, 2-col Trends, narrative card
    ===================================================================== */

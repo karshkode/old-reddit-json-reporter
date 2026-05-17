@@ -10,6 +10,13 @@
 
   const DEFAULT_SUBS = ["Political_Revolution", "50501"];
 
+  /* `_runDiscover` is populated by bind() once the campaigns/discover
+   * panel has been wired up. Other handlers (e.g. the post-row
+   * "Make campaign" flow) can call it after creating + opening a new
+   * campaign so the recommended-subreddits panel populates without an
+   * extra user click. */
+  let _runDiscover = null;
+
   const state = {
     knownSubs: [],
     activeSubs: new Set(),
@@ -1817,7 +1824,138 @@ const crossPosts = Analysis.detectCrossPosts(posts);
       });
     }
 
-        /* Inline add-posts form + per-row remove button inside the campaign
+    /* Posts-table delegated handlers for "+ Campaign" inline action.
+     *
+     * Flow:
+     *   1. user taps "+ Campaign" on a post row
+     *   2. inline form drops in below the row (name + optional goals)
+     *   3. on submit:
+     *      - create a campaign with this single post ID
+     *      - switch to the Campaigns tab and open the new campaign
+     *      - auto-trigger Discover so recommended subreddits + their
+     *        "Cross-post here" links + paste-back trackers populate
+     *        without an extra click.
+     */
+    const postsTbodyEl = document.getElementById("posts-tbody");
+    if (postsTbodyEl) {
+      postsTbodyEl.addEventListener("click", (e) => {
+        const makeBtn = e.target.closest && e.target.closest('[data-action="make-campaign-from-post"]');
+        if (makeBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const tr = makeBtn.closest("tr");
+          const postId = makeBtn.dataset.postId;
+          const post = (state.posts || []).find((p) => p.id === postId);
+          if (!post || !tr) {
+            Util.toast("Post data not available — try refreshing.", "error");
+            return;
+          }
+          /* Close any other open form so only one is in-flight at a time. */
+          postsTbodyEl.querySelectorAll(".post-make-form-row").forEach((r) => {
+            const prev = r.previousElementSibling;
+            if (prev && prev !== tr) UI.dismissPostMakeCampaignForm(prev);
+          });
+          UI.renderPostMakeCampaignForm(tr, post);
+          return;
+        }
+
+        const cancelBtn = e.target.closest && e.target.closest('[data-action="cancel-make-campaign-from-post"]');
+        if (cancelBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const formRow = cancelBtn.closest(".post-make-form-row");
+          const tr = formRow && formRow.previousElementSibling;
+          if (tr) UI.dismissPostMakeCampaignForm(tr);
+          return;
+        }
+      });
+
+      postsTbodyEl.addEventListener("submit", async (e) => {
+        const form = e.target.closest && e.target.closest(".post-make-form");
+        if (!form) return;
+        e.preventDefault();
+        e.stopPropagation();
+        await handleMakeCampaignFromPost(form);
+      });
+    }
+
+    async function handleMakeCampaignFromPost(form) {
+      const formRow = form.closest(".post-make-form-row");
+      const tr = formRow && formRow.previousElementSibling;
+      const postId = form.dataset.postId;
+      const post = (state.posts || []).find((p) => p.id === postId);
+      if (!post) {
+        Util.toast("Post data not available — try refreshing.", "error");
+        return;
+      }
+      const nameInput = form.querySelector('input[data-field="name"]');
+      const scoreInput = form.querySelector('input[data-field="goalScore"]');
+      const commentsInput = form.querySelector('input[data-field="goalComments"]');
+      const fallbackName = `From r/${post.subreddit}: ${(post.title || "").slice(0, 60).trim()}`;
+      const name = (nameInput && nameInput.value || "").trim() || fallbackName;
+      const goalScore = scoreInput ? Number(scoreInput.value) || 0 : 0;
+      const goalComments = commentsInput ? Number(commentsInput.value) || 0 : 0;
+
+      const submitBtn = form.querySelector('[data-action="confirm-make-campaign-from-post"]');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.originalText = submitBtn.textContent;
+        submitBtn.textContent = "Saving…";
+      }
+
+      try {
+        const c = Campaigns.add({ name, goalScore, goalComments, postIds: [post.id] });
+        if (Campaigns.persistErrorMessage()) {
+          Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
+        } else {
+          Util.toast(`Created "${name}" — finding recommended subreddits…`, "ok");
+        }
+
+        /* Mark the original action button as Created ✓ for visible
+         * feedback even when the user scrolls back to the posts tab. */
+        if (tr) {
+          const origBtn = tr.querySelector('[data-action="make-campaign-from-post"]');
+          if (origBtn) {
+            origBtn.disabled = true;
+            origBtn.textContent = "Created ✓";
+          }
+          UI.dismissPostMakeCampaignForm(tr);
+        }
+
+        UI.activateTab("campaigns");
+        UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
+        populateTargetingSelectors();
+        refreshAllCampaignSummaries().catch((err) => console.warn("[post->campaign] summary refresh failed:", err && err.message));
+        await openCampaign(c);
+
+        /* Auto-trigger Discover. The discover-campaign select must be
+         * set to this campaign first; if either piece isn't available
+         * (e.g. the user navigated away mid-flight) we just skip with
+         * a console warning rather than throwing. */
+        const sel = document.getElementById("discover-campaign");
+        if (sel) sel.value = c.id;
+        if (typeof _runDiscover === "function") {
+          /* Scroll the discover panel into view so the user can see
+           * the recommendations populating. */
+          const discoverCard = document.getElementById("discover-card");
+          if (discoverCard && typeof discoverCard.scrollIntoView === "function") {
+            try { discoverCard.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) {}
+          }
+          try { await _runDiscover(); }
+          catch (err) { console.warn("[post->campaign] auto-discover failed:", err && err.message); }
+        }
+        console.log(`[post->campaign] "${name}" goals=(${goalScore}, ${goalComments}) post=${post.id} sub=${post.subreddit}`);
+      } catch (err) {
+        console.error("[post->campaign] failed:", err);
+        Util.toast(`Couldn't create campaign: ${(err && err.message) || err}`, "error");
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.originalText || "Save & find subreddits";
+        }
+      }
+    }
+
+    /* Inline add-posts form + per-row remove button inside the campaign
      * detail panel. We use event delegation on the body so the handlers
      * survive every re-render. */
     const campaignDetailBody = document.getElementById("campaign-detail-body");
@@ -2261,27 +2399,141 @@ const bestCampaignPost = (summary.posts || [])
       }
     }
     if (discoverBtn) discoverBtn.addEventListener("click", runDiscover);
+    /* Hoist runDiscover up to the IIFE scope so other handlers (e.g.
+     * the new Posts-tab → Make Campaign flow) can call it without
+     * having to fake-click the discover button. */
+    _runDiscover = runDiscover;
 
-    /* "+ Add to dashboard" buttons inside discover-results: event delegation
-     * so we don't need to re-bind on every render. */
+    /* discover-results delegated handlers:
+     *  - data-action="add"                 -> add candidate sub to dashboard
+     *  - data-action="open-submit"         -> auto-expand the tracker
+     *                                         <details> so the paste-back
+     *                                         input is ready when the user
+     *                                         comes back from Reddit
+     *  - data-action="track-post-confirm"  -> resolve the pasted URL +
+     *                                         add it to the open campaign
+     *  - Enter key inside track-post-url   -> same as confirm */
     if (discoverResults) {
-      discoverResults.addEventListener("click", (e) => {
-        const btn = e.target && e.target.closest && e.target.closest('[data-action="add"]');
-        if (!btn) return;
-        const name = btn.dataset.name;
-        if (!name) return;
-        const norm = Util.normalizeSubName(name);
-        if (!state.knownSubs.includes(norm)) state.knownSubs.push(norm);
-        state.activeSubs.add(norm);
-        persist();
-        renderChips();
-        Util.toast(`Added r/${norm} — fetching…`, "ok");
-        const row = btn.closest(".target-row");
-        if (row) row.classList.add("already");
-        btn.disabled = true;
-        btn.textContent = "Added ✓";
-        refreshData();
+      discoverResults.addEventListener("click", async (e) => {
+        const addBtn = e.target && e.target.closest && e.target.closest('[data-action="add"]');
+        if (addBtn) {
+          const name = addBtn.dataset.name;
+          if (!name) return;
+          const norm = Util.normalizeSubName(name);
+          if (!state.knownSubs.includes(norm)) state.knownSubs.push(norm);
+          state.activeSubs.add(norm);
+          persist();
+          renderChips();
+          Util.toast(`Added r/${norm} — fetching…`, "ok");
+          const row = addBtn.closest(".target-row");
+          if (row) row.classList.add("already");
+          addBtn.disabled = true;
+          addBtn.textContent = "Added ✓";
+          refreshData();
+          return;
+        }
+
+        const openBtn = e.target && e.target.closest && e.target.closest('[data-action="open-submit"]');
+        if (openBtn) {
+          /* Don't preventDefault — the link must still open the
+           * Reddit /submit page. We only auto-expand the tracker so
+           * the URL-paste input is waiting when the user returns. */
+          const card = openBtn.closest(".target-row");
+          const tracker = card && card.querySelector(".cand-tracker");
+          if (tracker) tracker.open = true;
+          return;
+        }
+
+        const trackBtn = e.target && e.target.closest && e.target.closest('[data-action="track-post-confirm"]');
+        if (trackBtn) {
+          e.preventDefault();
+          await handleTrackPostFromCandidate(trackBtn);
+          return;
+        }
       });
+
+      discoverResults.addEventListener("keydown", (e) => {
+        const input = e.target && e.target.closest && e.target.closest('[data-action="track-post-url"]');
+        if (!input || e.key !== "Enter") return;
+        e.preventDefault();
+        const tracker = input.closest(".cand-tracker");
+        const btn = tracker && tracker.querySelector('[data-action="track-post-confirm"]');
+        if (btn) btn.click();
+      });
+    }
+
+    /* Resolve the Reddit URL/ID/share-link the user pasted into a
+     * candidate's tracker input and add it to the currently-open
+     * campaign. Uses the same parsing + share-resolution path as the
+     * "Add more posts" textarea inside the campaign detail panel. */
+    async function handleTrackPostFromCandidate(trackBtn) {
+      const tracker = trackBtn.closest(".cand-tracker");
+      if (!tracker) return;
+      const input = tracker.querySelector('[data-action="track-post-url"]');
+      const status = tracker.querySelector(".cand-tracker-status");
+      if (!input) return;
+      const value = String(input.value || "").trim();
+      function showStatus(kind, text) {
+        if (!status) return;
+        status.hidden = false;
+        status.className = "cand-tracker-status meta " + (kind || "");
+        status.textContent = text || "";
+      }
+      if (!value) {
+        showStatus("err", "Paste your new post URL first.");
+        return;
+      }
+      const sel = document.getElementById("discover-campaign");
+      const campaignId = state.openCampaignId || (sel && sel.value) || null;
+      if (!campaignId) {
+        showStatus("err", "No active campaign — open one first.");
+        return;
+      }
+
+      trackBtn.disabled = true;
+      const origText = trackBtn.textContent;
+      trackBtn.textContent = "Adding…";
+      showStatus("", "Resolving…");
+
+      try {
+        const refs = Util.parsePostRefs(value);
+        let allIds = refs.ids.slice();
+        if (refs.shares.length) {
+          const urls = refs.shares.map((s) => s.url);
+          const { resolved } = await Reddit.resolveShareUrls(urls);
+          for (const u of urls) {
+            if (resolved[u]) allIds.push(resolved[u]);
+          }
+        }
+        allIds = Util.uniqBy(allIds, (x) => x);
+        if (!allIds.length) {
+          showStatus("err", "Couldn't extract a Reddit post ID from that. Paste the full https://www.reddit.com/... permalink.");
+          trackBtn.disabled = false;
+          trackBtn.textContent = origText;
+          return;
+        }
+        const result = Campaigns.addPostIds(campaignId, allIds);
+        if (!result) {
+          showStatus("err", "Campaign not found.");
+          trackBtn.disabled = false;
+          trackBtn.textContent = origText;
+          return;
+        }
+        if (result.added === 0) {
+          showStatus("ok", "Already tracked in this campaign.");
+        } else {
+          showStatus("ok", `Added — refreshing "${result.campaign.name}" stats…`);
+        }
+        input.value = "";
+        await openCampaign(result.campaign);
+        Util.toast(`Tracked ${result.added || 0} new post${result.added === 1 ? "" : "s"} in "${result.campaign.name}"`, "ok");
+        trackBtn.textContent = result.added === 0 ? "Already added ✓" : "Added ✓";
+      } catch (err) {
+        console.error("[track-post] failed:", err);
+        showStatus("err", `Failed: ${(err && err.message) || err}`);
+        trackBtn.disabled = false;
+        trackBtn.textContent = origText;
+      }
     }
   }
 
