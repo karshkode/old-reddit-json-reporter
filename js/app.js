@@ -3205,6 +3205,82 @@ const bestCampaignPost = (summary.posts || [])
     }
   }
 
+  /* ---------- Predict / cascade / rewrite (PR 5) ---------- */
+
+  function wirePredictCard() {
+    const card = document.getElementById("predict-card");
+    const body = document.getElementById("predict-body");
+    if (!card || !body) return;
+    UI.renderPredictAndRewrite(body);
+    function recompute() {
+      const input = body.querySelector('[data-role="predict-draft"]');
+      const draft = input ? input.value.trim() : "";
+      const subs = Array.from(state.activeSubs);
+      const predictions = subs.map((sub) =>
+        Analysis.predictPostScore(sub, draft, { posts: state.posts })
+      );
+      const rewrites = draft ? Analysis.rewriteTitle(draft) : [];
+      UI.renderPredictResults(body, predictions, rewrites);
+    }
+    body.addEventListener("input", (e) => {
+      if (e.target.matches('[data-role="predict-draft"]')) {
+        clearTimeout(body._predictDebounce);
+        body._predictDebounce = setTimeout(recompute, 200);
+      }
+    });
+    body.addEventListener("click", (e) => {
+      const pick = e.target.closest && e.target.closest("[data-rewrite-pick]");
+      if (!pick) return;
+      const input = body.querySelector('[data-role="predict-draft"]');
+      if (input) {
+        input.value = pick.dataset.rewritePick;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    /* Reveal the card once we have data to work with. */
+    if (state.posts.length > 0 && state.activeSubs.size > 0) {
+      card.hidden = false;
+    }
+  }
+
+  function wireCascadeCard() {
+    const card = document.getElementById("cascade-card");
+    const sel = document.getElementById("cascade-source");
+    const btn = document.getElementById("cascade-build");
+    const out = document.getElementById("cascade-results");
+    if (!card || !sel || !btn || !out) return;
+    function populate() {
+      const campaigns = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
+      const optActive = `<option value="__active">Active subs (${state.activeSubs.size})</option>`;
+      const optCampaigns = campaigns.map((c) => {
+        const summary = state.campaignSummaries[c.id];
+        const subs = summary ? (summary.subs || []) : [];
+        return `<option value="campaign:${c.id}">${Util.escapeHtml(c.name)} (${subs.length} subs)</option>`;
+      }).join("");
+      sel.innerHTML = optActive + optCampaigns;
+    }
+    populate();
+    btn.addEventListener("click", () => {
+      const v = sel.value;
+      let subs = [];
+      if (v === "__active") {
+        subs = Array.from(state.activeSubs);
+      } else if (v && v.startsWith("campaign:")) {
+        const id = v.slice(9);
+        const summary = state.campaignSummaries[id];
+        subs = summary ? (summary.subs || []) : [];
+      }
+      const schedule = Analysis.cascadeSchedule(subs, {
+        posts: state.posts,
+        subProfiles: state.subProfiles || {},
+      });
+      UI.renderCascadeSchedule(out, schedule);
+    });
+    if (state.posts.length > 0 && (state.activeSubs.size > 0 || Object.keys(state.campaignSummaries || {}).length > 0)) {
+      card.hidden = false;
+    }
+  }
+
   function init() {
     safeRun("loadPersisted", loadPersisted);
     safeRun("bind", bind);
@@ -3220,6 +3296,8 @@ const bestCampaignPost = (summary.posts || [])
      * explicitly opts into fetching. They click Go ▶ when ready. */
     safeRun("showInitialActionBanner", () => Util.setActionPhase("pending", describePendingFetch()));
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
+    safeRun("wirePredictCard", wirePredictCard);
+    safeRun("wireCascadeCard", wireCascadeCard);
     safeRun("checkStorageAvailability", checkStorageAvailability);
   }
 

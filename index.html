@@ -435,6 +435,31 @@
         </div>
       </div>
 
+      <!-- Cascade scheduler + Predict-and-rewrite tool (PR 5).
+           Visible only when a campaign is open and there are loaded
+           posts to learn from. Wired in app.js. -->
+      <div class="card" id="cascade-card" data-collapsible data-collapsed-default hidden>
+        <header class="card-header">
+          <h2>Cross-post cascade</h2>
+          <span class="hint">Staggered posting plan — pick the sub list to cascade</span>
+        </header>
+        <div class="card-body">
+          <div class="cascade-controls">
+            <select id="cascade-source"></select>
+            <button id="cascade-build" type="button" class="btn small primary">Plan cascade</button>
+          </div>
+          <div id="cascade-results"></div>
+        </div>
+      </div>
+
+      <div class="card" id="predict-card" data-collapsible data-collapsed-default hidden>
+        <header class="card-header">
+          <h2>Predict + rewrite</h2>
+          <span class="hint">Try a draft title across your loaded subs</span>
+        </header>
+        <div class="card-body" id="predict-body"></div>
+      </div>
+
       <!-- Detail panel for an opened campaign (AI baked in via deep analysis) -->
       <div class="card" id="campaign-detail" data-anchor="campaign-detail" hidden>
         <header class="card-header">
