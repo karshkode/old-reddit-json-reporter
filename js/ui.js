@@ -117,12 +117,24 @@
        * doesn't bubble to the row's onRowClick because we stop
        * propagation in the click handler. The action expands an inline
        * form-row below this <tr> (see UI.renderPostMakeCampaignForm). */
+      /* Reddit-native quality flags. Stickied / pinned posts get an
+       * organic boost from the mod team and shouldn't be conflated
+       * with breakouts; removed posts have no real engagement; NSFW
+       * and spoilers carry warnings worth surfacing. */
+      const flagBadges = [];
+      if (p.stickied) flagBadges.push('<span class="tag flag-stickied" title="Mod-pinned — organic-boost outlier">📌 pinned</span>');
+      if (p.removed)  flagBadges.push('<span class="tag flag-removed" title="Removed by mods or author">🗑 removed</span>');
+      if (p.over_18)  flagBadges.push('<span class="tag flag-nsfw" title="NSFW">NSFW</span>');
+      if (p.spoiler)  flagBadges.push('<span class="tag flag-spoiler" title="Spoiler">spoiler</span>');
+      if (p.locked)   flagBadges.push('<span class="tag flag-locked" title="Comments locked">🔒 locked</span>');
+      const flagsHtml = flagBadges.length ? ` ${flagBadges.join(" ")}` : "";
+
       tr.innerHTML = `
         <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">${Util.escapeHtml(Util.relTime(p.created_utc))}</td>
         <td data-label="Sub"><span class="tag">r/${Util.escapeHtml(p.subreddit)}</span></td>
         <td data-label="Title" class="title">
           <span class="title-text" title="${Util.escapeHtml(p.title || "")}">${Util.escapeHtml(p.title || "")}</span>
-          ${p.flair ? `<span class="tag flair">${Util.escapeHtml(p.flair)}</span>` : ""}
+          ${p.flair ? `<span class="tag flair">${Util.escapeHtml(p.flair)}</span>` : ""}${flagsHtml}
         </td>
         <td data-label="Author">${Util.escapeHtml(p.author || "")}</td>
         <td data-label="Score" class="num">${Util.fmtNum(p.score)}</td>

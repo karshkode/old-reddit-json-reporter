@@ -709,19 +709,88 @@
      11. CROSS-POST DETECTION (existing API kept stable)
      ============================================================ */
 
+  /* Title fingerprint for fuzzy cross-post grouping.
+   *
+   * Catches near-duplicates like:
+   *   "BREAKING: Senator X says Y"   ->  senator x says y
+   *   "Senator X says Y - per WaPo"  ->  senator x says y per wapo
+   *   "[VIDEO] Senator X says Y!"    ->  video senator x says y
+   *
+   * The fingerprint:
+   *   1. lowercases
+   *   2. strips leading bracket-prefixes ([BREAKING], (UPDATE), etc.)
+   *   3. removes punctuation
+   *   4. collapses whitespace
+   *   5. drops common stopwords
+   *   6. takes the first 8 content words
+   * Two titles share a group when their 8-word fingerprints match.
+   * That's stricter than full Levenshtein (which would balloon to
+   * O(N^2) on 1000+ posts) but loose enough to catch the obvious
+   * near-dupes. */
+  const FINGERPRINT_STOP = new Set([
+    "a","an","the","of","to","in","on","at","for","with","by","from","is",
+    "are","was","were","be","been","being","this","that","these","those",
+    "it","its","as","and","or","but","not","no","so","if","then","than",
+    "do","did","does","done","has","have","had","just","new","will","would",
+    "should","can","could","may","might","must","more","most","much","many",
+    "i","me","my","we","our","us","you","your","they","them","their","he",
+    "she","his","her","reddit","watch","video","breaking","update","news",
+  ]);
+  function titleFingerprint(title) {
+    if (!title) return "";
+    let s = String(title).toLowerCase();
+    /* Strip leading bracket prefixes like [BREAKING] / (UPDATE) / etc. —
+     * repeat to peel multiple stacked prefixes ("[NSFW][VIDEO] …"). */
+    for (let i = 0; i < 3; i++) {
+      s = s.replace(/^[\s]*[\[\(\{]([^\]\)\}]{1,40})[\]\)\}][\s:,-]*/g, " ");
+    }
+    /* Strip leading "BREAKING:" / "UPDATE:" / "EXCLUSIVE:" without
+     * brackets, and similar all-caps prefix shouts. */
+    s = s.replace(/^\s*(?:breaking|update|exclusive|news|video|watch|just in)[\s:—-]+/gi, " ");
+    /* Strip punctuation, normalise whitespace. */
+    s = s.replace(/[\s\p{P}\p{S}]+/gu, " ").trim();
+    if (!s) return "";
+    const words = s.split(" ").filter((w) => w && !FINGERPRINT_STOP.has(w));
+    /* Use the first 4 content words as the matching key. Shorter keys
+     * = more aggressive grouping. 4 is enough to disambiguate truly
+     * different stories while still catching titles that diverge in
+     * the trailing suffix ("…— per WaPo", "…today", "…explained",
+     * "…now"). Hash-based grouping is O(N); fancier fuzzy options
+     * (Levenshtein, Jaccard over n-grams) would be O(N²) and not
+     * tractable on a 7,000-post dashboard. */
+    return words.slice(0, 4).join(" ");
+  }
+  Analysis.titleFingerprint = titleFingerprint;
+
   Analysis.detectCrossPosts = function (posts) {
     const byTitle = new Map();
     const byUrl = new Map();
+    /* Native Reddit crossposts (data.crosspost_parent) — group all
+     * children of the same parent regardless of title/URL. */
+    const byNativeXp = new Map();
     for (const p of posts) {
-      const tk = (p.title || "").toLowerCase().replace(/\s+/g, " ").trim();
-      if (tk) {
-        if (!byTitle.has(tk)) byTitle.set(tk, []);
-        byTitle.get(tk).push(p);
+      /* Fuzzy title key (see titleFingerprint above). Falls back to
+       * the cleaned full title if the fingerprint comes out empty
+       * (e.g. all-stopwords title). */
+      const fp = titleFingerprint(p.title) ||
+                 (p.title || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (fp) {
+        if (!byTitle.has(fp)) byTitle.set(fp, []);
+        byTitle.get(fp).push(p);
       }
       if (p.url && !p.is_self) {
-        const u = p.url.split("?")[0];
+        /* Use the canonicalised URL when available (strips tracking
+         * params, collapses youtu.be / m.youtube.com / x.com / etc.).
+         * Falls back to the legacy split-on-? for posts loaded from
+         * a pre-canonicalisation cache. */
+        const u = p.url_canonical || p.url.split("?")[0];
         if (!byUrl.has(u)) byUrl.set(u, []);
         byUrl.get(u).push(p);
+      }
+      if (p.crosspost_parent_id) {
+        const k = p.crosspost_parent_id;
+        if (!byNativeXp.has(k)) byNativeXp.set(k, []);
+        byNativeXp.get(k).push(p);
       }
     }
     const groups = [];
@@ -741,6 +810,7 @@
     }
     consider(byTitle, "title");
     consider(byUrl, "url");
+    consider(byNativeXp, "native");
     const seen = new Set();
     /* Sort:
      *   1) spread (number of distinct subs the content is in) DESC
