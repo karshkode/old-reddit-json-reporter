@@ -663,6 +663,29 @@
       const recCls = p.reception === "warm" ? "good" : p.reception === "healthy" ? "info" : p.reception === "mixed" ? "warn" : p.reception === "contentious" ? "bad" : "info";
       const themes = (p.themes || []).slice(0, 5).map((t) => `<span class="kw">${t.kind === "phrase" ? `"${Util.escapeHtml(t.term)}"` : Util.escapeHtml(t.term)}<span class="count">${t.count}</span></span>`).join("");
       const keys = (p.keywords || []).slice(0, 8).map((k) => `<span class="tag">${Util.escapeHtml(k.word)}</span>`).join(" ");
+      /* Health metrics (PR 2). Quick-scan signals beyond the headline:
+       * velocity tells you whether the sub is busy (>10/hr) or quiet;
+       * karma skew is the breakout-vs-broadly-engaged signal;
+       * stickyShare flags subs whose baseline is inflated by mod
+       * boost (their "median" is misleading). */
+      const velLabel = p.velocityPerHour >= 10 ? "🔥 busy"
+                     : p.velocityPerHour >= 1  ? "🟢 active"
+                     : p.velocityPerHour >= 0.1 ? "🟡 quiet"
+                                               : "💤 dormant";
+      const skewLabel = p.karmaSkew >= 20 ? "all-or-nothing — a few posts run away with all the karma"
+                      : p.karmaSkew >= 8  ? "skewed — a few breakouts dominate"
+                      : p.karmaSkew >= 3  ? "mixed — most posts modest, occasional hit"
+                                          : "broadly engaged — even median posts get traction";
+      const stickyWarn = p.stickyShare >= 0.05
+        ? `<span class="badge warn" title="Mod-pinned posts inflate the baseline metrics for this sub.">${Math.round(p.stickyShare * 100)}% pinned</span>`
+        : "";
+      const removedWarn = p.removedShare >= 0.05
+        ? `<span class="badge bad" title="${Math.round(p.removedShare * 100)}% of loaded posts were removed by mods or authors. Heavy-moderation sub.">${Math.round(p.removedShare * 100)}% removed</span>`
+        : "";
+      const nsfwBadge = p.nsfwShare >= 0.20
+        ? `<span class="badge warn" title="${Math.round(p.nsfwShare * 100)}% of loaded posts are flagged NSFW.">NSFW-heavy</span>`
+        : "";
+
       return `
         <div class="profile-card">
           <div class="profile-head">
@@ -671,16 +694,29 @@
               <span class="badge ${sentClass}">${sentLabel}</span>
               <span class="badge ${recCls}">${p.reception}</span>
               <span class="badge info">${p.style}</span>
+              <span class="badge info" title="Velocity: ${p.velocityPerHour.toFixed(2)} posts/hour over the loaded window">${velLabel}</span>
+              ${stickyWarn}${removedWarn}${nsfwBadge}
             </div>
           </div>
           <div class="profile-stats">
             <div><span class="label">Posts</span><strong>${Util.fmtNum(p.count)}</strong></div>
             <div><span class="label">Median score</span><strong>${Util.fmtNum(p.medianScore)}</strong></div>
+            <div><span class="label">P90 score</span><strong>${Util.fmtNum(p.karmaP90)}</strong></div>
             <div><span class="label">Avg comments</span><strong>${Util.fmtNum(p.avgComments)}</strong></div>
             <div><span class="label">UV ratio</span><strong>${p.avgUpvoteRatio == null ? "—" : Util.fmtPct(p.avgUpvoteRatio)}</strong></div>
+            <div><span class="label">Velocity</span><strong>${p.velocityPerHour < 1 ? p.velocityPerHour.toFixed(2) : Math.round(p.velocityPerHour)}/hr</strong></div>
             <div><span class="label">Best hour</span><strong>${p.bestHour >= 0 ? String(p.bestHour).padStart(2, "0") + ":00" : "—"}</strong></div>
             <div><span class="label">Best day</span><strong>${Analysis.DAY_NAMES[p.bestDow].slice(0, 3)}</strong></div>
           </div>
+          <div class="profile-line profile-skew" title="Karma skew = P90 / P50. Higher = breakout-driven; near 1 = broadly engaged.">
+            <span class="profile-label">Engagement shape</span>
+            <span class="meta">${Util.escapeHtml(skewLabel)} <span class="profile-skew-num">(skew ${p.karmaSkew >= 100 ? "100+" : p.karmaSkew.toFixed(1)})</span></span>
+          </div>
+          ${p.quietHours && p.quietHours.length >= 4 ? `
+            <div class="profile-line profile-quiet" title="Hours with zero loaded posts — likely dead-air windows.">
+              <span class="profile-label">Quiet hours</span>
+              <span class="meta">${p.quietHours.map((h) => String(h).padStart(2, "0") + ":00").join(" · ")}</span>
+            </div>` : ""}
           ${themes ? `<div class="profile-line"><span class="profile-label">Themes</span><div class="keyword-cloud">${themes}</div></div>` : ""}
           ${keys ? `<div class="profile-line"><span class="profile-label">Top words</span><div>${keys}</div></div>` : ""}
         </div>

@@ -3283,13 +3283,42 @@ body.modal-open { overflow: hidden; }
  * the unified .action-banner block higher up in this file.) */
 
 /* =====================================================================
-   REDDIT-NATIVE QUALITY FLAGS — pill tags rendered next to flair on
-   each post row. Surface mod-pinned (📌), removed (🗑), NSFW, spoiler,
-   and locked posts so downstream analysis isn't conflated with
-   organic breakouts.
+   PROXY HEALTH DASHBOARD (footer)
    ===================================================================== */
-.tag.flag-stickied { background: rgba(96, 165, 250, 0.18); color: var(--info); border-color: rgba(96, 165, 250, 0.35); }
-.tag.flag-removed  { background: rgba(239, 68, 68, 0.18);  color: var(--bad);  border-color: rgba(239, 68, 68, 0.35); }
-.tag.flag-nsfw     { background: rgba(239, 68, 68, 0.22);  color: #fff;        border-color: rgba(239, 68, 68, 0.5); font-weight: 700; letter-spacing: 0.4px; }
-.tag.flag-spoiler  { background: rgba(251, 191, 36, 0.18); color: var(--warn); border-color: rgba(251, 191, 36, 0.35); }
-.tag.flag-locked   { background: rgba(148, 163, 184, 0.18); color: var(--text-mute); border-color: rgba(148, 163, 184, 0.35); }
+.proxy-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+.proxy-health-label {
+  font-weight: 600;
+  margin-right: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-size: 10px;
+}
+.proxy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  font-variant-numeric: tabular-nums;
+}
+.proxy-pill.ok   { color: var(--good); border-color: rgba(34, 197, 94, 0.35); }
+.proxy-pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); }
+.proxy-pill.bad  { color: var(--bad);  border-color: rgba(239, 68, 68, 0.35); }
+.proxy-pill strong { font-weight: 700; }
+
+/* Profile-card additions for sub health metrics */
+.profile-skew, .profile-quiet {
+  font-size: 11px;
+  color: var(--text-mute);
+}
+.profile-skew-num { color: var(--text-dim); font-weight: 600; }

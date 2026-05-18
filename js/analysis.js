@@ -350,6 +350,46 @@
     const subs = Object.keys(agg.bySubreddit);
     const topPostsBy = (k) => posts.slice().sort((a, b) => (b[k] || 0) - (a[k] || 0)).slice(0, 5);
 
+    /* Subreddit health metrics — driven by the loaded post window.
+     *   - velocityPerHour : how many posts were submitted per hour
+     *     across the loaded window (= count / span_hours). Distinguishes
+     *     busy subs (>10/hr) from quiet ones (<0.5/hr).
+     *   - karmaP10/P50/P90 : score distribution. Tells you whether
+     *     this sub mostly produces small posts with rare breakouts
+     *     (high P90/P50 ratio) or broadly engaged content (flatter).
+     *   - quietHours : hour-of-day buckets with zero loaded posts —
+     *     literal dead zones. Useful as a "don't post here now" signal.
+     *   - stickyShare : fraction of loaded posts that are mod-pinned;
+     *     high values mean baseline metrics are inflated by mod boost.
+     *   - removedShare : fraction visibly [removed]; high values mean
+     *     the sub aggressively moderates (or your scrape missed
+     *     deletions).
+     * NSFW share is also exposed for content-filter use. */
+    const submitTimes = posts.map((p) => Number(p.created_utc) || 0).filter((t) => t > 0).sort((a, b) => a - b);
+    let velocityPerHour = 0, spanHours = 0;
+    if (submitTimes.length >= 2) {
+      spanHours = (submitTimes[submitTimes.length - 1] - submitTimes[0]) / 3600;
+      if (spanHours > 0.1) velocityPerHour = submitTimes.length / spanHours;
+    }
+    const sortedScores = posts.map((p) => p.score || 0).slice().sort((a, b) => a - b);
+    function pct(arr, p) {
+      if (!arr.length) return 0;
+      const i = Math.max(0, Math.min(arr.length - 1, Math.floor((arr.length - 1) * p / 100)));
+      return arr[i];
+    }
+    const karmaP10 = pct(sortedScores, 10);
+    const karmaP50 = pct(sortedScores, 50);
+    const karmaP90 = pct(sortedScores, 90);
+    /* Skew = how much P90 dwarfs P50 (1.0 = flat distribution,
+     * higher = a few breakouts dominate). Floor at 1 to avoid
+     * inflated numbers from sub with median 0. */
+    const karmaSkew = karmaP50 > 0 ? karmaP90 / karmaP50 : 1;
+    const quietHours = [];
+    for (let h = 0; h < 24; h++) if (!agg.byHour[h]) quietHours.push(h);
+    const stickyShare = agg.count ? posts.filter((p) => p.stickied).length / agg.count : 0;
+    const removedShare = agg.count ? posts.filter((p) => p.removed).length / agg.count : 0;
+    const nsfwShare = agg.count ? posts.filter((p) => p.over_18).length / agg.count : 0;
+
     return {
       label: opts.label || "Posts",
       count: agg.count,
@@ -367,6 +407,12 @@
       avgScoreByHour: agg.avgScoreByHour,
       style, reception,
       ratio,
+      /* New health metrics (PR 2) */
+      velocityPerHour,
+      spanHours,
+      karmaP10, karmaP50, karmaP90, karmaSkew,
+      quietHours,
+      stickyShare, removedShare, nsfwShare,
       subreddits: subs,
       bySubreddit: agg.bySubreddit,
       topByScore: topPostsBy("score"),
