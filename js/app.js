@@ -3908,7 +3908,39 @@ const bestCampaignPost = (summary.posts || [])
       clearBtn:  document.getElementById("composer-clear-draft"),
       savedMeta: document.getElementById("composer-saved-meta"),
       context:   document.getElementById("composer-context"),
+      selectAllBtn:  document.getElementById("composer-targets-all"),
+      selectNoneBtn: document.getElementById("composer-targets-none"),
+      selectUnpostedBtn: document.getElementById("composer-targets-unposted"),
+      selectCount:   document.getElementById("composer-targets-count"),
     };
+  }
+
+  /* Per-sub count of how many of the currently-open campaign's posts
+   * already landed in each subreddit. The composer renders this as a
+   * small "3 posts" badge next to each target so the user can see at
+   * a glance which subs they've already saturated.
+   *
+   * Source of truth: the campaign's postIds joined to state.posts
+   * (the same in-memory pool the rest of the dashboard uses). Posts
+   * that haven't yet been fetched return count = 0; we deliberately
+   * don't show the badge for 0 because we can't tell apart "truly
+   * never posted there" from "not fetched yet". */
+  function computeCampaignPostCountsBySub(campaignId) {
+    const out = new Map();
+    if (!campaignId || typeof Campaigns === "undefined") return out;
+    const c = Campaigns.get(campaignId);
+    if (!c) return out;
+    const byId = new Map();
+    for (const p of (state.posts || [])) {
+      if (p && p.id) byId.set(p.id, p);
+    }
+    for (const id of (c.postIds || [])) {
+      const p = byId.get(id);
+      if (!p || !p.subreddit) continue;
+      const k = String(p.subreddit).toLowerCase();
+      out.set(k, (out.get(k) || 0) + 1);
+    }
+    return out;
   }
 
   function openComposer(campaignId) {
@@ -4047,8 +4079,26 @@ const bestCampaignPost = (summary.posts || [])
     /* Live preview */
     refs.preview.innerHTML = Composer.renderMarkdown(composerState.body || "");
 
-    /* Targets */
-    refs.targets.innerHTML = renderTargetsHtml(composerState, urls);
+    /* Targets — pass in per-sub post counts so the renderer can
+     * display a "3 posts" badge for subs that already have campaign
+     * coverage. */
+    const counts = computeCampaignPostCountsBySub(composerState.campaignId);
+    refs.targets.innerHTML = renderTargetsHtml(composerState, urls, counts);
+
+    /* Selection summary in the bulk-select strip:
+     *   "12 of 18 selected · 4 already posted"
+     * Posted figure is the count of targets the USER has marked
+     * posted in this composer session (from .posted), separate from
+     * the per-sub campaign count above (which sees ALL campaign
+     * posts, including those added before the composer was opened). */
+    if (refs.selectCount) {
+      const total = composerState.targets.length;
+      const checked = composerState.targets.filter((t) => t.checked).length;
+      const posted = composerState.targets.filter((t) => t.posted).length;
+      const parts = [`${checked} of ${total} selected`];
+      if (posted) parts.push(`${posted} marked posted`);
+      refs.selectCount.textContent = total ? parts.join(" · ") : "";
+    }
 
     /* Persist debounced */
     if (composerSaveTimer) clearTimeout(composerSaveTimer);
@@ -4059,12 +4109,19 @@ const bestCampaignPost = (summary.posts || [])
     }, 500);
   }
 
-  function renderTargetsHtml(draft, urls) {
+  function renderTargetsHtml(draft, urls, counts) {
     const urlBySub = new Map(urls.map((u) => [u.sub, u]));
+    const countMap = counts || new Map();
     const rows = (draft.targets || []).map((t, idx) => {
       const u = urlBySub.get(t.sub);
       const counter = u
         ? `<span class="url-counter ${u.warn === "hard" ? "bad" : u.warn === "soft" ? "warn" : ""}">${u.length} / 8000</span>`
+        : "";
+      /* Existing-post count badge. Pulled from the campaign's
+       * resolved postIds joined to state.posts. */
+      const existingCount = countMap.get(t.sub.toLowerCase()) || 0;
+      const countBadge = existingCount > 0
+        ? `<span class="campaign-post-count" title="${existingCount} ${existingCount === 1 ? "post" : "posts"} from this campaign already in r/${Util.escapeHtml(t.sub)}. Consider whether another post here adds value.">${existingCount} ${existingCount === 1 ? "post" : "posts"}</span>`
         : "";
       const submitBtn = u
         ? `<a class="btn small primary" href="${Util.escapeHtml(u.url)}" target="_blank" rel="noopener" data-composer-action="open-submit" data-sub="${Util.escapeHtml(t.sub)}">Open submit</a>`
@@ -4103,6 +4160,7 @@ const bestCampaignPost = (summary.posts || [])
           <span class="composer-target-sub">r/${Util.escapeHtml(t.sub)}</span>
           <span class="composer-target-meta">
             ${seedBadge}
+            ${countBadge}
             ${counter}
             ${t.posted ? `<a href="${Util.escapeHtml(t.postedUrl || "#")}" target="_blank" rel="noopener" class="hint">view post ↗</a>` : ""}
           </span>
@@ -4409,6 +4467,38 @@ const bestCampaignPost = (summary.posts || [])
       refs.aiPaste.value = "";
       refreshComposer();
       Util.toast("Appended AI output.", "ok");
+    });
+
+    /* Bulk-select buttons. All / None / Unposted-only.
+     *
+     * Each one preserves an invariant: if any target is checked, ONE
+     * of them is the seed. So "All" auto-promotes the first row to
+     * seed if no current seed is checked, "None" clears the seed
+     * along with everything else, and "Unposted only" promotes the
+     * first unposted row to seed. */
+    function ensureSeed() {
+      const checked = composerState.targets.filter((t) => t.checked);
+      const haveSeed = checked.some((t) => t.seed);
+      if (!haveSeed && checked.length) {
+        composerState.targets.forEach((t) => { t.seed = false; });
+        checked[0].seed = true;
+      }
+      /* If no targets are checked, clear any orphan seed flag. */
+      if (!checked.length) composerState.targets.forEach((t) => { t.seed = false; });
+    }
+    if (refs.selectAllBtn) refs.selectAllBtn.addEventListener("click", () => {
+      composerState.targets.forEach((t) => { t.checked = true; });
+      ensureSeed();
+      refreshComposer();
+    });
+    if (refs.selectNoneBtn) refs.selectNoneBtn.addEventListener("click", () => {
+      composerState.targets.forEach((t) => { t.checked = false; t.seed = false; });
+      refreshComposer();
+    });
+    if (refs.selectUnpostedBtn) refs.selectUnpostedBtn.addEventListener("click", () => {
+      composerState.targets.forEach((t) => { t.checked = !t.posted; });
+      ensureSeed();
+      refreshComposer();
     });
 
     /* Targets actions */

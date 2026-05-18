@@ -4476,3 +4476,63 @@ body.modal-open { overflow: hidden; }
   flex: 1 1 200px;
   font-size: 12px;
 }
+
+/* Bulk-select strip in the composer targets header. Pulled out into
+ * its own group so the All / None / Unposted buttons sit visually
+ * separate from the "+ From recommended" / "+ From active subs"
+ * sub-pool buttons (different intent: bulk-state vs bulk-add). */
+.composer-targets-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  flex-wrap: wrap;
+}
+.composer-targets-select-label {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-right: 2px;
+}
+.composer-targets-select .btn.small {
+  font-size: 11px;
+  padding: 4px 10px;
+  min-height: 0;
+}
+.composer-targets-count {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+
+/* Per-target badge: how many of THIS campaign's tracked posts are
+ * already in this sub. Helps the user avoid re-posting where they've
+ * already saturated coverage, OR pick subs they've never hit before.
+ * Only shown when count > 0 to avoid noise — a 0 might just mean
+ * the post hasn't been fetched into state.posts yet, not that the
+ * user hasn't posted there. */
+.campaign-post-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+.campaign-post-count::before {
+  content: "✓";
+  font-weight: 700;
+}
