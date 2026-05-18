@@ -2412,6 +2412,13 @@
         if (!ta) return;
         const form = ta.closest(".add-posts-form");
         const prev = form && form.querySelector('[data-role="add-posts-preview"]');
+        /* Once the user starts typing again, clear any stale
+         * "Couldn't add" / "Already in this campaign" message so
+         * the form doesn't display contradictory state. */
+        const statusEl = form && form.querySelector('[data-role="add-posts-status"]');
+        if (statusEl && (statusEl.classList.contains("error") || statusEl.classList.contains("warn"))) {
+          statusEl.hidden = true; statusEl.innerHTML = ""; statusEl.className = "add-posts-status";
+        }
         if (!prev) return;
         const refs = Util.parsePostRefs(ta.value);
         if (!refs.ids.length && !refs.shares.length) {
@@ -2434,6 +2441,24 @@
         const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
         if (!ta) return;
         setTimeout(() => ta.dispatchEvent(new Event("input", { bubbles: true })), 0);
+      });
+
+      /* Cmd/Ctrl+Enter inside the add-posts textarea triggers the
+       * Add button. This lets a user who pastes a URL hit the
+       * keyboard shortcut they expect (matching most chat / form
+       * UIs) instead of fishing for a small button — and combined
+       * with the inline preview chips above, makes it visually
+       * obvious that the IDs are about to be added. */
+      campaignDetailBody.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+        const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
+        if (!ta) return;
+        const form = ta.closest(".add-posts-form");
+        const addBtn = form && form.querySelector('[data-action="add-posts"]');
+        if (addBtn) {
+          e.preventDefault();
+          addBtn.click();
+        }
       });
 
       /* Click delegation: Add posts / Remove from campaign / Copy digest /
@@ -2585,6 +2610,33 @@
       });
     }
 
+    /* Stamp a small status block onto the add-posts form. Stays
+     * visible after the toast disappears so the user has an unambiguous
+     * confirmation that their paste landed (or didn't). The previous
+     * implementation only fired a Util.toast which could be missed
+     * if the user looked away during the network round-trip. */
+    function setAddPostsStatus(form, html, kind) {
+      if (!form) return;
+      let el = form.querySelector('[data-role="add-posts-status"]');
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "add-posts-status";
+        el.setAttribute("data-role", "add-posts-status");
+        form.appendChild(el);
+      }
+      el.className = "add-posts-status " + (kind || "");
+      el.innerHTML = html;
+      if (!html) el.hidden = true; else el.hidden = false;
+      /* Auto-hide ok states after 6s; keep errors visible until the
+       * user types in the textarea (cleared from the input handler). */
+      if (kind === "ok" && el._timer) clearTimeout(el._timer);
+      if (kind === "ok") {
+        el._timer = setTimeout(() => {
+          if (el && el.classList.contains("ok")) { el.hidden = true; el.innerHTML = ""; }
+        }, 6000);
+      }
+    }
+
     async function handleAddPostsToOpenCampaign(btn) {
       const form = btn.closest(".add-posts-form");
       const ta = form && form.querySelector('[data-role="add-posts-textarea"]');
@@ -2600,6 +2652,7 @@
 
         if (!refs.ids.length && !refs.shares.length) {
           Util.toast("Paste a Reddit URL, share link, or post ID first.", "error");
+          setAddPostsStatus(form, "Paste a Reddit URL, share link, or post ID, then tap Add.", "warn");
           return;
         }
 
@@ -2627,12 +2680,20 @@
         const result = Campaigns.addPostIds(campaignId, allIds);
         if (!result) { Util.toast("Campaign not found.", "error"); return; }
 
+        const addedIds = (result.addedIds || []).slice();
+        const addedChips = addedIds.length
+          ? ` <span class="add-posts-status-chips">${addedIds.map((id) => `<code>${Util.escapeHtml(id)}</code>`).join(" ")}</span>`
+          : "";
+
         if (resolveFailed.length) {
           Util.toast(`Added ${result.added} post${result.added === 1 ? "" : "s"} (${resolveFailed.length} share URL${resolveFailed.length === 1 ? "" : "s"} failed)`, "error");
+          setAddPostsStatus(form, `<strong>Added ${result.added}</strong> · ${resolveFailed.length} share URL failed${addedChips}`, "warn");
         } else if (result.added === 0) {
           Util.toast("Those posts are already in the campaign.", "ok");
+          setAddPostsStatus(form, `Already in this campaign — nothing to add.`, "warn");
         } else {
           Util.toast(`Added ${result.added} post${result.added === 1 ? "" : "s"} to "${result.campaign.name}".`, "ok");
+          setAddPostsStatus(form, `<strong>✓ Added ${result.added} post${result.added === 1 ? "" : "s"}</strong> to <em>${Util.escapeHtml(result.campaign.name)}</em>${addedChips}`, "ok");
         }
 
         ta.value = "";
@@ -2645,6 +2706,7 @@
       } catch (err) {
         console.error("[addPostsToCampaign] failed:", err);
         Util.toast(`Couldn't add posts: ${(err && err.message) || err}`, "error");
+        setAddPostsStatus(form, `<strong>✗ Couldn't add:</strong> ${Util.escapeHtml((err && err.message) || String(err)).slice(0, 200)}`, "error");
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -2664,9 +2726,10 @@
       const result = Campaigns.removePostIds(campaignId, [id]);
       if (!result) return;
       Util.toast(`Removed post ${id}.`, "ok");
-      /* Optimistically hide the row immediately for snappy feedback. */
-      const row = btn.closest(".campaign-post-row");
-      if (row) row.style.display = "none";
+      /* Optimistically hide the row immediately for snappy feedback —
+       * works for both resolved-post rows AND unresolved-ID chips. */
+      const target = btn.closest(".campaign-post-row, .unresolved-chip");
+      if (target) target.style.display = "none";
       /* Then re-render fully to update KPIs / progress bars / deep analysis. */
       openCampaign(result.campaign).catch(() => {});
       refreshAllCampaignSummaries().catch(() => {});
