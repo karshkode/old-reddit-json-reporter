@@ -8,7 +8,13 @@
     limit: "rj.limit",
   };
 
-  const DEFAULT_SUBS = ["Political_Revolution", "50501"];
+  /* First-run users now see the starter-pack drawer (PR 3) instead of
+   * an opinionated default sub list. Returning users with localStorage
+   * data are unaffected — loadPersisted populates from rj.subs /
+   * rj.active. The empty default keeps DEFAULT_SUBS as a safety net
+   * for tests + corner-case state where localStorage is unavailable
+   * on iOS Safari Private Browsing. */
+  const DEFAULT_SUBS = [];
 
   /* `_runDiscover` is populated by bind() once the campaigns/discover
    * panel has been wired up. Other handlers (e.g. the post-row
@@ -2287,10 +2293,11 @@
         setTimeout(() => ta.dispatchEvent(new Event("input", { bubbles: true })), 0);
       });
 
-      /* Click delegation: Add posts / Remove from campaign. */
+      /* Click delegation: Add posts / Remove from campaign / Copy digest. */
       campaignDetailBody.addEventListener("click", async (e) => {
         const addBtn = e.target.closest && e.target.closest('[data-action="add-posts"]');
-        const rmBtn = e.target.closest && e.target.closest('[data-action="remove-post"]');
+        const rmBtn  = e.target.closest && e.target.closest('[data-action="remove-post"]');
+        const digestBtn = e.target.closest && e.target.closest('[data-action="copy-campaign-digest"]');
 
         if (addBtn) {
           e.preventDefault();
@@ -2300,6 +2307,28 @@
         if (rmBtn) {
           e.preventDefault();
           handleRemovePostFromOpenCampaign(rmBtn);
+          return;
+        }
+        if (digestBtn) {
+          e.preventDefault();
+          /* Build digest from the same data the detail panel was just
+           * rendered with — pull from state.campaignSummaries which
+           * holds the latest aggregated payload + deep analysis. */
+          const id = state.openCampaignId;
+          const camp = id && Campaigns.get(id);
+          const summary = id && state.campaignSummaries && state.campaignSummaries[id];
+          if (!camp || !summary) {
+            Util.toast("Open a campaign first.", "error");
+            return;
+          }
+          const md = buildCampaignDigest(camp, summary, summary.deep);
+          const ok = await copyToClipboard(md);
+          if (ok) {
+            Util.toast(`Digest for "${camp.name}" copied — paste into Signal/Slack/etc.`, "ok");
+          } else {
+            Util.toast("Could not access clipboard. Digest in console.", "error");
+            console.log("[digest]\n" + md);
+          }
           return;
         }
       });
@@ -2992,6 +3021,190 @@ const bestCampaignPost = (summary.posts || [])
     setTimeout(update, 1000);
   }
 
+  /* ---------- Starter packs (PR 3) ---------- */
+
+  /* Curated one-click bundles for first-run users. Pulls from the
+   * existing Seeds catalog — no duplication, all label / sub-list
+   * data lives in one place. Shown only when knownSubs is empty
+   * AFTER loadPersisted, so returning users never see this drawer. */
+  const STARTER_PACK_KEYS = [
+    "progressive", "movement", "healthcare", "labor", "voting",
+    "climate", "reproductive", "lgbtq", "racialjustice",
+  ];
+
+  function showStarterPacksIfEmpty() {
+    const drawer = document.getElementById("starter-packs");
+    if (!drawer) return;
+    if (state.knownSubs && state.knownSubs.length > 0) { drawer.hidden = true; return; }
+    if (typeof Seeds === "undefined") return;
+    const grid = document.getElementById("starter-packs-grid");
+    if (!grid) return;
+    const tiles = STARTER_PACK_KEYS
+      .filter((key) => (Seeds.ISSUE_SPHERES && Seeds.ISSUE_SPHERES[key] || []).length)
+      .map((key) => {
+        const subs = Seeds.ISSUE_SPHERES[key];
+        const label = (Seeds.ISSUE_LABELS && Seeds.ISSUE_LABELS[key]) || key;
+        const sample = subs.slice(0, 3).map((s) => "r/" + s).join(" · ");
+        return `<button class="starter-pack" type="button" data-pack="${Util.escapeHtml(key)}">
+          <strong>${Util.escapeHtml(label)}</strong>
+          <span class="meta">${subs.length} subs · ${Util.escapeHtml(sample)}…</span>
+        </button>`;
+      });
+    grid.innerHTML = tiles.join("");
+    drawer.hidden = false;
+
+    drawer.addEventListener("click", (e) => {
+      const skip = e.target.closest && e.target.closest("#starter-packs-skip");
+      if (skip) { drawer.hidden = true; return; }
+      const tile = e.target.closest && e.target.closest("[data-pack]");
+      if (!tile) return;
+      const key = tile.dataset.pack;
+      const subs = (Seeds.ISSUE_SPHERES && Seeds.ISSUE_SPHERES[key]) || [];
+      if (!subs.length) return;
+      for (const s of subs) {
+        const norm = Util.normalizeSubName(s);
+        if (!state.knownSubs.includes(norm)) state.knownSubs.push(norm);
+        state.activeSubs.add(norm);
+      }
+      persist();
+      renderChips();
+      drawer.hidden = true;
+      markPending(`Loaded ${(Seeds.ISSUE_LABELS && Seeds.ISSUE_LABELS[key]) || key} pack`);
+      Util.toast(`Added ${subs.length} subs from the ${(Seeds.ISSUE_LABELS && Seeds.ISSUE_LABELS[key]) || key} pack — tap Go to fetch.`, "ok");
+    });
+  }
+
+  /* ---------- Markdown digest export (PR 3) ---------- */
+
+  /* Generate a Slack/Signal-friendly markdown summary of the currently
+   * open campaign. Drops the "what should I tell the group chat?"
+   * ceremony — one click puts a clean paste-ready report on the
+   * clipboard. */
+  function buildCampaignDigest(campaign, agg, deep) {
+    if (!campaign) return "";
+    const lines = [];
+    lines.push(`*${campaign.name}*`);
+    const subList = (agg.subs || []).slice(0, 8).map((s) => `r/${s}`).join(", ");
+    lines.push(`• ${campaign.postIds.length} posts across ${agg.subs.length} sub${agg.subs.length === 1 ? "" : "s"}${subList ? " (" + subList + (agg.subs.length > 8 ? ", …" : "") + ")" : ""}`);
+    const goalBit = campaign.goalScore
+      ? ` (${Math.round(Math.min(1, agg.totalScore / campaign.goalScore) * 100)}% of ${Util.fmtNum(campaign.goalScore)} goal)`
+      : "";
+    lines.push(`• ${Util.fmtNum(agg.totalScore)} upvotes${goalBit}`);
+    const cgoalBit = campaign.goalComments
+      ? ` (${Math.round(Math.min(1, agg.totalComments / campaign.goalComments) * 100)}% of ${Util.fmtNum(campaign.goalComments)} goal)`
+      : "";
+    lines.push(`• ${Util.fmtNum(agg.totalComments)} comments${cgoalBit}`);
+    const top = (agg.posts || []).slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+    if (top) {
+      lines.push(`• Best performer: r/${top.subreddit} — ${Util.fmtNum(top.score)} pts, ${Util.fmtNum(top.num_comments)} comments`);
+      lines.push(`  ${top.permalink}`);
+    }
+    if (deep && deep.profile && deep.profile.themes && deep.profile.themes.length) {
+      const themes = deep.profile.themes.slice(0, 3).map((t) => t.kind === "phrase" ? `"${t.term}"` : t.term).join(", ");
+      lines.push(`• Top themes: ${themes}`);
+    }
+    if (deep && deep.profile && deep.profile.bestHour >= 0) {
+      lines.push(`• Best posting hour: ${String(deep.profile.bestHour).padStart(2, "0")}:00 ${Util.getTzLabel()}`);
+    }
+    lines.push("");
+    lines.push(`_Reported via Reddit Campaign Reporter — ${new Date().toLocaleDateString()}_`);
+    return lines.join("\n");
+  }
+
+  /* ---------- Saved searches / watchlists (PR 3) ---------- */
+
+  function loadSavedSearches() {
+    try { return JSON.parse(localStorage.getItem("rj.savedSearches") || "[]"); }
+    catch (_) { return []; }
+  }
+  function saveSavedSearches(list) {
+    try { localStorage.setItem("rj.savedSearches", JSON.stringify(list)); }
+    catch (_) {}
+  }
+  function buildCurrentSearchSnapshot() {
+    return {
+      id: Math.random().toString(36).slice(2, 10),
+      createdAt: Date.now(),
+      activeSubs: Array.from(state.activeSubs),
+      listing: state.listing,
+      timeWindow: state.timeWindow,
+      limit: state.limit,
+      searchQuery: state.searchQuery,
+      postsSubFilter: state.postsSubFilter,
+      postsScoreMin: state.postsScoreMin || 0,
+    };
+  }
+  function applySavedSearch(snap) {
+    if (!snap) return;
+    state.activeSubs = new Set(snap.activeSubs || []);
+    state.listing    = snap.listing || state.listing;
+    state.timeWindow = snap.timeWindow || state.timeWindow;
+    state.limit      = snap.limit || state.limit;
+    state.searchQuery     = snap.searchQuery || "";
+    state.postsSubFilter  = snap.postsSubFilter || "";
+    state.postsScoreMin   = snap.postsScoreMin || 0;
+    persist();
+    renderChips();
+    /* Sync the input/select widgets to the new state. */
+    const sIn = document.getElementById("posts-title-search");
+    if (sIn) sIn.value = state.searchQuery;
+    const lSel = document.getElementById("listing-select");
+    if (lSel) lSel.value = state.listing;
+    const tSel = document.getElementById("time-select");
+    if (tSel) tSel.value = state.timeWindow;
+    const limSel = document.getElementById("limit-select");
+    if (limSel) limSel.value = String(state.limit);
+    rerenderAll();
+    markPending(`Loaded saved view "${snap.name || "unnamed"}"`);
+  }
+
+  /* ---------- Image / media preview modal (PR 3) ---------- */
+
+  function openMediaPreview(url, alt) {
+    const modal = document.getElementById("media-preview");
+    const frame = document.getElementById("media-preview-frame");
+    if (!modal || !frame) return;
+    frame.innerHTML = `<img src="${Util.escapeHtml(url)}" alt="${Util.escapeHtml(alt || "")}" loading="lazy" />`;
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+  }
+  function closeMediaPreview() {
+    const modal = document.getElementById("media-preview");
+    const frame = document.getElementById("media-preview-frame");
+    if (frame) frame.innerHTML = "";
+    if (modal) modal.hidden = true;
+    document.body.classList.remove("modal-open");
+  }
+  function wireMediaPreview() {
+    const modal = document.getElementById("media-preview");
+    if (!modal) return;
+    /* Close on backdrop click (anywhere outside the frame) and on the
+     * × button. Escape closes regardless of focus. */
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal || (e.target.closest && e.target.closest('[data-action="close-media-preview"]'))) {
+        closeMediaPreview();
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.hidden) closeMediaPreview();
+    });
+    /* Click delegation on the posts table — clicking a thumbnail
+     * (rendered by ui.js when post.media_thumbnail is set) opens the
+     * preview modal instead of opening the post detail card. */
+    const tbody = document.getElementById("posts-tbody");
+    if (tbody) {
+      tbody.addEventListener("click", (e) => {
+        const thumb = e.target.closest && e.target.closest("[data-media-thumb]");
+        if (!thumb) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const url = thumb.dataset.mediaThumb;
+        const alt = thumb.dataset.mediaAlt || "";
+        if (url) openMediaPreview(url, alt);
+      });
+    }
+  }
+
   function init() {
     safeRun("loadPersisted", loadPersisted);
     safeRun("bind", bind);
@@ -3001,11 +3214,8 @@ const bestCampaignPost = (summary.posts || [])
     safeRun("wireSyncSession", wireSyncSession);
     safeRun("renderChips", renderChips);
     safeRun("rerenderAll", rerenderAll);
-    /* Page load no longer auto-fires refreshData. Instead we show the
-     * Go banner so the user explicitly opts in. The Refresh button in
-     * the topbar and the Go button in the banner trigger the same
-     * code path. Campaign summaries still load eagerly because they
-     * read from local cache + by_id (small, cheap, predictable). */
+    safeRun("wireMediaPreview", wireMediaPreview);
+    safeRun("showStarterPacksIfEmpty", showStarterPacksIfEmpty);
     /* Page load shows the action banner in pending mode so the user
      * explicitly opts into fetching. They click Go ▶ when ready. */
     safeRun("showInitialActionBanner", () => Util.setActionPhase("pending", describePendingFetch()));

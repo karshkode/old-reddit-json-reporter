@@ -3283,42 +3283,134 @@ body.modal-open { overflow: hidden; }
  * the unified .action-banner block higher up in this file.) */
 
 /* =====================================================================
-   PROXY HEALTH DASHBOARD (footer)
+   STARTER PACKS — first-run quick-start drawer (PR 3)
    ===================================================================== */
-.proxy-health {
+.starter-packs {
+  background: linear-gradient(135deg, rgba(255, 87, 34, 0.10), rgba(96, 165, 250, 0.06));
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  margin: 0 max(16px, var(--safe-right)) 12px max(16px, var(--safe-left));
+  padding: 14px 18px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.starter-packs-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.starter-packs-title {
+  font-size: 14px;
+  color: var(--accent-2);
+}
+.starter-packs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.starter-pack {
+  text-align: left;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+.starter-pack:hover {
+  background: rgba(255, 87, 34, 0.08);
+  border-color: var(--accent);
+}
+.starter-pack:active { transform: translateY(1px); }
+.starter-pack strong { font-size: 13px; color: var(--accent-2); }
+.starter-pack .meta { font-size: 11px; color: var(--text-mute); }
+@media (max-width: 720px) {
+  .starter-packs { margin: 0; border-radius: 0; padding: 12px; }
+  .starter-packs-grid { grid-template-columns: 1fr; }
+}
+
+/* =====================================================================
+   POST THUMBNAIL preview (PR 3)
+   ===================================================================== */
+.post-thumb {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  margin-right: 8px;
+  vertical-align: middle;
+  transition: border-color 0.15s ease;
+}
+.post-thumb:hover { border-color: var(--accent); }
+.post-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* =====================================================================
+   MEDIA PREVIEW MODAL (PR 3)
+   ===================================================================== */
+.media-preview {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+  animation: media-preview-in 0.15s ease-out;
+}
+@keyframes media-preview-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.media-preview-frame {
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.media-preview-frame img,
+.media-preview-frame video {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.media-preview-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 300;
+  cursor: pointer;
+  line-height: 1;
+}
+.media-preview-close:hover { background: rgba(255, 87, 34, 0.85); border-color: var(--accent); }
+
+/* =====================================================================
+   CAMPAIGN TOOLBAR (Copy digest etc.) (PR 3)
+   ===================================================================== */
+.campaign-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
-  margin: 8px 0;
-  font-size: 11px;
-  color: var(--text-mute);
+  margin: 12px 0;
+  padding: 8px 0;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
 }
-.proxy-health-label {
-  font-weight: 600;
-  margin-right: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  font-size: 10px;
-}
-.proxy-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev-2);
-  font-variant-numeric: tabular-nums;
-}
-.proxy-pill.ok   { color: var(--good); border-color: rgba(34, 197, 94, 0.35); }
-.proxy-pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); }
-.proxy-pill.bad  { color: var(--bad);  border-color: rgba(239, 68, 68, 0.35); }
-.proxy-pill strong { font-weight: 700; }
-
-/* Profile-card additions for sub health metrics */
-.profile-skew, .profile-quiet {
-  font-size: 11px;
-  color: var(--text-mute);
-}
-.profile-skew-num { color: var(--text-dim); font-weight: 600; }

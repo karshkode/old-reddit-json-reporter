@@ -117,10 +117,10 @@
        * doesn't bubble to the row's onRowClick because we stop
        * propagation in the click handler. The action expands an inline
        * form-row below this <tr> (see UI.renderPostMakeCampaignForm). */
-      /* Reddit-native quality flags. Stickied / pinned posts get an
-       * organic boost from the mod team and shouldn't be conflated
-       * with breakouts; removed posts have no real engagement; NSFW
-       * and spoilers carry warnings worth surfacing. */
+      /* Reddit-native quality flags (already in main from PR 1).
+       * Stickied / pinned posts get an organic boost from mods and
+       * shouldn't be conflated with breakouts; removed posts have
+       * no real engagement; NSFW + spoilers carry warnings. */
       const flagBadges = [];
       if (p.stickied) flagBadges.push('<span class="tag flag-stickied" title="Mod-pinned — organic-boost outlier">📌 pinned</span>');
       if (p.removed)  flagBadges.push('<span class="tag flag-removed" title="Removed by mods or author">🗑 removed</span>');
@@ -129,10 +129,26 @@
       if (p.locked)   flagBadges.push('<span class="tag flag-locked" title="Comments locked">🔒 locked</span>');
       const flagsHtml = flagBadges.length ? ` ${flagBadges.join(" ")}` : "";
 
+      /* Thumbnail (PR 3) — Reddit returns a thumbnail URL on link/image
+       * posts via media_thumbnail (oEmbed) or directly. Only render when
+       * we have a real http(s) URL; Reddit-internal placeholders like
+       * 'self' / 'default' / 'nsfw' / 'spoiler' are not URLs. */
+      let thumbHtml = "";
+      const mediaUrl = p.media_thumbnail || (p.thumbnail && /^https?:\/\//.test(p.thumbnail) ? p.thumbnail : null);
+      if (mediaUrl && !p.over_18) {
+        thumbHtml = `<button type="button"
+          class="post-thumb"
+          data-media-thumb="${Util.escapeHtml(mediaUrl)}"
+          data-media-alt="${Util.escapeHtml(p.title || "")}"
+          aria-label="Preview media"
+          title="Preview media without leaving the dashboard"><img src="${Util.escapeHtml(mediaUrl)}" alt="" loading="lazy" /></button>`;
+      }
+
       tr.innerHTML = `
         <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">${Util.escapeHtml(Util.relTime(p.created_utc))}</td>
         <td data-label="Sub"><span class="tag">r/${Util.escapeHtml(p.subreddit)}</span></td>
         <td data-label="Title" class="title">
+          ${thumbHtml}
           <span class="title-text" title="${Util.escapeHtml(p.title || "")}">${Util.escapeHtml(p.title || "")}</span>
           ${p.flair ? `<span class="tag flair">${Util.escapeHtml(p.flair)}</span>` : ""}${flagsHtml}
         </td>
@@ -1014,6 +1030,10 @@
       ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${missingNote}
+
+      <div class="campaign-toolbar">
+        <button type="button" class="btn small ghost" data-action="copy-campaign-digest" title="Copy a Slack/Signal-friendly markdown summary of this campaign to the clipboard">📋 Copy digest</button>
+      </div>
 
       <div class="add-posts-form" data-campaign-id="${Util.escapeHtml(campaign.id)}">
         <div class="add-posts-head">
