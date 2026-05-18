@@ -202,6 +202,13 @@
       throw throwTransportError(transport, "HTTP " + res.status, attempt);
     }
     const text = await res.text();
+    /* Empty 200 — codetabs sometimes returns 200 with a 0-byte body
+     * when its upstream fetch succeeded but produced nothing. Old
+     * code threw "non-JSON response via codetabs" via JSON.parse,
+     * which is technically right but unhelpfully vague. Be explicit. */
+    if (!text || !text.trim()) {
+      throw throwTransportError(transport, "empty response (proxy returned " + res.status + " with no body)", attempt);
+    }
     if (looksLikeBlockedHtml(text)) {
       throw throwTransportError(transport, "Reddit blocked page", attempt);
     }
@@ -425,6 +432,13 @@
     );
     if (!cleaned.length) return [];
 
+    /* Track the most recent transport-level failure so callers
+     * (Campaigns.fetchAggregated -> renderCampaignDetail) can surface
+     * a meaningful error instead of just listing un-resolved IDs.
+     * Attached to the returned array as a non-enumerable property
+     * so existing array consumers keep working. */
+    let lastError = null;
+
     /* Preferred path: batch via /by_id (one request per up-to-100 IDs). */
     try {
       const results = [];
@@ -438,6 +452,7 @@
       }
       return results;
     } catch (batchErr) {
+      lastError = batchErr;
       console.warn("[fetchPostsByIds] /by_id batch failed, falling back to per-ID /comments:", batchErr && batchErr.message);
     }
 
@@ -452,9 +467,15 @@
         const postData = Array.isArray(json) && json[0] && json[0].data && json[0].data.children && json[0].data.children[0] && json[0].data.children[0].data;
         if (postData) results.push(normalizePost(postData));
       } catch (e) {
+        lastError = e;
         console.warn("[fetchPostsByIds] /comments/" + id + " failed:", e && e.message);
       }
     });
+    /* Stash the last error if everything failed so the caller can
+     * surface it. Successful runs leave the property undefined. */
+    if (results.length === 0 && lastError) {
+      Object.defineProperty(results, "_lastError", { value: lastError, enumerable: false });
+    }
     return results;
   };
 

@@ -275,8 +275,17 @@
     const idsToFetch = campaign.postIds.filter((id) => !localById.has(id));
 
     let fetched = [];
+    let networkError = null;
     if (!options.skipNetwork && idsToFetch.length) {
       fetched = await Reddit.fetchPostsByIds(idsToFetch);
+      /* fetchPostsByIds attaches the last transport error as a
+       * non-enumerable _lastError when EVERY ID failed to resolve.
+       * Surface it so the campaign-detail UI can show
+       * 'all proxies down: codetabs(empty body) · ...' rather than
+       * just an opaque 'Could not resolve' list. */
+      if (fetched.length === 0 && fetched._lastError) {
+        networkError = fetched._lastError.message || String(fetched._lastError);
+      }
     }
 
     /* Merge local + fetched, then dedupe by id. */
@@ -294,7 +303,7 @@
     const missing = campaign.postIds.filter((id) => !posts.find((p) => p.id === id));
     return {
       posts, totalScore, totalComments, totalAwards, totalViews,
-      subs, missing,
+      subs, missing, networkError,
       resolvedFromLocal: knownPosts.length,
       resolvedFromNetwork: fetched.length,
       progressScore: campaign.goalScore ? Math.min(1, totalScore / campaign.goalScore) : null,

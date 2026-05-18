@@ -2299,6 +2299,7 @@
        * Edit goals (open form, save, cancel). */
       campaignDetailBody.addEventListener("click", async (e) => {
         const addBtn = e.target.closest && e.target.closest('[data-action="add-posts"]');
+        const pasteBtn = e.target.closest && e.target.closest('[data-action="add-posts-paste"]');
         const rmBtn  = e.target.closest && e.target.closest('[data-action="remove-post"]');
         const digestBtn = e.target.closest && e.target.closest('[data-action="copy-campaign-digest"]');
         const editGoalsBtn = e.target.closest && e.target.closest('[data-action="edit-campaign-goals"]');
@@ -2307,6 +2308,45 @@
         if (addBtn) {
           e.preventDefault();
           await handleAddPostsToOpenCampaign(addBtn);
+          return;
+        }
+        if (pasteBtn) {
+          e.preventDefault();
+          /* "📋 Paste" — explicit-gesture wrapper that reads the
+           * clipboard, fills the textarea, and immediately fires the
+           * Add flow if the content parses as Reddit refs. Same UX
+           * as the cross-post candidate tracker (PR #61). */
+          const form = pasteBtn.closest(".add-posts-form");
+          const ta = form && form.querySelector('[data-role="add-posts-textarea"]');
+          if (!ta) return;
+          try {
+            if (!navigator.clipboard || typeof navigator.clipboard.readText !== "function") {
+              Util.toast("Clipboard not available — paste manually.", "error");
+              try { ta.focus(); } catch (_) {}
+              return;
+            }
+            const text = await navigator.clipboard.readText();
+            if (!text || !text.trim()) {
+              Util.toast("Clipboard is empty.", "error");
+              try { ta.focus(); } catch (_) {}
+              return;
+            }
+            const refs = Util.parsePostRefs(text);
+            if (!refs.ids.length && !refs.shares.length) {
+              Util.toast("Clipboard didn't contain a Reddit post URL/ID.", "error");
+              ta.value = text;
+              try { ta.focus(); } catch (_) {}
+              return;
+            }
+            ta.value = text.trim();
+            ta.dispatchEvent(new Event("input", { bubbles: true }));
+            /* Auto-fire the Add flow — saves the user a tap. */
+            const realAddBtn = form.querySelector('[data-action="add-posts"]');
+            if (realAddBtn) realAddBtn.click();
+          } catch (err) {
+            Util.toast("Couldn't read clipboard: " + ((err && err.message) || err), "error");
+            try { ta.focus(); } catch (_) {}
+          }
           return;
         }
         if (rmBtn) {

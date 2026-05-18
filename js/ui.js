@@ -1323,9 +1323,22 @@
       </div>
     ` : '<div class="empty" style="margin-top:12px">No posts found yet — fetch failed or IDs are invalid.</div>';
 
-    const missingNote = agg.missing && agg.missing.length
-      ? `<div class="meta" style="color:var(--warn);margin-top:6px;font-size:12px">Could not resolve: ${agg.missing.map((id) => `<code>${Util.escapeHtml(id)}</code>`).join(", ")}</div>`
-      : "";
+    /* Missing-IDs note. When ALL IDs failed AND we got a transport-level
+     * error from Reddit.fetchPostsByIds, surface that error so the
+     * user knows it's the proxies (or network) — not their IDs.
+     * Otherwise just list the unresolved IDs as before. */
+    let missingNote = "";
+    if (agg.missing && agg.missing.length) {
+      const allMissing = agg.posts.length === 0;
+      const reason = allMissing && agg.networkError
+        ? `<div class="meta" style="color:var(--bad);margin-top:6px;font-size:12px">
+             <strong>Couldn't reach Reddit:</strong> ${Util.escapeHtml(agg.networkError)}.
+             <span class="hint">Try the orange Refresh button. If it persists, switch <strong>Data source</strong> in the topbar — the public proxies break sometimes.</span>
+           </div>`
+        : "";
+      const ids = agg.missing.map((id) => `<code>${Util.escapeHtml(id)}</code>`).join(", ");
+      missingNote = reason + `<div class="meta" style="color:var(--warn);margin-top:6px;font-size:12px">${allMissing && agg.networkError ? "Unresolved IDs" : "Could not resolve"}: ${ids}</div>`;
+    }
 
     const deepHtml = deep ? renderCampaignDeepAnalysis(deep) : "";
 
@@ -1375,6 +1388,7 @@
         <textarea data-role="add-posts-textarea" rows="2" placeholder="https://www.reddit.com/r/X/comments/abc1234/title/&#10;https://www.reddit.com/r/Y/s/AbCdEf1234"></textarea>
         <div class="add-posts-row">
           <div class="paste-preview" data-role="add-posts-preview" hidden></div>
+          <button class="btn small ghost" type="button" data-action="add-posts-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
           <button class="btn small primary" type="button" data-action="add-posts">Add posts</button>
         </div>
       </div>
