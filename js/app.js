@@ -461,6 +461,13 @@
     const collected = [];
     let completed = 0;
     let errors = 0;
+    /* Don't spam 20 individual error toasts when the same root cause
+     * (all proxies down) is hitting every sub. Show the first one
+     * normally; mute the rest, then surface ONE summary banner at
+     * the end. The fetchJson circuit breaker already makes the
+     * subsequent calls fast-fail in <1ms so the user isn't sitting
+     * through 20 timeouts. */
+    let circuitToastShown = false;
 
     await Util.pmap(subs, 3, async (sub) => {
       const subStart = (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -500,7 +507,19 @@
         errors++;
         state.lastErrors.push({ sub, message: err.message });
         console.warn(`[refreshData] r/${sub} FAILED:`, err.message);
-        Util.toast(`r/${sub}: ${err.message}`, "error");
+        /* Only show the first failure as a toast. After the circuit
+         * breaker trips (.circuit === true) every subsequent call
+         * fails in ~0ms; surface ONE summary toast about the proxies,
+         * skip the rest so the user isn't carpet-bombed with the same
+         * message 20 times. */
+        if (err && err.circuit) {
+          if (!circuitToastShown) {
+            Util.toast("All public CORS proxies are failing right now. Skipping remaining subs — try Refresh in a minute.", "error");
+            circuitToastShown = true;
+          }
+        } else {
+          Util.toast(`r/${sub}: ${err.message}`, "error");
+        }
       } finally {
         completed++;
         if (state.fetchToken === myToken) {
@@ -704,9 +723,18 @@
       body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
     }
 
-    /* Network pass: fetches anything we couldn't satisfy locally. */
+    /* Network pass: fetches anything we couldn't satisfy locally.
+     * Bounded by a 20s overall timeout so proxy hangs can't keep the
+     * user staring at a skeleton — the local-only render stays put
+     * if the timeout fires. */
     try {
-      const agg = await Campaigns.fetchAggregated(campaign, { fromPosts: state.posts });
+      const agg = await Promise.race([
+        Campaigns.fetchAggregated(campaign, { fromPosts: state.posts }),
+        new Promise((_, rej) => setTimeout(
+          () => rej(new Error("Network refresh timed out — proxies may be down. Tap Refresh to retry.")),
+          20000
+        )),
+      ]);
       state.campaignSummaries[campaign.id] = agg;
 
       const deep = computeCampaignDeep(campaign, agg);
@@ -1484,11 +1512,18 @@
     const actionBtn = document.getElementById("action-btn");
     if (actionBtn) actionBtn.addEventListener("click", () => {
       if (actionBtn.disabled) return;
+      /* User tapped Refresh — clear the proxy circuit breaker so we
+       * give the chain a fresh chance even if it's been auto-failing. */
+      if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
       refreshData(true);
     });
 
     const clearBtn = document.getElementById("clear-cache-btn");
-    if (clearBtn) clearBtn.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
+    if (clearBtn) clearBtn.addEventListener("click", () => {
+      Reddit.clearCache();
+      if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
+      Util.toast("Cache cleared", "ok");
+    });
     const clearBtnMobile = document.getElementById("clear-cache-btn-mobile");
     if (clearBtnMobile) clearBtnMobile.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
 

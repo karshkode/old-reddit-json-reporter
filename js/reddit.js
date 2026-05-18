@@ -179,7 +179,11 @@
      * block the entire fallback chain. AbortController is widely supported
      * including iOS Safari 12.1+. */
     const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    const tid = controller ? setTimeout(() => controller.abort(), 8000) : null;
+    /* 5s hard timeout per proxy attempt — was 8s, but with 3 proxies
+     * × 2 attempts × N subs × M campaign IDs that compounds into
+     * minutes of waiting when proxies are flat dead. 5s is still
+     * generous for any healthy proxy. */
+    const tid = controller ? setTimeout(() => controller.abort(), 5000) : null;
     let res;
     try {
       res = await fetch(target, {
@@ -225,10 +229,19 @@
      *   {"error": 403, "message": "Forbidden"}
      * and never carry both `error` AND `data`/`kind`. */
     if (data && typeof data === "object" && !Array.isArray(data) && data.error != null) {
-      const isReddit404Etc = data.error === 403 || data.error === 404 || data.error === 429;
+      const isRedditError = typeof data.error === "number" && data.error >= 400;
       const isProxyJunk = !data.data && !data.kind;
-      if (isReddit404Etc) {
-        throw throwTransportError(transport, "Reddit " + data.error + (data.message ? ": " + data.message : ""), attempt);
+      if (isRedditError) {
+        /* Distinguish Reddit-side errors (forwarded by the proxy
+         * intact) from proxy-side errors. Reddit returning 500 means
+         * Reddit is having a bad day; the user can't fix that by
+         * switching proxies. The error code in the message helps
+         * the circuit breaker / UI banner explain the situation. */
+        const code = data.error;
+        const tag = (code >= 500) ? `Reddit ${code} (server error)`
+                  : (code === 429) ? "Reddit 429 (rate limited)"
+                  : `Reddit ${code}`;
+        throw throwTransportError(transport, tag + (data.message ? ": " + data.message : ""), attempt);
       }
       if (isProxyJunk) {
         const msg = typeof data.error === "string" ? data.error.slice(0, 80) : "error " + data.error;
@@ -244,6 +257,34 @@
    * proxy that just came back online doesn't stay flagged forever.
    * (PR 2 — already in main.) */
   Reddit._stats = { byTransport: {} };
+
+  /* Circuit breaker — once we've had N consecutive "all proxies
+   * failed" rejections, fast-fail subsequent fetchJson calls
+   * without spending 30+ seconds re-trying every dead proxy. The
+   * breaker re-arms automatically after a cool-off so transient
+   * outages don't permanently block the user — they can also tap
+   * Refresh to force a re-probe via clearCircuitBreaker(). */
+  const CIRCUIT_BREAKER_THRESHOLD = 3;       // consecutive total failures
+  const CIRCUIT_BREAKER_COOL_MS   = 60000;   // 1 min before re-probe
+  let consecutiveFailures = 0;
+  let circuitOpenUntil = 0;
+  function tripCircuitBreaker(summaryError) {
+    consecutiveFailures++;
+    if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+      circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_COOL_MS;
+      consecutiveFailures = 0;
+      Reddit._lastCircuitTripError = summaryError;
+      console.warn("[reddit] circuit breaker OPEN — all proxies failing; pausing fetches for", CIRCUIT_BREAKER_COOL_MS / 1000, "s");
+    }
+  }
+  function resetCircuitBreaker() {
+    consecutiveFailures = 0;
+    circuitOpenUntil = 0;
+  }
+  Reddit.clearCircuitBreaker = resetCircuitBreaker;
+  function isCircuitOpen() {
+    return circuitOpenUntil > Date.now();
+  }
   function recordTransportOutcome(transportName, ok, kind) {
     if (!transportName) return;
     const s = Reddit._stats.byTransport[transportName] = Reddit._stats.byTransport[transportName] || { ok: 0, fail: 0, lastKind: null, recent: [] };
@@ -291,11 +332,22 @@
      * kick off a background revalidate so the next call gets fresh
      * data without waiting. */
     if (cached && cached.stale && !inflight.has(key)) {
-      /* Start the revalidation but don't await it for this caller. */
       revalidateInBackground(redditUrl, key);
       return cached.v;
     }
     if (inflight.has(key)) return inflight.get(key);
+
+    /* Circuit breaker: if every proxy has failed N times in a row
+     * recently, fast-fail without waiting another 15+ seconds for
+     * each new request to time out individually. The user can tap
+     * Refresh to force re-probe. */
+    if (isCircuitOpen()) {
+      const last = Reddit._lastCircuitTripError || "all proxies failing";
+      const secsLeft = Math.ceil((circuitOpenUntil - Date.now()) / 1000);
+      const err = new Error(`fast-fail: ${last} (auto-retry in ${secsLeft}s — or tap Refresh)`);
+      err.circuit = true;
+      throw err;
+    }
 
     const promise = (async () => {
       const transports = transportsToTry();
@@ -304,6 +356,7 @@
        * we end up with one row per *transport* (not one per attempt),
        * deduplicated for display. */
       const lastByTransport = new Map();
+      let anySuccessThisCall = false;
       for (let attempt = 0; attempt < 2; attempt++) {
         for (const t of transports) {
           try {
@@ -311,6 +364,10 @@
             cacheSet(key, out.data);
             Reddit._lastTransport = out.transport;
             recordTransportOutcome(out.transport, true);
+            anySuccessThisCall = true;
+            /* A successful call resets the circuit breaker — proxies
+             * are alive again. */
+            resetCircuitBreaker();
             if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
             return out.data;
           } catch (err) {
@@ -342,6 +399,8 @@
       }
       const err = new Error(summary);
       err.attempts = entries.map(([t, k]) => ({ transport: t, kind: k }));
+      /* Trip the breaker so subsequent calls fast-fail. */
+      tripCircuitBreaker(summary);
       throw err;
     })();
     inflight.set(key, promise);
