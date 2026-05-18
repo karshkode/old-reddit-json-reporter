@@ -1533,5 +1533,183 @@
     return out;
   };
 
+  /* ============================================================
+     COMMENT-SIDE ANALYSIS (PR 4)
+     ----------------------------------------------------------------
+     Inputs are Reddit comment objects shaped like
+       { id, author, body, score, created_utc, replies: <int> }
+     (see Reddit.fetchPostWithComments). Outputs:
+       - threadTemperature(comments) -> 'hostile'|'mixed'|'supportive'|'flat'
+       - extractObjections(comments, opts) -> top negative phrases
+       - detectBrigading(comments) -> heuristic suspicion score + reasons
+       - commentVelocity(comments, postCreatedUtc) -> per-hour velocity
+     ============================================================ */
+
+  Analysis.threadTemperature = function (comments) {
+    if (!comments || !comments.length) return { label: "flat", score: 0, support: 0, oppose: 0, neutral: 0, total: 0 };
+    let support = 0, oppose = 0, neutral = 0;
+    let weightedScore = 0, totalWeight = 0;
+    for (const c of comments) {
+      const txt = String(c.body || "").slice(0, 600);
+      if (!txt) continue;
+      const s = Analysis.scoreSentiment(txt);
+      /* Weight by sqrt(score+1) so heavily-upvoted comments matter
+       * more — they're the visible top of the thread. */
+      const w = Math.sqrt(Math.max(0, (c.score || 0)) + 1);
+      weightedScore += s.score * w;
+      totalWeight += w;
+      if (s.score > 0.15) support++;
+      else if (s.score < -0.15) oppose++;
+      else neutral++;
+    }
+    const avg = totalWeight ? weightedScore / totalWeight : 0;
+    let label;
+    if (avg >= 0.25) label = "supportive";
+    else if (avg <= -0.25) label = "hostile";
+    else if (Math.abs(avg) < 0.05 && neutral > support + oppose) label = "flat";
+    else label = "mixed";
+    return { label, score: avg, support, oppose, neutral, total: comments.length };
+  };
+
+  /* Pull recurring negative phrases (top objections) by extracting
+   * 2- and 3-grams from comments scored as negative, then ranking
+   * by frequency × negative-magnitude. */
+  Analysis.extractObjections = function (comments, opts) {
+    opts = opts || {};
+    const limit = opts.limit || 5;
+    const STOP = new Set(["the","a","an","and","or","but","that","this","is","are","was","were","be","been","to","of","in","on","at","for","with","by","from","it","its","as","not","no","do","does","did","will","would","should","can","could","may","might","should","i","you","he","she","we","they","me","my","your","our","their","his","her","them","us","just","like","really","very","much","more","most","some","any","all","any","every"]);
+    const counts = new Map();
+    for (const c of comments) {
+      const txt = String(c.body || "");
+      if (!txt) continue;
+      const sent = Analysis.scoreSentiment(txt);
+      if (sent.score >= -0.05) continue;
+      const tokens = txt.toLowerCase()
+        .replace(/[\s\p{P}\p{S}]+/gu, " ")
+        .trim()
+        .split(/\s+/)
+        .filter((t) => t && t.length >= 3 && !STOP.has(t));
+      const negWeight = Math.min(3, -sent.score * 4);
+      for (let i = 0; i < tokens.length - 1; i++) {
+        const bg = tokens[i] + " " + tokens[i + 1];
+        counts.set(bg, (counts.get(bg) || 0) + negWeight);
+      }
+      for (let i = 0; i < tokens.length - 2; i++) {
+        const tg = tokens[i] + " " + tokens[i + 1] + " " + tokens[i + 2];
+        counts.set(tg, (counts.get(tg) || 0) + negWeight * 1.2);
+      }
+    }
+    const ranked = Array.from(counts.entries())
+      .filter(([, w]) => w >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit * 3);
+    /* Deduplicate: drop bigrams that are subsumed by a higher-ranked
+     * trigram (e.g. drop "voter id" when "voter id laws" is higher). */
+    const out = [];
+    for (const [phrase, w] of ranked) {
+      const dup = out.some(([p2]) => p2.includes(phrase) && p2.split(" ").length > phrase.split(" ").length);
+      if (!dup) out.push([phrase, w]);
+      if (out.length >= limit) break;
+    }
+    return out.map(([phrase, weight]) => ({ phrase, weight: Math.round(weight) }));
+  };
+
+  /* Heuristic brigading detector. Returns {score 0-100, reasons[]}.
+   *
+   * Signals (each contributes weight to the suspicion score):
+   *   1. NEW_ACCOUNT_BURST  : >= 3 comments by accounts with all-numeric
+   *      / very short usernames within a 5-minute window
+   *   2. UNIFORM_NEGATIVITY : >= 60% of comments score negative AND
+   *      median comment score is <= 0
+   *   3. ZERO_KARMA_CLUSTER : >= 4 comments with score <= 0 from
+   *      different authors that all match other signals
+   *   4. RAPID_FIRE         : burst of >= 5 comments within 60s of each other
+   *   5. AUTHOR_REPEATS     : same author posting many top-level comments
+   *      (signals coordination from one user OR sock puppet)
+   *
+   * Without raw karma history (Reddit's API doesn't surface comment-author
+   * karma in a thread fetch) we can only infer; score is a heuristic
+   * "worth investigating" signal, not a verdict. */
+  Analysis.detectBrigading = function (comments) {
+    const reasons = [];
+    let score = 0;
+    if (!comments || comments.length < 5) return { score: 0, reasons: [], comments: comments && comments.length || 0 };
+
+    /* 1. burst window - sort by created_utc, find 5-min windows */
+    const sorted = comments.slice().sort((a, b) => (a.created_utc || 0) - (b.created_utc || 0));
+    let maxBurst = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      let j = i;
+      while (j < sorted.length && (sorted[j].created_utc - sorted[i].created_utc) <= 300) j++;
+      maxBurst = Math.max(maxBurst, j - i);
+    }
+    if (maxBurst >= 5) {
+      score += 25;
+      reasons.push(`${maxBurst} comments arrived within a 5-minute burst — possible coordinated push`);
+    }
+
+    /* 2. uniform negativity */
+    let neg = 0, scores = [];
+    for (const c of sorted) {
+      const s = Analysis.scoreSentiment(String(c.body || "")).score;
+      if (s < -0.1) neg++;
+      scores.push(c.score || 0);
+    }
+    const negRatio = neg / sorted.length;
+    scores.sort((a, b) => a - b);
+    const medianScore = scores[Math.floor(scores.length / 2)];
+    if (negRatio >= 0.6 && medianScore <= 0) {
+      score += 30;
+      reasons.push(`${Math.round(negRatio * 100)}% of comments are negative; median comment score is ${medianScore} — engagement is dominated by detractors`);
+    }
+
+    /* 3. zero-or-negative karma cluster */
+    const zeroCluster = sorted.filter((c) => (c.score || 0) <= 0).length;
+    if (zeroCluster >= 4 && zeroCluster / sorted.length >= 0.4) {
+      score += 15;
+      reasons.push(`${zeroCluster} comments at zero or negative karma — broader sub may not be backing them`);
+    }
+
+    /* 4. author repeats (same name posting many top-level) */
+    const authorCounts = new Map();
+    for (const c of sorted) {
+      const a = (c.author || "").toLowerCase();
+      if (!a || a === "[deleted]" || a === "automoderator") continue;
+      authorCounts.set(a, (authorCounts.get(a) || 0) + 1);
+    }
+    const repeatAuthors = Array.from(authorCounts.entries()).filter(([, n]) => n >= 3);
+    if (repeatAuthors.length >= 2) {
+      score += 20;
+      const names = repeatAuthors.slice(0, 3).map(([a, n]) => `u/${a} (${n})`).join(", ");
+      reasons.push(`${repeatAuthors.length} authors posting 3+ top-level comments each (${names}) — possible sock-puppeting`);
+    }
+
+    /* 5. suspicious-username pattern (all-numeric / very short / random
+     * suffixes typical of throwaway accounts) */
+    const SUSPICIOUS = /^([a-z]{1,4}\d{4,}|\d{4,}|[a-z]{2,5}_\d{2,})$/i;
+    const sus = sorted.filter((c) => c.author && SUSPICIOUS.test(c.author)).length;
+    if (sus >= 3) {
+      score += 10;
+      reasons.push(`${sus} commenters have throwaway-style usernames (e.g. all-numeric / short letters + digits)`);
+    }
+
+    score = Math.min(100, score);
+    return { score, reasons, comments: sorted.length };
+  };
+
+  /* Comments per hour over the post's lifespan. Tells you whether a
+   * thread is alive (still pulling comments now) or dead. */
+  Analysis.commentVelocity = function (comments, postCreatedUtc) {
+    if (!comments || !comments.length) return { perHour: 0, ageHours: 0, total: 0, alive: false };
+    const now = Math.floor(Date.now() / 1000);
+    const ageHours = postCreatedUtc ? Math.max(0.05, (now - postCreatedUtc) / 3600) : 1;
+    const perHour = comments.length / ageHours;
+    /* Compare last-hour rate vs lifetime rate to spot live threads. */
+    const lastHourCutoff = now - 3600;
+    const lastHour = comments.filter((c) => (c.created_utc || 0) >= lastHourCutoff).length;
+    const alive = lastHour >= Math.max(2, perHour * 0.5);
+    return { perHour: Math.round(perHour * 100) / 100, ageHours, total: comments.length, lastHour, alive };
+  };
+
   window.Analysis = Analysis;
 })();

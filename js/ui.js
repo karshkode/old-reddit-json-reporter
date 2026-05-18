@@ -278,6 +278,11 @@
       : '<span class="badge info">neutral</span>';
 
     const commentSent = Analysis.aggregateSentiment(comments.map((c) => ({ title: c.body, selftext: "" })));
+    /* Comment-side analysis (PR 4) */
+    const tempInfo = Analysis.threadTemperature ? Analysis.threadTemperature(comments) : null;
+    const objections = Analysis.extractObjections ? Analysis.extractObjections(comments, { limit: 5 }) : [];
+    const brigading = Analysis.detectBrigading ? Analysis.detectBrigading(comments) : null;
+    const velocity = Analysis.commentVelocity ? Analysis.commentVelocity(comments, post.created_utc) : null;
     const topComments = comments.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
     const tq = Analysis.titleQuality(post.title);
 
@@ -294,6 +299,8 @@
           ${renderTitleQualityBlock(tq)}
 
           ${post.selftext ? `<div style="white-space:pre-wrap;font-size:13px;color:var(--text-dim);max-height:240px;overflow:auto;background:var(--bg-elev-2);padding:10px;border-radius:8px;word-break:break-word;margin-top:10px">${Util.escapeHtml(post.selftext.slice(0, 4000))}</div>` : ""}
+
+          ${renderCommentSideAnalysisBlock(tempInfo, objections, brigading, velocity, comments.length)}
 
           <h4 style="margin:14px 0 6px;font-size:13px">Top comments (${comments.length})</h4>
           <div class="comment-list">
@@ -322,6 +329,49 @@
       </div>
     `;
   };
+
+  /* Comment-side analysis block (PR 4). Renders inside the post-detail
+   * card. Hidden if there are no comments. Surfaces:
+   *   - thread temperature (hostile/mixed/supportive/flat) with a tally
+   *   - top objection phrases
+   *   - brigading suspicion score + reasons (if non-zero)
+   *   - comment velocity ("alive" tag if last-hour rate matches lifetime) */
+  function renderCommentSideAnalysisBlock(temp, objections, brigading, velocity, commentCount) {
+    if (!commentCount || !temp) return "";
+    const tempCls = temp.label === "supportive" ? "good"
+                  : temp.label === "hostile"   ? "bad"
+                  : temp.label === "mixed"     ? "warn" : "info";
+    const tempIcon = temp.label === "supportive" ? "🌱" : temp.label === "hostile" ? "🔥" : temp.label === "mixed" ? "⚖️" : "•";
+    const objHtml = (objections || []).length
+      ? `<div class="csa-line"><span class="csa-label">Top objections</span>
+          <div class="csa-objections">${objections.map((o) => `<span class="csa-obj">"${Util.escapeHtml(o.phrase)}"</span>`).join("")}</div></div>`
+      : "";
+    const brigCls = brigading && brigading.score >= 60 ? "bad" : brigading && brigading.score >= 30 ? "warn" : "";
+    const brigHtml = brigading && brigading.score >= 30
+      ? `<div class="csa-line csa-brigading ${brigCls}">
+          <span class="csa-label">Brigading watch</span>
+          <span class="badge ${brigCls}">suspicion ${brigading.score}/100</span>
+          <ul>${brigading.reasons.map((r) => `<li>${Util.escapeHtml(r)}</li>`).join("")}</ul>
+        </div>`
+      : "";
+    const velHtml = velocity
+      ? `<div class="csa-line csa-velocity">
+          <span class="csa-label">Velocity</span>
+          <span class="meta">${velocity.perHour}/hr · ${velocity.total} total · age ${velocity.ageHours.toFixed(1)}h${velocity.alive ? ' · <span class="badge good">🟢 alive</span>' : ' · <span class="badge info">💤 idle</span>'}</span>
+        </div>`
+      : "";
+    return `
+      <div class="comment-side-analysis">
+        <div class="csa-head">
+          <span class="badge ${tempCls}">${tempIcon} ${Util.escapeHtml(temp.label)}</span>
+          <span class="meta">${temp.support} support · ${temp.oppose} oppose · ${temp.neutral} neutral</span>
+        </div>
+        ${objHtml}
+        ${brigHtml}
+        ${velHtml}
+      </div>
+    `;
+  }
 
   function renderTitleQualityBlock(tq) {
     const band = tq.band || "okay";
