@@ -1973,5 +1973,71 @@
     return variants.slice(0, 3);
   };
 
+  /* ============================================================
+     CAMPAIGN A/B COMPARISON (PR 6)
+     ----------------------------------------------------------------
+     Compares two campaigns side by side using their resolved-post
+     summaries. Returns a structured payload the UI can render in
+     two columns + insight bullets at the top.
+     ============================================================ */
+
+  Analysis.compareCampaigns = function (a, b) {
+    if (!a || !b) return null;
+    function summarize(c) {
+      const posts = (c.posts || []).filter((p) => !p.stickied && !p.removed);
+      const totalScore = posts.reduce((x, p) => x + (p.score || 0), 0);
+      const totalComments = posts.reduce((x, p) => x + (p.num_comments || 0), 0);
+      const subs = new Set(posts.map((p) => (p.subreddit || "").toLowerCase()));
+      const sentiment = Analysis.aggregateSentiment(posts);
+      const themes = Analysis.themes(posts, { uniTop: 6, biTop: 4, minPosts: 2 });
+      const avgScore = posts.length ? totalScore / posts.length : 0;
+      return { posts, totalScore, totalComments, subCount: subs.size, subs, sentiment, themes, avgScore, campaignName: c.name };
+    }
+    const A = summarize(a);
+    const B = summarize(b);
+    function pctDelta(x, y) {
+      if (!y && !x) return 0;
+      if (!y) return 100;
+      return Math.round((x - y) / y * 100);
+    }
+    /* Theme overlap */
+    const aTerms = new Set((A.themes || []).map((t) => t.term.toLowerCase()));
+    const bTerms = new Set((B.themes || []).map((t) => t.term.toLowerCase()));
+    const intersect = Array.from(aTerms).filter((t) => bTerms.has(t));
+    const aOnly = Array.from(aTerms).filter((t) => !bTerms.has(t));
+    const bOnly = Array.from(bTerms).filter((t) => !aTerms.has(t));
+    /* Sub overlap */
+    const subIntersect = Array.from(A.subs).filter((s) => B.subs.has(s));
+    /* Insights — natural-language bullets */
+    const insights = [];
+    if (A.posts.length && B.posts.length) {
+      const dScore = pctDelta(A.totalScore, B.totalScore);
+      if (Math.abs(dScore) >= 15) {
+        insights.push(`<strong>${Util.escapeHtml(A.campaignName)}</strong> drove ${Math.abs(dScore)}% ${dScore > 0 ? "more" : "fewer"} total upvotes than <strong>${Util.escapeHtml(B.campaignName)}</strong>`);
+      }
+      const dAvg = pctDelta(A.avgScore, B.avgScore);
+      if (Math.abs(dAvg) >= 25) {
+        insights.push(`Per-post average is ${Math.abs(dAvg)}% ${dAvg > 0 ? "higher" : "lower"} for <strong>${Util.escapeHtml(A.campaignName)}</strong> — ${dAvg > 0 ? "smaller drops" : "needs more reach"}`);
+      }
+      const dSubs = A.subCount - B.subCount;
+      if (dSubs !== 0) {
+        insights.push(`<strong>${Util.escapeHtml(A.campaignName)}</strong> hit ${A.subCount} subs vs ${B.subCount} for <strong>${Util.escapeHtml(B.campaignName)}</strong>${dSubs > 0 ? " — wider spread" : " — more concentrated"}`);
+      }
+      if (intersect.length) {
+        insights.push(`Shared themes: ${intersect.slice(0, 4).map((t) => `"${Util.escapeHtml(t)}"`).join(", ")}`);
+      }
+      if (subIntersect.length) {
+        insights.push(`Both ran in ${subIntersect.length} of the same subs (${subIntersect.slice(0, 3).map((s) => "r/" + s).join(", ")}${subIntersect.length > 3 ? ", …" : ""})`);
+      }
+    }
+    return {
+      A: { name: a.name, ...A },
+      B: { name: b.name, ...B },
+      themes: { intersect, aOnly, bOnly },
+      subIntersect,
+      insights,
+    };
+  };
+
   window.Analysis = Analysis;
 })();

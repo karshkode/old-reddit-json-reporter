@@ -460,8 +460,50 @@
         <div class="card-body" id="predict-body"></div>
       </div>
 
+      <!-- Calendar / planning view (PR 6). -->
+      <div class="card" id="calendar-card" data-collapsible data-collapsed-default>
+        <header class="card-header">
+          <h2>Campaign calendar</h2>
+          <span class="hint">14-day strip showing campaign progress vs goal</span>
+        </header>
+        <div class="card-body" id="calendar-body"></div>
+      </div>
+
+      <!-- A/B comparison (PR 6). -->
+      <div class="card" id="ab-card" data-collapsible data-collapsed-default>
+        <header class="card-header">
+          <h2>Compare campaigns</h2>
+          <span class="hint">Pick two campaigns to see which themes / subs / titles are winning</span>
+        </header>
+        <div class="card-body">
+          <div class="ab-controls">
+            <select id="ab-campaign-a"></select>
+            <span class="meta">vs</span>
+            <select id="ab-campaign-b"></select>
+            <button id="ab-compare" type="button" class="btn small primary">Compare</button>
+          </div>
+          <div id="ab-results"></div>
+        </div>
+      </div>
+
+      <!-- Volunteer coordination (PR 6). -->
+      <div class="card" id="vol-card" data-collapsible data-collapsed-default>
+        <header class="card-header">
+          <h2>Volunteer coverage</h2>
+          <span class="hint">Claim a sub to post to. Share this session's URL with teammates.</span>
+        </header>
+        <div class="card-body">
+          <div class="vol-controls">
+            <select id="vol-source"></select>
+            <button id="vol-load" type="button" class="btn small primary">Load coverage map</button>
+          </div>
+          <div id="vol-body"></div>
+        </div>
+      </div>
+
       <!-- Detail panel for an opened campaign (AI baked in via deep analysis) -->
       <div class="card" id="campaign-detail" data-anchor="campaign-detail" hidden>
+        <div id="watch-toggle-slot" class="watch-toggle-slot"></div>
         <header class="card-header">
           <h2 id="campaign-detail-title">Campaign</h2>
           <div class="row gap wrap">
@@ -588,5 +630,6 @@
   <script src="./js/campaigns.js?v=20260518h"></script>
   <script src="./js/ui.js?v=20260518h"></script>
   <script src="./js/app.js?v=20260518h"></script>
+
 </body>
 </html>

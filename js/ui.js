@@ -469,6 +469,169 @@
     `;
   };
 
+  /* Campaign A/B comparison rendering (PR 6). */
+  UI.renderCampaignCompare = function (container, comparison) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    if (!comparison) { el.innerHTML = '<div class="empty">Pick two campaigns above to compare.</div>'; return; }
+    const { A, B, insights } = comparison;
+    function statTile(label, valA, valB, fmt) {
+      fmt = fmt || ((v) => Util.fmtNum(v));
+      const aHigher = valA > valB;
+      return `
+        <div class="ab-tile">
+          <div class="ab-label">${Util.escapeHtml(label)}</div>
+          <div class="ab-values">
+            <span class="${aHigher ? "ab-higher" : ""}">${fmt(valA)}</span>
+            <span class="ab-vs">vs</span>
+            <span class="${!aHigher && valA !== valB ? "ab-higher" : ""}">${fmt(valB)}</span>
+          </div>
+        </div>
+      `;
+    }
+    el.innerHTML = `
+      <div class="ab-head">
+        <div class="ab-name ab-a">${Util.escapeHtml(A.name)}</div>
+        <span class="meta">vs</span>
+        <div class="ab-name ab-b">${Util.escapeHtml(B.name)}</div>
+      </div>
+      ${insights.length ? `<ul class="ab-insights">${insights.map((i) => `<li>${i}</li>`).join("")}</ul>` : ""}
+      <div class="ab-stats">
+        ${statTile("Posts", A.posts.length, B.posts.length)}
+        ${statTile("Total upvotes", A.totalScore, B.totalScore)}
+        ${statTile("Total comments", A.totalComments, B.totalComments)}
+        ${statTile("Avg score", Math.round(A.avgScore), Math.round(B.avgScore))}
+        ${statTile("Subs reached", A.subCount, B.subCount)}
+        ${statTile("Sentiment", A.sentiment.average, B.sentiment.average, (v) => v.toFixed(2))}
+      </div>
+      ${(comparison.themes.intersect.length + comparison.themes.aOnly.length + comparison.themes.bOnly.length) ? `
+        <div class="ab-themes">
+          <div class="ab-themes-col">
+            <div class="ab-themes-h">${Util.escapeHtml(A.name)} only</div>
+            <div>${comparison.themes.aOnly.slice(0, 8).map((t) => `<span class="kw">${Util.escapeHtml(t)}</span>`).join("") || '<span class="meta">—</span>'}</div>
+          </div>
+          <div class="ab-themes-col">
+            <div class="ab-themes-h">Shared</div>
+            <div>${comparison.themes.intersect.slice(0, 8).map((t) => `<span class="kw shared">${Util.escapeHtml(t)}</span>`).join("") || '<span class="meta">—</span>'}</div>
+          </div>
+          <div class="ab-themes-col">
+            <div class="ab-themes-h">${Util.escapeHtml(B.name)} only</div>
+            <div>${comparison.themes.bOnly.slice(0, 8).map((t) => `<span class="kw">${Util.escapeHtml(t)}</span>`).join("") || '<span class="meta">—</span>'}</div>
+          </div>
+        </div>` : ""}
+    `;
+  };
+
+  /* Watch mode badge — small toggle-able pill on the campaign detail.
+   * The actual setInterval lives in app.js; this just renders state. */
+  UI.renderWatchToggle = function (container, isOn, intervalMin) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    el.innerHTML = `
+      <button type="button" class="watch-toggle ${isOn ? "on" : "off"}" data-action="toggle-watch" aria-pressed="${isOn ? "true" : "false"}">
+        <span class="watch-dot"></span>
+        ${isOn ? `Watching · auto-refresh every ${intervalMin}m` : "Watch (auto-refresh)"}
+      </button>
+    `;
+  };
+
+  /* Calendar / planning view (PR 6). Renders campaigns onto a 14-day
+   * strip with goal-progress bars. Each campaign card is clickable to
+   * open the underlying detail. */
+  UI.renderCampaignCalendar = function (container, campaigns, summaries) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    if (!campaigns || !campaigns.length) {
+      el.innerHTML = '<div class="empty">No campaigns yet. Create one to see it on the calendar.</div>';
+      return;
+    }
+    /* Today + previous 6 days + future 7 days = 14 cells */
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cells = [];
+    for (let i = -6; i <= 7; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      cells.push(d);
+    }
+    function dayLabel(d) {
+      try { return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" }); }
+      catch (_) { return d.toDateString(); }
+    }
+    /* Each campaign rendered as a row with goal-progress bar. */
+    const rows = campaigns.map((c) => {
+      const summary = summaries[c.id] || {};
+      const created = c.createdAt ? new Date(c.createdAt) : null;
+      const totalScore = summary.totalScore || 0;
+      const goalScore = c.goalScore || 0;
+      const pctScore = goalScore ? Math.min(1, totalScore / goalScore) : 0;
+      const startCellIdx = created
+        ? cells.findIndex((d) => d >= new Date(created.getFullYear(), created.getMonth(), created.getDate()))
+        : 0;
+      const startIdx = startCellIdx < 0 ? 0 : startCellIdx;
+      return `
+        <div class="cal-row" data-campaign-id="${Util.escapeHtml(c.id)}">
+          <div class="cal-name" title="${Util.escapeHtml(c.name)}">${Util.escapeHtml(c.name)}</div>
+          <div class="cal-strip">
+            ${cells.map((d, i) => `<div class="cal-cell${i === 6 ? " today" : ""}${i >= startIdx ? " active" : ""}" title="${Util.escapeHtml(dayLabel(d))}"></div>`).join("")}
+          </div>
+          <div class="cal-progress" title="${goalScore ? Math.round(pctScore * 100) + '% of ' + Util.fmtNum(goalScore) + ' upvote goal' : 'No goal set'}">
+            <div class="cal-progress-bar"><span style="width:${(pctScore * 100).toFixed(1)}%"></span></div>
+            <span class="meta">${goalScore ? Math.round(pctScore * 100) + "%" : Util.fmtNum(totalScore) + " pts"}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+    el.innerHTML = `
+      <div class="cal-head">
+        <div class="cal-name-h"></div>
+        <div class="cal-strip-h">
+          ${cells.map((d, i) => `<div class="cal-cell-h${i === 6 ? " today" : ""}">${Util.escapeHtml(d.getDate().toString())}</div>`).join("")}
+        </div>
+        <div class="cal-progress-h">Goal</div>
+      </div>
+      ${rows}
+      <div class="cal-hint meta">14-day strip — past 6 days + today + next 7. Today highlighted.</div>
+    `;
+  };
+
+  /* Volunteer coordination — claim subs to post to (PR 6).
+   * Local-only; multi-device sync via the existing share-link
+   * mechanism. State lives in localStorage. */
+  UI.renderVolunteerCoverage = function (container, claims, candidateSubs, currentName) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    if (!candidateSubs || !candidateSubs.length) {
+      el.innerHTML = '<div class="empty">Pick a campaign and run Discover so we have a candidate sub list to coordinate around.</div>';
+      return;
+    }
+    const claimMap = {};
+    for (const c of (claims || [])) claimMap[c.sub.toLowerCase()] = c;
+    el.innerHTML = `
+      <div class="vol-head">
+        <label>Your name <input id="vol-name" type="text" value="${Util.escapeHtml(currentName || "")}" placeholder="anon" maxlength="30" /></label>
+        <span class="meta">${Object.keys(claimMap).length} of ${candidateSubs.length} subs claimed</span>
+      </div>
+      <div class="vol-list">
+        ${candidateSubs.map((s) => {
+          const claim = claimMap[s.toLowerCase()];
+          if (claim) {
+            const mine = currentName && claim.name === currentName;
+            return `<div class="vol-row claimed">
+              <span class="vol-sub">r/${Util.escapeHtml(s)}</span>
+              <span class="vol-claim">claimed by <strong>${Util.escapeHtml(claim.name)}</strong></span>
+              ${mine ? `<button class="btn small ghost" type="button" data-action="vol-unclaim" data-sub="${Util.escapeHtml(s)}">Release</button>` : ""}
+            </div>`;
+          }
+          return `<div class="vol-row open">
+            <span class="vol-sub">r/${Util.escapeHtml(s)}</span>
+            <button class="btn small primary" type="button" data-action="vol-claim" data-sub="${Util.escapeHtml(s)}">Claim</button>
+          </div>`;
+        }).join("")}
+      </div>
+    `;
+  };
+
   function renderTitleQualityBlock(tq) {
     const band = tq.band || "okay";
     const cls = band === "excellent" ? "good" : band === "good" ? "info" : band === "okay" ? "warn" : "bad";
