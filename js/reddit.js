@@ -23,6 +23,12 @@
 
   const BASE = "https://www.reddit.com";
   const CACHE_TTL_MS = 5 * 60 * 1000;
+  /* Stale-while-revalidate window (PR 7). When a cached response is
+   * older than CACHE_TTL_MS but younger than CACHE_SWR_MAX_MS, we
+   * RETURN it immediately AND fire a background fetch to refresh the
+   * cache for next time. Big perceived-speed win for the campaign
+   * Watch mode + repeat dashboard refreshes. */
+  const CACHE_SWR_MAX_MS = 30 * 60 * 1000;
   const memCache = new Map();
   const inflight = new Map();
   const STORAGE_KEY = "rj.transport";
@@ -70,17 +76,28 @@
     } catch (_) {}
   };
 
+  /* Returns { v, fresh, stale } where:
+   *   fresh = entry is younger than CACHE_TTL_MS (use directly)
+   *   stale = entry is older than TTL but younger than SWR_MAX
+   *           (return immediately + caller should kick off a
+   *            background revalidate)
+   *   neither -> null (treat as cache miss) */
   function cacheGet(key) {
-    const m = memCache.get(key);
-    if (m && Date.now() - m.t < CACHE_TTL_MS) return m.v;
+    function evaluate(entry) {
+      if (!entry) return null;
+      const age = Date.now() - entry.t;
+      if (age < CACHE_TTL_MS) return { v: entry.v, fresh: true, stale: false, age };
+      if (age < CACHE_SWR_MAX_MS) return { v: entry.v, fresh: false, stale: true, age };
+      return null;
+    }
+    const mem = evaluate(memCache.get(key));
+    if (mem) return mem;
     try {
       const raw = sessionStorage.getItem("rj:" + key);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Date.now() - parsed.t < CACHE_TTL_MS) {
-          memCache.set(key, parsed);
-          return parsed.v;
-        }
+        const r = evaluate(parsed);
+        if (r) { memCache.set(key, parsed); return r; }
       }
     } catch (_) {}
     return null;
@@ -217,7 +234,8 @@
   /* Per-proxy success/failure tally so the UI can render a small
    * health dashboard ("codetabs ✓ 100% · allorigins ⚠ 60% blocked").
    * Recent-window EMA — gives more weight to recent attempts so a
-   * proxy that just came back online doesn't stay flagged forever. */
+   * proxy that just came back online doesn't stay flagged forever.
+   * (PR 2 — already in main.) */
   Reddit._stats = { byTransport: {} };
   function recordTransportOutcome(transportName, ok, kind) {
     if (!transportName) return;
@@ -232,6 +250,24 @@
     }
   }
 
+  /* Fire-and-forget revalidation for SWR (PR 7). Updates the cache
+   * for the next caller; never throws (errors are logged). */
+  function revalidateInBackground(redditUrl, key) {
+    const promise = (async () => {
+      const transports = transportsToTry();
+      for (const t of transports) {
+        try {
+          const out = await tryTransport(t, redditUrl, 0);
+          cacheSet(key, out.data);
+          Reddit._lastTransport = out.transport;
+          if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
+          return;
+        } catch (_) { /* keep trying */ }
+      }
+    })().finally(() => { inflight.delete(key); });
+    inflight.set(key, promise);
+  }
+
   async function fetchJson(path, params) {
     const url = new URL(BASE + path);
     url.searchParams.set("raw_json", "1");
@@ -243,7 +279,15 @@
     const redditUrl = url.toString();
     const key = url.pathname + "?" + url.searchParams.toString();
     const cached = cacheGet(key);
-    if (cached) return cached;
+    if (cached && cached.fresh) return cached.v;
+    /* Stale-while-revalidate: return stale data immediately, but
+     * kick off a background revalidate so the next call gets fresh
+     * data without waiting. */
+    if (cached && cached.stale && !inflight.has(key)) {
+      /* Start the revalidation but don't await it for this caller. */
+      revalidateInBackground(redditUrl, key);
+      return cached.v;
+    }
     if (inflight.has(key)) return inflight.get(key);
 
     const promise = (async () => {

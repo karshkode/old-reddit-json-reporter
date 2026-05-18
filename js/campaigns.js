@@ -14,20 +14,102 @@
  */
 (function () {
   const KEY = "rj.campaigns";
+  /* Compressed-blob key (PR 7). When the JSON is large we store a
+   * gzip+base64url payload here instead of the plain-text KEY, to fit
+   * within the ~5MB localStorage quota even with hundreds of post IDs
+   * across many campaigns. The plain-text KEY is cleared in that case
+   * so we don't double-store. Reads check both keys. */
+  const KEY_GZIP = "rj.campaigns.gz";
+  const COMPRESS_THRESHOLD = 8 * 1024;     /* compress when JSON > 8KB */
   const Campaigns = {};
 
   let mirror = null;
   let persistError = null;
 
+  /* ---------- Compression helpers (PR 7) ---------- */
+  function utf8Encode(s) {
+    if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s);
+    const bin = unescape(encodeURIComponent(s));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function utf8Decode(bytes) {
+    if (typeof TextDecoder !== "undefined") return new TextDecoder().decode(bytes);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return decodeURIComponent(escape(bin));
+  }
+  function bytesToBase64Url(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function base64UrlToBytes(s) {
+    const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
+    const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + pad;
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function gzip(bytes) {
+    if (typeof CompressionStream === "undefined") return null;
+    try {
+      const cs = new CompressionStream("gzip");
+      const stream = new Blob([bytes]).stream().pipeThrough(cs);
+      const buf = await new Response(stream).arrayBuffer();
+      return new Uint8Array(buf);
+    } catch (_) { return null; }
+  }
+  async function gunzip(bytes) {
+    if (typeof DecompressionStream === "undefined") return null;
+    try {
+      const ds = new DecompressionStream("gzip");
+      const stream = new Blob([bytes]).stream().pipeThrough(ds);
+      const buf = await new Response(stream).arrayBuffer();
+      return new Uint8Array(buf);
+    } catch (_) { return null; }
+  }
+
   function loadFromStorage() {
     try {
+      /* Plain-text path first (faster, no async). */
       const raw = localStorage.getItem(KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      /* Compressed path. Decoded synchronously by deferring to
+       * loadCompressedFromStorage which uses async DecompressionStream
+       * but returns a Promise. Because callers expect sync today, we
+       * fall back to an empty list and kick off the async hydrate. */
+      const gz = localStorage.getItem(KEY_GZIP);
+      if (gz) {
+        hydrateFromCompressed(gz);
+        return [];  /* replaced once hydrate resolves */
+      }
+      return [];
     } catch (e) {
       persistError = e && e.message ? e.message : String(e);
       return [];
+    }
+  }
+  async function hydrateFromCompressed(gzBase64) {
+    try {
+      const bytes = base64UrlToBytes(gzBase64);
+      const decompressed = await gunzip(bytes);
+      if (!decompressed) return;
+      const json = utf8Decode(decompressed);
+      const parsed = JSON.parse(json);
+      if (Array.isArray(parsed)) {
+        mirror = parsed;
+        if (typeof Campaigns.onHydrate === "function") {
+          try { Campaigns.onHydrate(parsed); } catch (_) {}
+        }
+      }
+    } catch (e) {
+      persistError = e && e.message ? e.message : String(e);
     }
   }
 
@@ -38,12 +120,45 @@
 
   function persist() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(mirror));
+      const json = JSON.stringify(mirror);
+      /* Below threshold -> plain-text for instant reads. */
+      if (json.length < COMPRESS_THRESHOLD) {
+        localStorage.setItem(KEY, json);
+        try { localStorage.removeItem(KEY_GZIP); } catch (_) {}
+        persistError = null;
+        return true;
+      }
+      /* Above threshold -> kick off async compression and store
+       * both keys so reads (which run synchronously today) still
+       * see SOMETHING immediately. */
+      localStorage.setItem(KEY, json);
       persistError = null;
+      persistCompressed(json).catch((e) => {
+        console.warn("[campaigns] compression failed:", e && e.message);
+      });
       return true;
     } catch (e) {
       persistError = e && e.message ? e.message : String(e);
+      /* Plain-text write failed (likely quota). Try compressed-only. */
+      persistCompressed(JSON.stringify(mirror)).catch(() => {});
       return false;
+    }
+  }
+  async function persistCompressed(json) {
+    if (typeof CompressionStream === "undefined") return;
+    const bytes = utf8Encode(json);
+    const gz = await gzip(bytes);
+    if (!gz) return;
+    /* Only swap to gzip storage when it actually saves space. */
+    if (gz.length >= bytes.length * 0.9) return;
+    try {
+      localStorage.setItem(KEY_GZIP, bytesToBase64Url(gz));
+      /* Drop the plain-text copy ONLY if the gzip write succeeded
+       * (otherwise we'd lose data on quota errors). */
+      localStorage.removeItem(KEY);
+      persistError = null;
+    } catch (e) {
+      persistError = e && e.message ? e.message : String(e);
     }
   }
 
