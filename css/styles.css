@@ -3727,3 +3727,17 @@ body.modal-open { overflow: hidden; }
   .goals-edit-row { grid-template-columns: 1fr; }
   .goals-edit-form input { font-size: 16px; min-height: 38px; }
 }
+
+/* Brief accent-flash on the URL input when clipboard auto-paste fires,
+ * so the user knows their pasted Reddit URL was picked up automatically.
+ * Triggered by JS adding/removing .autopaste-flash. */
+@keyframes cand-tracker-autopaste-flash {
+  0%, 100% { background: var(--bg-elev); box-shadow: 0 0 0 0 rgba(255, 87, 34, 0); }
+  20%      { background: rgba(255, 87, 34, 0.18); box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.35); }
+}
+.cand-tracker-row input.autopaste-flash {
+  animation: cand-tracker-autopaste-flash 0.85s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cand-tracker-row input.autopaste-flash { animation: none; }
+}

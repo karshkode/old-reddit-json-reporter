@@ -2905,11 +2905,29 @@ const bestCampaignPost = (summary.posts || [])
         const openBtn = e.target && e.target.closest && e.target.closest('[data-action="open-submit"]');
         if (openBtn) {
           /* Don't preventDefault — the link must still open the
-           * Reddit /submit page. We only auto-expand the tracker so
-           * the URL-paste input is waiting when the user returns. */
+           * Reddit /submit page. We auto-expand the tracker AND focus
+           * the URL-paste input so the user lands on a focused field
+           * the moment they come back from the Reddit tab. */
           const card = openBtn.closest(".target-row");
           const tracker = card && card.querySelector(".cand-tracker");
-          if (tracker) tracker.open = true;
+          if (tracker) {
+            tracker.open = true;
+            const input = tracker.querySelector('[data-action="track-post-url"]');
+            if (input) {
+              /* Slight delay so the new-tab-opening handoff doesn't
+               * steal focus back. iOS Safari is particularly fussy. */
+              setTimeout(() => {
+                try { input.focus(); } catch (_) {}
+              }, 150);
+            }
+          }
+          return;
+        }
+
+        const pasteBtn = e.target && e.target.closest && e.target.closest('[data-action="track-post-paste"]');
+        if (pasteBtn) {
+          e.preventDefault();
+          await handleManualClipboardPaste(pasteBtn);
           return;
         }
 
@@ -2929,6 +2947,75 @@ const bestCampaignPost = (summary.posts || [])
         const btn = tracker && tracker.querySelector('[data-action="track-post-confirm"]');
         if (btn) btn.click();
       });
+
+      /* AUTO-FILL ON FOCUS: when the URL input gains focus and is
+       * empty, try reading the clipboard. If it contains a Reddit
+       * reference, fill the input. (iOS Safari often blocks this
+       * without a user gesture, so the focus event itself is our
+       * gesture — even so, it sometimes returns a permission-denied
+       * promise rejection. We just fall through silently.) */
+      discoverResults.addEventListener("focusin", async (e) => {
+        const input = e.target && e.target.closest && e.target.closest('[data-action="track-post-url"]');
+        if (!input || input.value) return;
+        await tryAutoFillFromClipboard(input);
+      });
+
+      /* AUTO-SUBMIT ON PASTE: when the user pastes into the input,
+       * wait one tick for the value to update, validate via parsePostRefs,
+       * and fire the confirm flow automatically — saving them an
+       * "Add to campaign" tap. The standard Add button still works
+       * for manual flows. */
+      discoverResults.addEventListener("paste", (e) => {
+        const input = e.target && e.target.closest && e.target.closest('[data-action="track-post-url"]');
+        if (!input) return;
+        setTimeout(() => {
+          const refs = Util.parsePostRefs(input.value || "");
+          if (!refs.ids.length && !refs.shares.length) return;
+          const tracker = input.closest(".cand-tracker");
+          const btn = tracker && tracker.querySelector('[data-action="track-post-confirm"]');
+          if (btn) btn.click();
+        }, 50);
+      });
+    }
+
+    /* Helper: try to read the clipboard and pre-fill `input` with the
+     * raw text IF it parses as a Reddit URL/ID/share link. Returns
+     * true on success, false otherwise (including silent failures). */
+    async function tryAutoFillFromClipboard(input) {
+      try {
+        if (!navigator.clipboard || typeof navigator.clipboard.readText !== "function") return false;
+        const text = await navigator.clipboard.readText();
+        if (!text || typeof text !== "string") return false;
+        const refs = Util.parsePostRefs(text);
+        if (!refs.ids.length && !refs.shares.length) return false;
+        input.value = text.trim();
+        /* Tiny visual cue so the user knows it auto-pasted — bg flash. */
+        input.classList.add("autopaste-flash");
+        setTimeout(() => input.classList.remove("autopaste-flash"), 900);
+        /* Auto-submit too — saves a tap. */
+        const tracker = input.closest(".cand-tracker");
+        const btn = tracker && tracker.querySelector('[data-action="track-post-confirm"]');
+        if (btn) btn.click();
+        return true;
+      } catch (_) {
+        /* Permission denied / unsupported / not a Reddit URL — stay
+         * silent. The user can still paste manually. */
+        return false;
+      }
+    }
+
+    /* Manual "📋 Paste" button next to the input — acts as an explicit
+     * user-gesture wrapper around tryAutoFillFromClipboard for
+     * browsers that grant readText only on direct button clicks. */
+    async function handleManualClipboardPaste(pasteBtn) {
+      const tracker = pasteBtn.closest(".cand-tracker");
+      const input = tracker && tracker.querySelector('[data-action="track-post-url"]');
+      if (!input) return;
+      const ok = await tryAutoFillFromClipboard(input);
+      if (!ok) {
+        Util.toast("Clipboard didn't contain a Reddit post URL — paste manually below.", "error");
+        try { input.focus(); } catch (_) {}
+      }
     }
 
     /* Resolve the Reddit URL/ID/share-link the user pasted into a
