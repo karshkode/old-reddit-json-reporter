@@ -3366,6 +3366,12 @@ body.modal-open { overflow: hidden; }
   padding: 24px;
   animation: media-preview-in 0.15s ease-out;
 }
+/* Without this override the [hidden] HTML attribute does nothing —
+ * `display: flex` above wins over the UA stylesheet's
+ * `[hidden] { display: none }` rule on specificity. The result was
+ * a permanent overlay you could never close: clicking the X set
+ * `hidden=true` in JS but the modal stayed visible. */
+.media-preview[hidden] { display: none !important; }
 @keyframes media-preview-in {
   from { opacity: 0; }
   to { opacity: 1; }
