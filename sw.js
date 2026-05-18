@@ -9,11 +9,21 @@
  *   - Cross-origin requests (CORS proxies, chart.js CDN) are NOT
  *     intercepted; the browser handles them normally.
  *
- * Cache version is bumped on every release so old assets get evicted
- * cleanly. Without this, a user could be stuck on a stale cached
- * bundle forever — the no-go for a fast-iterating dashboard.
+ * !!! IMPORTANT WHENEVER YOU SHIP A JS/CSS CHANGE !!!
+ * BUMP BOTH numbers in lockstep:
+ *   1. CACHE_VERSION below
+ *   2. The ?v=YYYYMMDDx query strings in index.html
+ *
+ * The fetch handler matches with `ignoreSearch: true`, which means a
+ * pre-existing service-worker cache will keep serving the OLD bundle
+ * even when index.html now references `?v=newer`. The only thing
+ * that evicts the old cache is a CACHE_VERSION change here, which
+ * triggers the activate handler to delete every `rj-static-*` cache
+ * key that doesn't match. Forgetting this leaves users (especially
+ * iOS PWA installs, which retain SWs aggressively) stuck on an old
+ * UI build until they manually reinstall the app.
  */
-const CACHE_VERSION = "v20260518g";
+const CACHE_VERSION = "v20260518m";
 const CACHE_NAME = "rj-static-" + CACHE_VERSION;
 
 const PRECACHE = [
