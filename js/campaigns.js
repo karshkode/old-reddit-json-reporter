@@ -227,17 +227,22 @@
     if (i < 0) return null;
     const existing = new Set(mirror[i].postIds);
     const merged = mirror[i].postIds.slice();
-    let added = 0;
+    /* Track WHICH ids are new vs duplicates so the UI can echo
+     * the new IDs back to the user as confirmation chips. Without
+     * this, a stuck-feeling user (paste, click Add, see a toast,
+     * miss it, look at the still-failing campaign) had no easy
+     * way to verify their paste actually landed. */
+    const addedIds = [];
     for (const newId of (idsToAdd || []).map(String).filter(Boolean)) {
       if (!existing.has(newId)) {
         existing.add(newId);
         merged.push(newId);
-        added++;
+        addedIds.push(newId);
       }
     }
     mirror[i] = Object.assign({}, mirror[i], { postIds: merged });
     persist();
-    return { campaign: mirror[i], added };
+    return { campaign: mirror[i], added: addedIds.length, addedIds };
   };
 
   /* Remove post IDs from a campaign. Returns { campaign, removed }. */

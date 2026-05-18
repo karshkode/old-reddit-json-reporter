@@ -1326,7 +1326,14 @@
     /* Missing-IDs note. When ALL IDs failed AND we got a transport-level
      * error from Reddit.fetchPostsByIds, surface that error so the
      * user knows it's the proxies (or network) — not their IDs.
-     * Otherwise just list the unresolved IDs as before. */
+     *
+     * Each unresolved ID is rendered as a removable chip with its own
+     * × button — without this, a permanently-broken post (e.g. one
+     * Reddit deleted, or one whose proxy chain is permanently 429ing)
+     * is impossible to delete from the campaign because there's no
+     * resolved Post object to attach the existing per-row remove
+     * button to. The unresolved-list path used to render the IDs as
+     * plain `<code>` text and the user was stuck. */
     let missingNote = "";
     if (agg.missing && agg.missing.length) {
       const allMissing = agg.posts.length === 0;
@@ -1336,8 +1343,25 @@
              <span class="hint">Try the orange Refresh button. If it persists, switch <strong>Data source</strong> in the topbar — the public proxies break sometimes.</span>
            </div>`
         : "";
-      const ids = agg.missing.map((id) => `<code>${Util.escapeHtml(id)}</code>`).join(", ");
-      missingNote = reason + `<div class="meta" style="color:var(--warn);margin-top:6px;font-size:12px">${allMissing && agg.networkError ? "Unresolved IDs" : "Could not resolve"}: ${ids}</div>`;
+      const label = allMissing && agg.networkError ? "Unresolved IDs" : "Could not resolve";
+      const chips = agg.missing.map((id) => {
+        const safe = Util.escapeHtml(id);
+        return `
+          <span class="unresolved-chip" data-id="${safe}">
+            <code>${safe}</code>
+            <button type="button"
+                    class="unresolved-chip-remove"
+                    data-action="remove-post"
+                    data-id="${safe}"
+                    title="Remove ${safe} from campaign"
+                    aria-label="Remove ${safe} from campaign">×</button>
+          </span>`;
+      }).join("");
+      missingNote = reason + `<div class="meta unresolved-list">
+        <span class="unresolved-list-label">${label}:</span>
+        <span class="unresolved-list-chips">${chips}</span>
+        <span class="hint">tap × to drop a post from the campaign</span>
+      </div>`;
     }
 
     const deepHtml = deep ? renderCampaignDeepAnalysis(deep) : "";
