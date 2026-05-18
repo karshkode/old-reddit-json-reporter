@@ -9,6 +9,15 @@ allows. Deploying your own worker takes about **3 minutes** and gives
 you a stable proxy the dashboard can hit. **No credit card. 100,000
 free requests per day.**
 
+> **Already running v1?** v1 had a cache-poisoning bug where
+> Cloudflare cached Reddit's 429 / 403 errors for 60 seconds —
+> meaning one transient Reddit hiccup left your worker stuck
+> returning errors for a full minute. **v2 (this file) fixes
+> that** by only caching successful responses. If you deployed
+> v1 and you're seeing "got 100 results then everything fails",
+> redeploy with the v2 code — see [§ Updating an existing
+> worker](#updating-an-existing-worker) below.
+
 ---
 
 ## What you'll need
@@ -96,12 +105,46 @@ ever fails, the public proxies are still fallbacks.
 
 ---
 
+## Updating an existing worker
+
+If you already deployed an earlier version, the upgrade flow is
+identical — but starts at step 4:
+
+1. Go to **<https://dash.cloudflare.com/>** → **Workers & Pages**.
+2. Click your `reddit-proxy` worker.
+3. Click **Edit code**.
+4. **Select all** (Ctrl/⌘+A) and **paste** the latest
+   [`reddit-proxy.js`](./reddit-proxy.js) over the existing code.
+5. Click **Save and Deploy**.
+
+There's no extra step on the dashboard side — your existing worker
+URL keeps working, so you don't need to update Data source → Custom.
+
+After deploying v2, **wait ~60 seconds** before testing. Cloudflare's
+edge cache may still hold the v1-era cached errors for up to a minute.
+After that, your dashboard should work cleanly.
+
 ## Verifying it works
 
-Open this URL in your browser (replace with your worker URL):
+Quick health check (no Reddit fetch — just probes the worker):
 
 ```
-https://reddit-proxy.<your-account>.workers.dev/?url=https%3A%2F%2Fwww.reddit.com%2Fr%2F50501%2Fhot.json%3Fraw_json%3D1%26limit%3D2
+https://<your-worker>.workers.dev/?ping
+```
+
+Should return immediately:
+
+```json
+{"ok":true,"version":"v2.0","worker":"reddit-proxy","time":"…"}
+```
+
+If `version` is missing or doesn't say `v2.0`, you're still running an
+older deployment — go through the [update flow](#updating-an-existing-worker).
+
+End-to-end check (fetches Reddit JSON via your worker):
+
+```
+https://<your-worker>.workers.dev/?url=https%3A%2F%2Fwww.reddit.com%2Fr%2F50501%2Fhot.json%3Fraw_json%3D1%26limit%3D2
 ```
 
 You should see Reddit JSON. If you see a `403 Blocked` page, see
@@ -110,6 +153,32 @@ You should see Reddit JSON. If you see a `403 Blocked` page, see
 ---
 
 ## Troubleshooting
+
+### "Got 100 results then everything fails" / stuck failing for ~60s
+
+This is the v1 cache-poisoning bug. Redeploy with the v2 code from
+this repo (see [§ Updating an existing worker](#updating-an-existing-worker)).
+After the new code goes live, the dashboard will recover within
+about a minute.
+
+### "Reddit rate-limited your worker (429)"
+
+Reddit caps anonymous reads from any single IP. A burst of refreshes
+can trip the limit even on Cloudflare's edge IPs. v2's fix:
+
+- 429s are no longer cached — recovery is instant once Reddit lifts
+  the block (usually 30-60s).
+- Successful responses cache for 5 minutes, so repeated dashboard
+  refreshes mostly hit Cloudflare's cache, not Reddit.
+
+If you're hitting 429s often:
+
+1. **Wait 60s** and retry. Reddit's per-IP limits roll off quickly.
+2. **Don't open multiple dashboard tabs at once** — each tab fans out
+   ~6 concurrent requests on Refresh.
+3. **Bump `SUCCESS_CACHE_SECONDS`** in the worker (e.g. to `900` for
+   15-minute caching) so repeats hit the edge instead of Reddit.
+4. **Edit `USER_AGENT`** to something unique (add your Reddit username).
 
 ### "403 Blocked due to a network policy" still in the response
 
