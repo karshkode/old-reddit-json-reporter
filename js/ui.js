@@ -1187,14 +1187,15 @@
         <details class="cand-tracker" data-canonical="${Util.escapeHtml(c.canonical)}">
           <summary>↪ I posted to r/${Util.escapeHtml(c.canonical)} — track it in this campaign</summary>
           <div class="cand-tracker-body">
-            <label class="group-label">Paste your new Reddit post URL</label>
+            <label class="group-label">Paste your new Reddit post URL — auto-adds on paste</label>
             <div class="cand-tracker-row">
               <input type="text"
                      data-action="track-post-url"
                      placeholder="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/comments/..."
                      autocomplete="off"
                      spellcheck="false" />
-              <button type="button" class="btn small primary" data-action="track-post-confirm">Add to campaign</button>
+              <button type="button" class="btn small ghost" data-action="track-post-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
+              <button type="button" class="btn small primary" data-action="track-post-confirm">Add</button>
             </div>
             <div class="cand-tracker-status meta" hidden></div>
           </div>
