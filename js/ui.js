@@ -1417,6 +1417,19 @@
         </div>
       </div>
 
+      <!-- Compose & cross-post entry. Opens the markdown composer
+           modal pre-loaded with this campaign's recommended targets
+           (from the targeting recommender below). The composer
+           bulk-emits Reddit /submit URLs so the SAME body lands on
+           every checked sub — a real crosspost, not just a share
+           link. -->
+      <div class="compose-entry-row">
+        <button type="button" class="btn small primary" data-action="open-composer" data-campaign-id="${Util.escapeHtml(campaign.id)}">
+          Compose &amp; cross-post
+        </button>
+        <span class="hint">Write once, submit URLs prefill across every target sub. Mark posted to auto-track.</span>
+      </div>
+
       ${deepHtml}
       ${postsList}
     `;

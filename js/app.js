@@ -3857,7 +3857,648 @@ const bestCampaignPost = (summary.posts || [])
     safeRun("renderCalendar", renderCalendar);
     safeRun("wireABCompare", wireABCompare);
     safeRun("wireVolunteer", wireVolunteer);
+    safeRun("wireComposer", wireComposer);
         safeRun("checkStorageAvailability", checkStorageAvailability);
+  }
+
+  /* ============================================================
+   * Markdown composer + crossposter
+   *
+   * See cloudflare-worker/SETUP.md and js/composer.js for the
+   * broader workflow. The composer is opened from a "Compose &
+   * cross-post" button in the campaign-detail panel; this module
+   * wires the modal's DOM up to Composer's state model and to
+   * Reddit/Campaigns helpers.
+   * ============================================================ */
+  let composerState = null;       // working copy of Composer.defaultDraft for the open campaign
+  let composerSaveTimer = null;
+  let composerImageBlob = null;   // local-file image (Blob)
+  let composerImageUrl = null;    // object URL for preview
+
+  function composerRefs() {
+    return {
+      modal:     document.getElementById("composer-modal"),
+      title:     document.getElementById("composer-title"),
+      titleC:    document.getElementById("composer-title-counter"),
+      body:      document.getElementById("composer-body"),
+      bodyC:     document.getElementById("composer-body-counter"),
+      bodyHint:  document.getElementById("composer-body-hint"),
+      preview:   document.getElementById("composer-preview"),
+      linkMode:  document.getElementById("composer-link-mode"),
+      linkUrl:   document.getElementById("composer-link-url"),
+      imageUrl:  document.getElementById("composer-image-url"),
+      imageInsert: document.getElementById("composer-image-insert"),
+      imageDrop: document.getElementById("composer-image-drop"),
+      imageFile: document.getElementById("composer-image-file"),
+      imageStatus: document.getElementById("composer-image-status"),
+      imagePreview: document.getElementById("composer-image-preview"),
+      aiCopy:    document.getElementById("composer-ai-copy"),
+      aiPaste:   document.getElementById("composer-ai-paste"),
+      aiInsertReplace: document.getElementById("composer-ai-insert-replace"),
+      aiInsertAppend:  document.getElementById("composer-ai-insert-append"),
+      aiVariants: document.getElementById("composer-ai-variants"),
+      aiWords:    document.getElementById("composer-ai-words"),
+      targets:   document.getElementById("composer-targets-list"),
+      targetsAdd:    document.getElementById("composer-targets-add"),
+      targetsAddBtn: document.getElementById("composer-targets-add-btn"),
+      fromRecommended: document.getElementById("composer-targets-from-recommended"),
+      fromActive:  document.getElementById("composer-targets-from-active"),
+      modeBtns:  document.querySelectorAll("#composer-modal [data-composer-mode]"),
+      paneBtns:  document.querySelectorAll("#composer-modal [data-composer-pane]"),
+      clearBtn:  document.getElementById("composer-clear-draft"),
+      savedMeta: document.getElementById("composer-saved-meta"),
+      context:   document.getElementById("composer-context"),
+    };
+  }
+
+  function openComposer(campaignId) {
+    if (typeof Composer === "undefined") {
+      Util.toast("Composer not loaded.", "error");
+      return;
+    }
+    const refs = composerRefs();
+    if (!refs.modal) return;
+
+    composerState = Composer.loadDraft(campaignId);
+
+    /* Seed targets from the campaign's recommended targets if the
+     * draft is fresh and empty (first open). Avoids overwriting on
+     * re-opens after the user manually curated their list. */
+    if (!composerState.targets.length) {
+      const c = (typeof Campaigns !== "undefined" && Campaigns.get) ? Campaigns.get(campaignId) : null;
+      const subs = composerSeedTargets(c);
+      composerState.targets = subs.map((sub, i) => ({
+        sub,
+        checked: i < 5,    // pre-check first 5 so the user has something to fire on
+        seed: i === 0,
+        posted: false,
+      }));
+    }
+
+    /* Hydrate DOM from state */
+    refs.title.value = composerState.title || "";
+    refs.body.value = composerState.body || "";
+    refs.linkMode.checked = !!composerState.isLinkPost;
+    refs.linkUrl.value = composerState.linkUrl || "";
+    refs.imageUrl.value = composerState.imageUrl || "";
+    refs.modeBtns.forEach((b) => {
+      const on = b.dataset.composerMode === composerState.mode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    /* Mobile pane = source by default. */
+    document.body.classList.add("composer-pane-source");
+    document.body.classList.remove("composer-pane-preview");
+    refs.paneBtns.forEach((b) => {
+      const on = b.dataset.composerPane === "source";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+
+    /* Campaign-name context badge */
+    if (refs.context) {
+      const c = (typeof Campaigns !== "undefined" && Campaigns.get) ? Campaigns.get(campaignId) : null;
+      refs.context.textContent = c ? `for "${c.name}"` : "";
+    }
+
+    refs.modal.hidden = false;
+    refreshComposer();
+    setTimeout(() => refs.title.focus(), 50);
+  }
+
+  function closeComposer() {
+    const refs = composerRefs();
+    if (refs.modal) refs.modal.hidden = true;
+    document.body.classList.remove("composer-pane-source", "composer-pane-preview");
+  }
+
+  function composerSeedTargets(campaign) {
+    const seen = new Set();
+    const out = [];
+
+    /* Active subs from the dashboard chip set first (most useful
+     * for a fresh campaign with no posts yet). */
+    if (state.activeSubs && state.activeSubs.size) {
+      for (const s of state.activeSubs) {
+        if (!seen.has(s.toLowerCase())) { seen.add(s.toLowerCase()); out.push(s); }
+      }
+    }
+    /* Then the campaign's recommended targets if computed. */
+    if (campaign && state.subProfiles) {
+      try {
+        const summary = aggregateCampaignFromState(campaign);
+        if (summary && summary.posts && summary.posts.length) {
+          const profile = Analysis.campaignProfile(summary.posts, campaign);
+          const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 12 });
+          for (const t of targets || []) {
+            const sub = t.sub || t.canonical;
+            if (sub && !seen.has(sub.toLowerCase())) { seen.add(sub.toLowerCase()); out.push(sub); }
+          }
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  /* Helper: rebuild a campaign aggregate from the resolved-posts
+   * cache (avoids a network round-trip just to seed targets). */
+  function aggregateCampaignFromState(campaign) {
+    if (!campaign) return null;
+    const have = (campaign.postIds || []).map((id) =>
+      (state.posts || []).find((p) => p.id === id)
+    ).filter(Boolean);
+    return { posts: have };
+  }
+
+  /* Re-render every reactive piece of the composer modal from
+   * composerState. Called on every input change. */
+  function refreshComposer() {
+    if (!composerState) return;
+    const refs = composerRefs();
+    if (!refs.modal || refs.modal.hidden) return;
+
+    /* Title counter */
+    const tlen = (composerState.title || "").length;
+    refs.titleC.textContent = `${tlen} / ${Composer.LIMITS.titleMax}`;
+    refs.titleC.classList.toggle("warn", tlen > Composer.LIMITS.titleMax - 30);
+    refs.titleC.classList.toggle("bad",  tlen > Composer.LIMITS.titleMax);
+
+    /* Body counter */
+    const blen = (composerState.body || "").length;
+    refs.bodyC.textContent = `${blen} / ${Composer.LIMITS.bodyMax}`;
+    refs.bodyC.classList.toggle("warn", blen > Composer.LIMITS.bodyMax - 5000);
+    refs.bodyC.classList.toggle("bad",  blen > Composer.LIMITS.bodyMax);
+
+    /* Body hint shows whichever target's URL is currently the worst-
+     * fitting so the user knows mobile may truncate. */
+    const urls = Composer.emitSubmitUrls(composerState);
+    const longest = urls.reduce((m, u) => (u.length > (m ? m.length : 0) ? u : m), null);
+    if (longest && longest.warn === "hard") {
+      refs.bodyHint.textContent = `r/${longest.sub} URL is ${longest.length} chars — over 8 KB iOS limit.`;
+      refs.bodyHint.className = "composer-hint bad";
+    } else if (longest && longest.warn === "soft") {
+      refs.bodyHint.textContent = `r/${longest.sub} URL is ${longest.length} chars — close to 8 KB iOS limit.`;
+      refs.bodyHint.className = "composer-hint warn";
+    } else {
+      refs.bodyHint.textContent = "";
+      refs.bodyHint.className = "composer-hint";
+    }
+
+    /* Live preview */
+    refs.preview.innerHTML = Composer.renderMarkdown(composerState.body || "");
+
+    /* Targets */
+    refs.targets.innerHTML = renderTargetsHtml(composerState, urls);
+
+    /* Persist debounced */
+    if (composerSaveTimer) clearTimeout(composerSaveTimer);
+    composerSaveTimer = setTimeout(() => {
+      Composer.saveDraft(composerState);
+      const meta = composerRefs().savedMeta;
+      if (meta) meta.textContent = "Draft saved · " + new Date().toLocaleTimeString();
+    }, 500);
+  }
+
+  function renderTargetsHtml(draft, urls) {
+    const urlBySub = new Map(urls.map((u) => [u.sub, u]));
+    const rows = (draft.targets || []).map((t, idx) => {
+      const u = urlBySub.get(t.sub);
+      const counter = u
+        ? `<span class="url-counter ${u.warn === "hard" ? "bad" : u.warn === "soft" ? "warn" : ""}">${u.length} / 8000</span>`
+        : "";
+      const submitBtn = u
+        ? `<a class="btn small primary" href="${Util.escapeHtml(u.url)}" target="_blank" rel="noopener" data-composer-action="open-submit" data-sub="${Util.escapeHtml(t.sub)}">Open submit</a>`
+        : "";
+      const truncateBtn = (u && u.warn === "hard")
+        ? `<button type="button" class="btn small ghost" data-composer-action="truncate-target" data-sub="${Util.escapeHtml(t.sub)}" title="Trim this target's body to fit the 8 KB cap">Truncate to fit</button>`
+        : "";
+      const clipboardBtn = composerImageBlob
+        ? `<button type="button" class="btn small ghost" data-composer-action="copy-image" data-sub="${Util.escapeHtml(t.sub)}" title="Copy attached image to clipboard so you can paste it on Reddit's submit page">Copy img</button>`
+        : "";
+      const editor = (draft.mode === "per-target" && t.checked) ? `
+        <div class="composer-target-editor">
+          <label class="group-label">Title (per-target)</label>
+          <input type="text" data-composer-action="edit-target-title" data-sub="${Util.escapeHtml(t.sub)}" maxlength="320"
+                 placeholder="defaults to canonical title — edit for sub-specific tweaks"
+                 value="${Util.escapeHtml(t.title || "")}" />
+          <label class="group-label">Body (per-target)</label>
+          <textarea rows="6" data-composer-action="edit-target-body" data-sub="${Util.escapeHtml(t.sub)}"
+                    placeholder="defaults to canonical body — edit for sub-specific intros / flair etc.">${Util.escapeHtml(t.body != null ? t.body : "")}</textarea>
+          <div class="row gap">
+            <button type="button" class="btn small ghost" data-composer-action="sync-from-master" data-sub="${Util.escapeHtml(t.sub)}">Sync from master</button>
+          </div>
+        </div>
+      ` : "";
+      const markPosted = t.checked && !t.posted ? `
+        <form class="composer-mark-posted-form" data-composer-action="mark-posted-form" data-sub="${Util.escapeHtml(t.sub)}">
+          <input type="url" placeholder="Paste resulting Reddit URL here…"
+                 data-composer-action="mark-posted-input" data-sub="${Util.escapeHtml(t.sub)}" />
+          <button type="submit" class="btn small">Mark posted</button>
+        </form>
+      ` : "";
+      const seedBadge = t.seed && t.checked ? `<span class="seed-badge" title="Post here first">1st</span>` : "";
+      return `
+        <div class="composer-target-row ${t.posted ? "posted" : ""}">
+          <input type="checkbox" data-composer-action="toggle-target" data-sub="${Util.escapeHtml(t.sub)}" ${t.checked ? "checked" : ""} aria-label="Include r/${Util.escapeHtml(t.sub)}" />
+          <span class="composer-target-sub">r/${Util.escapeHtml(t.sub)}</span>
+          <span class="composer-target-meta">
+            ${seedBadge}
+            ${counter}
+            ${t.posted ? `<a href="${Util.escapeHtml(t.postedUrl || "#")}" target="_blank" rel="noopener" class="hint">view post ↗</a>` : ""}
+          </span>
+          <span class="composer-target-actions">
+            ${submitBtn}
+            ${truncateBtn}
+            ${clipboardBtn}
+            ${t.checked && !t.seed ? `<button type="button" class="btn small ghost" data-composer-action="make-seed" data-sub="${Util.escapeHtml(t.sub)}" title="Make this the seed (post first)">★</button>` : ""}
+            <button type="button" class="btn small ghost" data-composer-action="remove-target" data-sub="${Util.escapeHtml(t.sub)}" aria-label="Remove r/${Util.escapeHtml(t.sub)}">×</button>
+          </span>
+          ${markPosted}
+          ${editor}
+        </div>
+      `;
+    }).join("");
+    if (!rows) {
+      return `<div class="empty">No targets yet — paste subs in the input above, or "+ From recommended"/"+ From active subs".</div>`;
+    }
+    return rows;
+  }
+
+  function wireComposer() {
+    const refs = composerRefs();
+    if (!refs.modal) return;
+
+    /* Close affordances */
+    document.addEventListener("click", (e) => {
+      const close = e.target.closest && e.target.closest('[data-action="close-composer-modal"]');
+      if (close) closeComposer();
+      const open = e.target.closest && e.target.closest('[data-action="open-composer"]');
+      if (open) {
+        e.preventDefault();
+        const cid = open.dataset.campaignId || state.openCampaignId;
+        openComposer(cid);
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && refs.modal && !refs.modal.hidden) closeComposer();
+    });
+
+    /* Title + body inputs */
+    refs.title.addEventListener("input", () => {
+      composerState.title = refs.title.value.slice(0, Composer.LIMITS.titleMax);
+      refreshComposer();
+    });
+    refs.body.addEventListener("input", () => {
+      composerState.body = refs.body.value;
+      refreshComposer();
+    });
+
+    /* Toolbar buttons */
+    refs.modal.querySelectorAll("[data-composer-action]").forEach(() => {});
+    refs.modal.addEventListener("click", (e) => {
+      const btn = e.target.closest && e.target.closest("[data-composer-action]");
+      if (!btn) return;
+      const action = btn.dataset.composerAction;
+
+      /* Toolbar formatting actions: dispatch via Composer.applyToolbar */
+      const toolbarActions = ["bold","italic","strike","code","spoiler","h1","h2","h3","quote","ul","ol","hr","link","image","codeblock","table"];
+      if (toolbarActions.includes(action)) {
+        Composer.applyToolbar(action, refs.body);
+        composerState.body = refs.body.value;
+        refreshComposer();
+        return;
+      }
+
+      if (action === "toggle-target") {
+        const sub = btn.dataset.sub;
+        const t = composerState.targets.find((x) => x.sub === sub);
+        if (t) {
+          t.checked = btn.checked;
+          /* Auto-promote the first checked to seed if no seed currently. */
+          if (t.checked && !composerState.targets.some((x) => x.seed && x.checked)) t.seed = true;
+          if (!t.checked && t.seed) {
+            t.seed = false;
+            const next = composerState.targets.find((x) => x.checked);
+            if (next) next.seed = true;
+          }
+        }
+        refreshComposer();
+        return;
+      }
+      if (action === "make-seed") {
+        composerState.targets.forEach((x) => { x.seed = (x.sub === btn.dataset.sub); });
+        refreshComposer();
+        return;
+      }
+      if (action === "remove-target") {
+        composerState.targets = composerState.targets.filter((x) => x.sub !== btn.dataset.sub);
+        if (!composerState.targets.some((x) => x.seed)) {
+          const first = composerState.targets.find((x) => x.checked);
+          if (first) first.seed = true;
+        }
+        refreshComposer();
+        return;
+      }
+      if (action === "sync-from-master") {
+        const t = composerState.targets.find((x) => x.sub === btn.dataset.sub);
+        if (t) { delete t.title; delete t.body; }
+        refreshComposer();
+        return;
+      }
+      if (action === "truncate-target") {
+        Composer.truncateTargetToFit(composerState, btn.dataset.sub);
+        /* Mode flipped to per-target — also flip the toggle UI. */
+        refs.modeBtns.forEach((b) => {
+          const on = b.dataset.composerMode === composerState.mode;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-checked", on ? "true" : "false");
+        });
+        refreshComposer();
+        Util.toast("Trimmed body for r/" + btn.dataset.sub + " to fit 8 KB cap.", "ok");
+        return;
+      }
+      if (action === "copy-image") {
+        copyComposerImageToClipboard();
+        return;
+      }
+      if (action === "open-submit") {
+        /* Let the <a target="_blank"> default behavior do the work,
+         * but mirror sub into composerState.targets for "active" hint. */
+        return;
+      }
+    });
+
+    /* Per-target editor inputs (event delegation for textarea/input) */
+    refs.modal.addEventListener("input", (e) => {
+      const el = e.target;
+      const action = el.dataset && el.dataset.composerAction;
+      if (action === "edit-target-title" || action === "edit-target-body") {
+        const sub = el.dataset.sub;
+        const t = composerState.targets.find((x) => x.sub === sub);
+        if (!t) return;
+        if (action === "edit-target-title") t.title = el.value.slice(0, Composer.LIMITS.titleMax);
+        else t.body = el.value;
+        /* Schedule a refresh but DON'T wholesale-rerender the targets
+         * pane — that would steal focus. Update only counter / hint. */
+        const urls = Composer.emitSubmitUrls(composerState);
+        const u = urls.find((x) => x.sub === sub);
+        if (u) {
+          const row = el.closest(".composer-target-row");
+          const counter = row && row.querySelector(".url-counter");
+          if (counter) {
+            counter.textContent = `${u.length} / 8000`;
+            counter.classList.toggle("warn", u.warn === "soft");
+            counter.classList.toggle("bad",  u.warn === "hard");
+          }
+        }
+        if (composerSaveTimer) clearTimeout(composerSaveTimer);
+        composerSaveTimer = setTimeout(() => Composer.saveDraft(composerState), 500);
+      }
+      if (action === "mark-posted-input") {
+        /* Don't rerender on every keystroke; just hold the value. */
+      }
+    });
+
+    /* Mark-posted submit handler */
+    refs.modal.addEventListener("submit", (e) => {
+      const form = e.target.closest && e.target.closest('[data-composer-action="mark-posted-form"]');
+      if (!form) return;
+      e.preventDefault();
+      const sub = form.dataset.sub;
+      const inp = form.querySelector('[data-composer-action="mark-posted-input"]');
+      const url = inp ? inp.value.trim() : "";
+      if (!url) { Util.toast("Paste the post URL first.", "error"); return; }
+      const ids = Util.parseIdList(url);
+      if (!ids.length) { Util.toast("Couldn't find a post ID in that URL.", "error"); return; }
+      const t = composerState.targets.find((x) => x.sub === sub);
+      if (t) {
+        t.posted = true;
+        t.postedUrl = url;
+        t.postedAt = Date.now();
+      }
+      /* Add to the campaign for tracking. */
+      if (composerState.campaignId && Campaigns && Campaigns.addPostIds) {
+        const r = Campaigns.addPostIds(composerState.campaignId, ids);
+        if (r) {
+          Util.toast(`Marked posted in r/${sub} — added ${r.added} ID${r.added === 1 ? "" : "s"} to the campaign.`, "ok");
+        }
+      }
+      Composer.saveDraft(composerState);
+      refreshComposer();
+      /* Bubble up to refresh the campaign-detail panel underneath. */
+      try { refreshAllCampaignSummaries().catch(() => {}); } catch (_) {}
+      try { if (composerState.campaignId) {
+        const c = Campaigns.get(composerState.campaignId);
+        if (c) openCampaign(c).catch(() => {});
+      } } catch (_) {}
+    });
+
+    /* Mode toggle */
+    refs.modeBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        composerState.mode = btn.dataset.composerMode;
+        refs.modeBtns.forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-checked", on ? "true" : "false");
+        });
+        refreshComposer();
+      });
+    });
+
+    /* Pane toggle (mobile) */
+    refs.paneBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const pane = btn.dataset.composerPane;
+        document.body.classList.toggle("composer-pane-source", pane === "source");
+        document.body.classList.toggle("composer-pane-preview", pane === "preview");
+        refs.paneBtns.forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle("active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+      });
+    });
+
+    /* Link-mode + URL inputs */
+    refs.linkMode.addEventListener("change", () => {
+      composerState.isLinkPost = refs.linkMode.checked;
+      refreshComposer();
+    });
+    refs.linkUrl.addEventListener("input", () => {
+      composerState.linkUrl = refs.linkUrl.value;
+      refreshComposer();
+    });
+    refs.imageUrl.addEventListener("input", () => {
+      composerState.imageUrl = refs.imageUrl.value;
+    });
+    refs.imageInsert.addEventListener("click", () => {
+      const url = composerState.imageUrl;
+      if (!url) { Util.toast("Paste an image URL first.", "error"); return; }
+      /* Insert as ![](url) at the body cursor. */
+      refs.body.focus();
+      const start = refs.body.selectionStart || refs.body.value.length;
+      const before = refs.body.value.slice(0, start);
+      const after = refs.body.value.slice(start);
+      refs.body.value = before + "![](" + url + ")" + after;
+      composerState.body = refs.body.value;
+      refreshComposer();
+    });
+
+    /* Local image: file picker + drag-drop. Stored in memory only
+     * (no IndexedDB persistence in v1 — would re-add complexity for
+     * a feature most users won't use across sessions). */
+    function attachImageBlob(blob) {
+      if (!blob) return;
+      composerImageBlob = blob;
+      if (composerImageUrl) URL.revokeObjectURL(composerImageUrl);
+      composerImageUrl = URL.createObjectURL(blob);
+      refs.imageStatus.textContent = `Attached: ${blob.name || "image"} (${Math.round(blob.size / 1024)} KB) — use the "Copy img" button on each target row before posting.`;
+      refs.imagePreview.hidden = false;
+      refs.imagePreview.innerHTML = `<img src="${composerImageUrl}" alt="attached" /><span class="hint">Reddit's submit URL can't carry image bytes; the dashboard will copy this to your clipboard so you paste it on Reddit's submit page.</span>`;
+      refreshComposer();
+    }
+    refs.imageFile.addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f && f.type.startsWith("image/")) attachImageBlob(f);
+    });
+    if (refs.imageDrop) {
+      refs.imageDrop.addEventListener("dragover", (e) => { e.preventDefault(); refs.imageDrop.classList.add("dragging"); });
+      refs.imageDrop.addEventListener("dragleave", () => refs.imageDrop.classList.remove("dragging"));
+      refs.imageDrop.addEventListener("drop", (e) => {
+        e.preventDefault();
+        refs.imageDrop.classList.remove("dragging");
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f && f.type.startsWith("image/")) attachImageBlob(f);
+      });
+    }
+
+    /* AI prompt drawer */
+    refs.aiCopy.addEventListener("click", async () => {
+      const variants = Math.max(1, Math.min(5, Number(refs.aiVariants.value) || 1));
+      const wordCount = String(refs.aiWords.value || "300-800").trim();
+      const c = composerState.campaignId ? (Campaigns.get(composerState.campaignId)) : null;
+      const subs = composerState.targets.filter((t) => t.checked).map((t) => t.sub);
+      const prompt = Composer.buildAiPrompt(c ? c.name : "(unnamed)", composerState, subs, { variants, wordCount });
+      try {
+        await Util.copyToClipboard(prompt);
+        Util.toast("AI prompt copied to clipboard.", "ok");
+      } catch (_) {
+        Util.toast("Couldn't copy — select & copy manually.", "error");
+      }
+    });
+    refs.aiInsertReplace.addEventListener("click", () => {
+      const text = refs.aiPaste.value;
+      if (!text.trim()) { Util.toast("Paste the AI response first.", "error"); return; }
+      const parsed = Composer.parseAiResponse(text);
+      if (parsed.title) composerState.title = parsed.title;
+      composerState.body = parsed.body || text;
+      refs.title.value = composerState.title;
+      refs.body.value = composerState.body;
+      refs.aiPaste.value = "";
+      refreshComposer();
+      Util.toast("Inserted AI output.", "ok");
+    });
+    refs.aiInsertAppend.addEventListener("click", () => {
+      const text = refs.aiPaste.value;
+      if (!text.trim()) { Util.toast("Paste the AI response first.", "error"); return; }
+      const parsed = Composer.parseAiResponse(text);
+      const append = parsed.body || text;
+      composerState.body = (composerState.body ? composerState.body + "\n\n" : "") + append;
+      refs.body.value = composerState.body;
+      refs.aiPaste.value = "";
+      refreshComposer();
+      Util.toast("Appended AI output.", "ok");
+    });
+
+    /* Targets actions */
+    refs.fromRecommended.addEventListener("click", () => {
+      const c = composerState.campaignId ? Campaigns.get(composerState.campaignId) : null;
+      const subs = composerSeedTargets(c);
+      composerAddSubs(subs);
+    });
+    refs.fromActive.addEventListener("click", () => {
+      composerAddSubs(Array.from(state.activeSubs || []));
+    });
+    refs.targetsAddBtn.addEventListener("click", () => {
+      const v = (refs.targetsAdd.value || "").trim();
+      if (!v) return;
+      const subs = v.split(/[,;\s]+/).map((s) => s.replace(/^\/?r\//i, "").trim()).filter(Boolean);
+      composerAddSubs(subs);
+      refs.targetsAdd.value = "";
+    });
+    refs.targetsAdd.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); refs.targetsAddBtn.click(); }
+    });
+
+    /* Clear draft */
+    refs.clearBtn.addEventListener("click", () => {
+      if (!composerState || !composerState.campaignId) return;
+      if (!confirm("Clear this draft? Cannot be undone.")) return;
+      Composer.clearDraft(composerState.campaignId);
+      composerState = Composer.defaultDraft(composerState.campaignId);
+      refs.title.value = "";
+      refs.body.value = "";
+      refs.linkUrl.value = "";
+      refs.imageUrl.value = "";
+      refs.linkMode.checked = false;
+      refreshComposer();
+      Util.toast("Draft cleared.", "ok");
+    });
+  }
+
+  function composerAddSubs(subs) {
+    if (!composerState) return;
+    const existing = new Set(composerState.targets.map((t) => t.sub.toLowerCase()));
+    let added = 0;
+    for (const raw of (subs || [])) {
+      const s = String(raw || "").replace(/^\/?r\//i, "").trim();
+      if (!s) continue;
+      const k = s.toLowerCase();
+      if (existing.has(k)) continue;
+      existing.add(k);
+      composerState.targets.push({
+        sub: s,
+        checked: true,
+        seed: !composerState.targets.some((t) => t.seed && t.checked),
+        posted: false,
+      });
+      added++;
+    }
+    if (added) {
+      refreshComposer();
+      Util.toast(`Added ${added} target${added === 1 ? "" : "s"}.`, "ok");
+    } else {
+      Util.toast("Already in targets.", "warn");
+    }
+  }
+
+  /* Copy the attached local image to the clipboard so the user can
+   * paste it into Reddit's image upload after the submit page opens.
+   * Uses the modern ClipboardItem API; falls back to a download if
+   * the browser refuses (e.g. older Safari). */
+  async function copyComposerImageToClipboard() {
+    if (!composerImageBlob) { Util.toast("No image attached.", "error"); return; }
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard && navigator.clipboard.write) {
+        const item = new ClipboardItem({ [composerImageBlob.type]: composerImageBlob });
+        await navigator.clipboard.write([item]);
+        Util.toast("Image copied — paste it on Reddit's submit page.", "ok");
+        return;
+      }
+    } catch (e) {
+      console.warn("[composer] clipboard.write failed:", e && e.message);
+    }
+    /* Fallback: download the image so the user can attach it manually. */
+    try {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(composerImageBlob);
+      a.download = composerImageBlob.name || "image";
+      a.click();
+      Util.toast("Clipboard refused — image downloaded; attach it manually.", "warn");
+    } catch (_) {
+      Util.toast("Couldn't copy or download the image.", "error");
+    }
   }
 
   if (document.readyState === "loading") {

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
   <link rel="preconnect" href="https://api.allorigins.win" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260518p" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260518q" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4500'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
@@ -628,6 +628,152 @@
     <p>Live data from <code>www.reddit.com/r/&lt;sub&gt;.json</code> via your browser. Reddit blocks anonymous browser CORS, so requests route through a public CORS proxy (selectable in the top bar). No server, no tracking. Static site for GitHub Pages.</p>
   </footer>
 
+  <!-- Compose & cross-post modal. Opens from the campaign-detail
+       panel via "Compose post" button. Lets the user write title +
+       markdown body once, see it rendered live, and bulk-emit
+       prefilled Reddit /submit URLs for selected target subs.
+       See cloudflare-worker/SETUP.md for the broader workflow context. -->
+  <div id="composer-modal" class="modal composer-modal" hidden role="dialog" aria-modal="true" aria-labelledby="composer-modal-title">
+    <div class="modal-backdrop" data-action="close-composer-modal"></div>
+    <div class="modal-card composer-card" role="document">
+      <header class="modal-header">
+        <h2 id="composer-modal-title">Compose &amp; cross-post</h2>
+        <div class="row gap">
+          <span id="composer-context" class="meta hint"></span>
+          <button type="button" class="btn ghost small" data-action="close-composer-modal" aria-label="Close composer">×</button>
+        </div>
+      </header>
+      <div class="modal-body composer-body">
+
+        <!-- Editor section: title + body + toolbar + live preview -->
+        <section class="composer-editor" aria-label="Editor">
+          <!-- Pane toggle (mobile only): switch between Source and Preview. -->
+          <div class="composer-pane-toggle only-mobile" role="tablist" aria-label="Editor pane">
+            <button type="button" class="chip active" data-composer-pane="source" role="tab" aria-selected="true">Source</button>
+            <button type="button" class="chip" data-composer-pane="preview" role="tab" aria-selected="false">Preview</button>
+          </div>
+
+          <div class="composer-title-row">
+            <label for="composer-title" class="group-label">Title</label>
+            <input id="composer-title" type="text" maxlength="320" autocomplete="off" placeholder="Hook in the first 8-10 words…" />
+            <span class="composer-counter" id="composer-title-counter" aria-live="polite">0 / 300</span>
+          </div>
+
+          <!-- Toolbar -->
+          <div class="composer-toolbar" role="toolbar" aria-label="Markdown formatting">
+            <button type="button" class="cm-btn" data-composer-action="bold" title="Bold (**text**)" aria-label="Bold"><strong>B</strong></button>
+            <button type="button" class="cm-btn" data-composer-action="italic" title="Italic (*text*)" aria-label="Italic"><em>I</em></button>
+            <button type="button" class="cm-btn" data-composer-action="strike" title="Strikethrough (~~text~~)" aria-label="Strikethrough"><span style="text-decoration:line-through">S</span></button>
+            <span class="cm-sep" aria-hidden="true"></span>
+            <button type="button" class="cm-btn" data-composer-action="h1" title="Header 1" aria-label="Header 1">H1</button>
+            <button type="button" class="cm-btn" data-composer-action="h2" title="Header 2" aria-label="Header 2">H2</button>
+            <button type="button" class="cm-btn" data-composer-action="h3" title="Header 3" aria-label="Header 3">H3</button>
+            <span class="cm-sep" aria-hidden="true"></span>
+            <button type="button" class="cm-btn" data-composer-action="link" title="Link" aria-label="Link">🔗</button>
+            <button type="button" class="cm-btn" data-composer-action="image" title="Image" aria-label="Image">🖼️</button>
+            <button type="button" class="cm-btn" data-composer-action="quote" title="Blockquote" aria-label="Blockquote">❝</button>
+            <button type="button" class="cm-btn" data-composer-action="ul" title="Bullet list" aria-label="Bullet list">•</button>
+            <button type="button" class="cm-btn" data-composer-action="ol" title="Numbered list" aria-label="Numbered list">1.</button>
+            <button type="button" class="cm-btn" data-composer-action="code" title="Inline code" aria-label="Inline code">&lt;/&gt;</button>
+            <button type="button" class="cm-btn" data-composer-action="codeblock" title="Fenced code block" aria-label="Code block">▦</button>
+            <button type="button" class="cm-btn" data-composer-action="table" title="Insert table" aria-label="Insert table">⊞</button>
+            <button type="button" class="cm-btn" data-composer-action="hr" title="Horizontal rule" aria-label="Horizontal rule">―</button>
+            <button type="button" class="cm-btn" data-composer-action="spoiler" title="Reddit spoiler (&gt;!text!&lt;)" aria-label="Reddit spoiler">⚫</button>
+          </div>
+
+          <!-- Split pane: source on left, preview on right (stacked on mobile via composer-pane-toggle) -->
+          <div class="composer-split">
+            <div class="composer-source-pane" data-composer-pane-content="source">
+              <textarea id="composer-body" rows="20" placeholder="Write your campaign post in Reddit-flavored markdown…&#10;&#10;Hook in the first 2 sentences. Neutral CTA at the end.&#10;Use the toolbar above for formatting."></textarea>
+              <div class="composer-counter-row">
+                <span class="composer-counter" id="composer-body-counter" aria-live="polite">0 / 40000</span>
+                <span class="composer-hint" id="composer-body-hint"></span>
+              </div>
+            </div>
+            <div class="composer-preview-pane" data-composer-pane-content="preview">
+              <div class="composer-preview-label">Preview <span class="hint">(rendered as Reddit will show it)</span></div>
+              <div id="composer-preview" class="composer-preview" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <!-- Link / image URL row -->
+          <div class="composer-extras">
+            <label class="composer-extra-row">
+              <input type="checkbox" id="composer-link-mode" />
+              <span>Link post (selftext disabled — body is replaced by URL)</span>
+            </label>
+            <div class="composer-extra-row">
+              <label class="group-label" for="composer-link-url">URL (link post)</label>
+              <input id="composer-link-url" type="url" autocomplete="off" placeholder="https://sevendaysinjune.org" />
+            </div>
+            <div class="composer-extra-row">
+              <label class="group-label" for="composer-image-url">Image URL (embeds in body)</label>
+              <input id="composer-image-url" type="url" autocomplete="off" placeholder="https://i.imgur.com/abc.jpg" />
+              <button type="button" class="btn small ghost" id="composer-image-insert" title="Insert as ![alt](url) at the cursor">Insert as markdown</button>
+            </div>
+            <!-- Local file image: stored client-side; used for clipboard-copy
+                 helper since Reddit's submit URL can't carry image bytes. -->
+            <div class="composer-extra-row composer-image-drop" id="composer-image-drop">
+              <label class="group-label" for="composer-image-file">Local image</label>
+              <input id="composer-image-file" type="file" accept="image/*" />
+              <span class="composer-hint" id="composer-image-status">No image attached. Drop a file here or pick one. Reddit's submit URL can't carry image bytes — we'll offer a clipboard-copy button per target so you paste it manually after the submit page opens.</span>
+              <div id="composer-image-preview" class="composer-image-preview" hidden></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- AI prompt drawer -->
+        <details class="composer-ai">
+          <summary>AI prompt helper</summary>
+          <div class="composer-ai-body">
+            <p class="hint">External AI only — copy this prompt into ChatGPT / Claude / Gemini, paste the output back here, then click "Insert into body".</p>
+            <div class="row gap wrap">
+              <button type="button" class="btn small primary" id="composer-ai-copy">📋 Copy prompt</button>
+              <label class="composer-ai-variants">
+                Variants
+                <input id="composer-ai-variants" type="number" min="1" max="5" value="1" />
+              </label>
+              <label class="composer-ai-words">
+                Words
+                <input id="composer-ai-words" type="text" value="300-800" placeholder="300-800" />
+              </label>
+            </div>
+            <textarea id="composer-ai-paste" rows="4" placeholder="Paste the AI's response here. The composer auto-extracts Title: and Body: lines."></textarea>
+            <div class="row gap">
+              <button type="button" class="btn small" id="composer-ai-insert-replace" title="Replace title + body">Replace title + body</button>
+              <button type="button" class="btn small ghost" id="composer-ai-insert-append" title="Append to body, keep title">Append to body</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Targets section -->
+        <section class="composer-targets" aria-label="Targets">
+          <header class="composer-targets-head">
+            <h3>Targets</h3>
+            <div class="composer-mode-toggle" role="radiogroup" aria-label="Body mode">
+              <button type="button" class="chip active" data-composer-mode="single" role="radio" aria-checked="true" title="Same body for every target">Same body for all</button>
+              <button type="button" class="chip" data-composer-mode="per-target" role="radio" aria-checked="false" title="Each target gets its own editable copy">Edit per target</button>
+            </div>
+          </header>
+          <p class="hint">First checked target is the <strong>seed</strong> (1st post). The rest are crossposts. Open submit URL → Reddit submit page opens with title + body prefilled → review &amp; click Post → paste the resulting URL back here to track.</p>
+          <div class="composer-targets-actions">
+            <button type="button" class="btn small ghost" id="composer-targets-from-recommended">+ From recommended</button>
+            <button type="button" class="btn small ghost" id="composer-targets-from-active">+ From active subs</button>
+            <input id="composer-targets-add" type="text" placeholder="r/SubName to add…" autocomplete="off" />
+            <button type="button" class="btn small" id="composer-targets-add-btn">Add</button>
+          </div>
+          <div id="composer-targets-list" class="composer-targets-list"></div>
+        </section>
+
+        <footer class="composer-footer">
+          <button type="button" class="btn ghost small" id="composer-clear-draft">Clear draft</button>
+          <span class="spacer"></span>
+          <span id="composer-saved-meta" class="meta hint"></span>
+        </footer>
+      </div>
+    </div>
+  </div>
+
   <!-- Session modal: cross-device sync. Toggled by #session-toggle in the topbar. -->
   <div id="session-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="session-modal-title">
     <div class="modal-backdrop" data-action="close-session-modal"></div>
@@ -662,15 +808,21 @@
     </div>
   </div>
 
-  <script src="./js/util.js?v=20260518p"></script>
-  <script src="./js/sync.js?v=20260518p"></script>
-  <script src="./js/reddit.js?v=20260518p"></script>
-  <script src="./js/seeds.js?v=20260518p"></script>
-  <script src="./js/analysis.js?v=20260518p"></script>
-  <script src="./js/charts.js?v=20260518p"></script>
-  <script src="./js/campaigns.js?v=20260518p"></script>
-  <script src="./js/ui.js?v=20260518p"></script>
-  <script src="./js/app.js?v=20260518p"></script>
+  <!-- Vendored markdown renderer for the composer (~32 KB).
+       Bundled rather than CDN'd so the dashboard stays a true static
+       site and the SW can pre-cache it for offline composition. -->
+  <script src="./vendor/marked.min.js?v=20260518q"></script>
+
+  <script src="./js/util.js?v=20260518q"></script>
+  <script src="./js/sync.js?v=20260518q"></script>
+  <script src="./js/reddit.js?v=20260518q"></script>
+  <script src="./js/seeds.js?v=20260518q"></script>
+  <script src="./js/analysis.js?v=20260518q"></script>
+  <script src="./js/charts.js?v=20260518q"></script>
+  <script src="./js/campaigns.js?v=20260518q"></script>
+  <script src="./js/composer.js?v=20260518q"></script>
+  <script src="./js/ui.js?v=20260518q"></script>
+  <script src="./js/app.js?v=20260518q"></script>
   <!-- Service Worker registration (PR 7). Caches static assets for
        offline use + stale-while-revalidate so the dashboard boots
        instantly on repeat visits even with no network. Skipped on
