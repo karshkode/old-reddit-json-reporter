@@ -650,6 +650,8 @@
     const card = document.getElementById("campaign-detail");
     const body = document.getElementById("campaign-detail-body");
     card.hidden = false;
+    /* Render the watch-mode toggle (PR 6) into its slot. */
+    refreshWatchToggleUI(state.watchedCampaignId === campaign.id && !!watchTimer);
     state.openCampaignId = campaign.id;
 
     /* Auto-repair: if the campaign was saved with raw mobile-share URLs in
@@ -2334,6 +2336,22 @@
       });
     }
 
+    /* Watch toggle button (PR 6). Lives in #watch-toggle-slot at the
+     * top of the campaign detail card. Click toggles auto-refresh. */
+    const detailCard = document.getElementById("campaign-detail");
+    if (detailCard) {
+      detailCard.addEventListener("click", (e) => {
+        const btn = e.target.closest && e.target.closest('[data-action="toggle-watch"]');
+        if (!btn) return;
+        e.preventDefault();
+        if (state.watchedCampaignId === state.openCampaignId && watchTimer) {
+          stopWatch();
+        } else if (state.openCampaignId) {
+          startWatch(state.openCampaignId);
+        }
+      });
+    }
+
     async function handleAddPostsToOpenCampaign(btn) {
       const form = btn.closest(".add-posts-form");
       const ta = form && form.querySelector('[data-role="add-posts-textarea"]');
@@ -3076,10 +3094,6 @@ const bestCampaignPost = (summary.posts || [])
 
   /* ---------- Markdown digest export (PR 3) ---------- */
 
-  /* Generate a Slack/Signal-friendly markdown summary of the currently
-   * open campaign. Drops the "what should I tell the group chat?"
-   * ceremony — one click puts a clean paste-ready report on the
-   * clipboard. */
   function buildCampaignDigest(campaign, agg, deep) {
     if (!campaign) return "";
     const lines = [];
@@ -3145,7 +3159,6 @@ const bestCampaignPost = (summary.posts || [])
     state.postsScoreMin   = snap.postsScoreMin || 0;
     persist();
     renderChips();
-    /* Sync the input/select widgets to the new state. */
     const sIn = document.getElementById("posts-title-search");
     if (sIn) sIn.value = state.searchQuery;
     const lSel = document.getElementById("listing-select");
@@ -3178,8 +3191,6 @@ const bestCampaignPost = (summary.posts || [])
   function wireMediaPreview() {
     const modal = document.getElementById("media-preview");
     if (!modal) return;
-    /* Close on backdrop click (anywhere outside the frame) and on the
-     * × button. Escape closes regardless of focus. */
     modal.addEventListener("click", (e) => {
       if (e.target === modal || (e.target.closest && e.target.closest('[data-action="close-media-preview"]'))) {
         closeMediaPreview();
@@ -3188,9 +3199,6 @@ const bestCampaignPost = (summary.posts || [])
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !modal.hidden) closeMediaPreview();
     });
-    /* Click delegation on the posts table — clicking a thumbnail
-     * (rendered by ui.js when post.media_thumbnail is set) opens the
-     * preview modal instead of opening the post detail card. */
     const tbody = document.getElementById("posts-tbody");
     if (tbody) {
       tbody.addEventListener("click", (e) => {
@@ -3237,7 +3245,6 @@ const bestCampaignPost = (summary.posts || [])
         input.dispatchEvent(new Event("input", { bubbles: true }));
       }
     });
-    /* Reveal the card once we have data to work with. */
     if (state.posts.length > 0 && state.activeSubs.size > 0) {
       card.hidden = false;
     }
@@ -3281,24 +3288,192 @@ const bestCampaignPost = (summary.posts || [])
     }
   }
 
+  /* ---------- Watch mode (PR 6) ---------- */
+
+  const WATCH_INTERVAL_MIN = 5;
+  let watchTimer = null;
+  let watchLastSnapshot = null;
+
+  function startWatch(campaignId) {
+    if (!campaignId) return;
+    stopWatch();
+    state.watchedCampaignId = campaignId;
+    watchTimer = setInterval(() => watchTick(campaignId), WATCH_INTERVAL_MIN * 60 * 1000);
+    refreshWatchToggleUI(true);
+    Util.toast(`Watching campaign — auto-refresh every ${WATCH_INTERVAL_MIN} min.`, "ok");
+  }
+  function stopWatch() {
+    if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+    state.watchedCampaignId = null;
+    watchLastSnapshot = null;
+    refreshWatchToggleUI(false);
+  }
+  async function watchTick(campaignId) {
+    try {
+      const c = Campaigns.get(campaignId);
+      if (!c) { stopWatch(); return; }
+      const fresh = await Campaigns.fetchAggregated(c, { force: true });
+      const totalScore = fresh.totalScore || 0;
+      const totalComments = fresh.totalComments || 0;
+      if (watchLastSnapshot) {
+        const dScore = totalScore - watchLastSnapshot.totalScore;
+        if (totalScore >= 1000 && watchLastSnapshot.totalScore < 1000) Util.toast(`🎯 "${c.name}" hit 1k upvotes!`, "ok");
+        if (totalScore >= 10000 && watchLastSnapshot.totalScore < 10000) Util.toast(`🚀 "${c.name}" hit 10k upvotes!`, "ok");
+        if (totalComments >= 100 && watchLastSnapshot.totalComments < 100) Util.toast(`💬 "${c.name}" passed 100 comments!`, "ok");
+        if (dScore < 0 && Math.abs(dScore) > watchLastSnapshot.totalScore * 0.5) Util.toast(`⚠️ "${c.name}" dropped 50%+ in upvotes — possible mass downvote / removal`, "error");
+      }
+      watchLastSnapshot = { totalScore, totalComments };
+      state.campaignSummaries[campaignId] = fresh;
+      if (state.openCampaignId === campaignId) {
+        try { await openCampaign(c); } catch (_) {}
+      }
+    } catch (err) {
+      console.warn("[watch] tick failed:", err && err.message);
+    }
+  }
+  function refreshWatchToggleUI(isOn) {
+    const slot = document.getElementById("watch-toggle-slot");
+    if (slot && state.openCampaignId) {
+      UI.renderWatchToggle(slot, isOn, WATCH_INTERVAL_MIN);
+    }
+  }
+
+  /* ---------- A/B compare (PR 6) ---------- */
+
+  function wireABCompare() {
+    const card = document.getElementById("ab-card");
+    const selA = document.getElementById("ab-campaign-a");
+    const selB = document.getElementById("ab-campaign-b");
+    const btn = document.getElementById("ab-compare");
+    const out = document.getElementById("ab-results");
+    if (!card || !selA || !selB || !btn || !out) return;
+    function populate() {
+      const list = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
+      const opts = list.map((c) => `<option value="${Util.escapeHtml(c.id)}">${Util.escapeHtml(c.name)}</option>`).join("");
+      const placeholder = '<option value="">— pick —</option>';
+      selA.innerHTML = placeholder + opts;
+      selB.innerHTML = placeholder + opts;
+    }
+    populate();
+    btn.addEventListener("click", () => {
+      const aId = selA.value, bId = selB.value;
+      if (!aId || !bId) { Util.toast("Pick two campaigns to compare.", "error"); return; }
+      if (aId === bId) { Util.toast("Pick two DIFFERENT campaigns.", "error"); return; }
+      const a = Object.assign({}, Campaigns.get(aId), state.campaignSummaries[aId] || {});
+      const b = Object.assign({}, Campaigns.get(bId), state.campaignSummaries[bId] || {});
+      const cmp = Analysis.compareCampaigns(a, b);
+      UI.renderCampaignCompare(out, cmp);
+    });
+  }
+
+  /* ---------- Calendar (PR 6) ---------- */
+
+  function renderCalendar() {
+    const body = document.getElementById("calendar-body");
+    if (!body) return;
+    const list = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
+    UI.renderCampaignCalendar(body, list, state.campaignSummaries || {});
+    body.addEventListener("click", (e) => {
+      const row = e.target.closest && e.target.closest(".cal-row[data-campaign-id]");
+      if (!row) return;
+      const id = row.dataset.campaignId;
+      const c = Campaigns.get(id);
+      if (c) openCampaign(c);
+    });
+  }
+
+  /* ---------- Volunteer coordination (PR 6) ---------- */
+
+  function loadVolunteerClaims() {
+    try { return JSON.parse(localStorage.getItem("rj.volClaims") || "[]"); }
+    catch (_) { return []; }
+  }
+  function saveVolunteerClaims(list) {
+    try { localStorage.setItem("rj.volClaims", JSON.stringify(list)); }
+    catch (_) {}
+  }
+  function loadVolunteerName() {
+    try { return localStorage.getItem("rj.volName") || ""; }
+    catch (_) { return ""; }
+  }
+  function saveVolunteerName(name) {
+    try { localStorage.setItem("rj.volName", String(name || "")); }
+    catch (_) {}
+  }
+
+  function wireVolunteer() {
+    const sel = document.getElementById("vol-source");
+    const btn = document.getElementById("vol-load");
+    const body = document.getElementById("vol-body");
+    if (!sel || !btn || !body) return;
+    function populate() {
+      const list = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
+      const optActive = `<option value="__active">Active subs (${state.activeSubs.size})</option>`;
+      const optCampaigns = list.map((c) => {
+        const summary = state.campaignSummaries[c.id];
+        const subs = summary ? (summary.subs || []) : [];
+        return `<option value="campaign:${c.id}">${Util.escapeHtml(c.name)} (${subs.length} subs)</option>`;
+      }).join("");
+      sel.innerHTML = optActive + optCampaigns;
+    }
+    populate();
+    function render() {
+      const v = sel.value;
+      let subs = [];
+      if (v === "__active") subs = Array.from(state.activeSubs);
+      else if (v && v.startsWith("campaign:")) {
+        const id = v.slice(9);
+        const summary = state.campaignSummaries[id];
+        subs = summary ? (summary.subs || []) : [];
+      }
+      const claims = loadVolunteerClaims();
+      const me = loadVolunteerName();
+      UI.renderVolunteerCoverage(body, claims, subs, me);
+    }
+    btn.addEventListener("click", render);
+    body.addEventListener("input", (e) => {
+      if (e.target.id === "vol-name") {
+        saveVolunteerName(e.target.value);
+      }
+    });
+    body.addEventListener("click", (e) => {
+      const claim = e.target.closest && e.target.closest('[data-action="vol-claim"]');
+      const release = e.target.closest && e.target.closest('[data-action="vol-unclaim"]');
+      const sub = (claim || release) && (claim || release).dataset.sub;
+      if (!sub) return;
+      let claims = loadVolunteerClaims();
+      const name = loadVolunteerName() || "anon";
+      if (claim) {
+        claims = claims.filter((c) => c.sub.toLowerCase() !== sub.toLowerCase());
+        claims.push({ sub, name, claimedAt: Date.now() });
+        saveVolunteerClaims(claims);
+        Util.toast(`Claimed r/${sub} as ${name}.`, "ok");
+      } else if (release) {
+        claims = claims.filter((c) => c.sub.toLowerCase() !== sub.toLowerCase());
+        saveVolunteerClaims(claims);
+        Util.toast(`Released r/${sub}.`, "ok");
+      }
+      render();
+    });
+  }
+
   function init() {
     safeRun("loadPersisted", loadPersisted);
     safeRun("bind", bind);
     safeRun("wireTopbarHeightVar", wireTopbarHeightVar);
-    /* Wire sync FIRST so the buttons + URL-hash banner are always live,
-     * even if a later render step throws on a slow / weird browser. */
     safeRun("wireSyncSession", wireSyncSession);
     safeRun("renderChips", renderChips);
     safeRun("rerenderAll", rerenderAll);
     safeRun("wireMediaPreview", wireMediaPreview);
     safeRun("showStarterPacksIfEmpty", showStarterPacksIfEmpty);
-    /* Page load shows the action banner in pending mode so the user
-     * explicitly opts into fetching. They click Go ▶ when ready. */
     safeRun("showInitialActionBanner", () => Util.setActionPhase("pending", describePendingFetch()));
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
     safeRun("wirePredictCard", wirePredictCard);
     safeRun("wireCascadeCard", wireCascadeCard);
-    safeRun("checkStorageAvailability", checkStorageAvailability);
+    safeRun("renderCalendar", renderCalendar);
+    safeRun("wireABCompare", wireABCompare);
+    safeRun("wireVolunteer", wireVolunteer);
+        safeRun("checkStorageAvailability", checkStorageAvailability);
   }
 
   if (document.readyState === "loading") {
