@@ -274,37 +274,78 @@
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  /* Build a pre-filled Reddit compose URL for cross-posting an existing
-   * post into a different subreddit. Reddit's /submit page accepts:
+  /* Build a pre-filled Reddit compose URL for cross-posting into a
+   * subreddit. Reddit's /submit page accepts:
    *   ?title=…
    *   ?selftext=true&text=…   for self/text posts (markdown supported)
    *   ?selftext=false&url=…   for link posts
    *
-   * Self-post body is the original post's `selftext` (markdown). We cap
-   * the body to 30,000 chars to stay well within practical URL-length
-   * limits on iOS Safari and other mobile browsers.
+   * Body is capped at 30,000 chars by default to stay well within
+   * practical URL-length limits on iOS Safari and other mobile
+   * browsers. Callers that have done their own length budgeting (the
+   * composer warns at 7000 and offers a "truncate to fit" button) can
+   * raise the cap explicitly via `opts.maxBody`.
    *
-   * Returns a string URL or null if `sub` / `post` aren't usable. */
-  Util.buildSubmitUrl = function (sub, post) {
-    if (!sub || !post) return null;
+   * Two call shapes:
+   *
+   *   1. Existing post object (used by the targeting recommender to
+   *      offer a "share this post to r/X" link):
+   *        Util.buildSubmitUrl("ProgressivePolitics", postFromReddit)
+   *
+   *   2. Composer draft (used by the markdown composer to bulk-emit
+   *      submit URLs from a not-yet-posted draft):
+   *        Util.buildSubmitUrl("ProgressivePolitics", {
+   *          title: "…", body: "…", url: "…", isLinkPost: false
+   *        }, { maxBody: 7500 })
+   *
+   * Returns a string URL or null if `sub` / `data` aren't usable. */
+  Util.buildSubmitUrl = function (sub, data, opts) {
+    if (!sub || !data) return null;
     const subName = String(sub).replace(/^\/?r\//i, "").trim();
     if (!subName) return null;
+    opts = opts || {};
+    const maxBody = Number.isFinite(opts.maxBody) ? opts.maxBody : 30000;
     const enc = encodeURIComponent;
-    /* Reddit caps titles at 300 chars. */
-    const title = String(post.title || "").slice(0, 300);
+
+    /* Composer-draft shape (object-form: { title, body, url, isLinkPost }).
+     * Distinguished from a Reddit post object by the presence of `body`
+     * or `isLinkPost` properties — Reddit posts use `selftext` and
+     * `is_self`. We support both shapes for backward compat with the
+     * targeting recommender, which feeds existing-post objects. */
+    const isDraft =
+      Object.prototype.hasOwnProperty.call(data, "body") ||
+      Object.prototype.hasOwnProperty.call(data, "isLinkPost");
+
+    let title, isSelf, text, linkUrl;
+    if (isDraft) {
+      title = String(data.title || "").slice(0, 300);
+      isSelf = !data.isLinkPost;
+      text = String(data.body || "");
+      linkUrl = String(data.url || "");
+    } else {
+      title = String(data.title || "").slice(0, 300);
+      /* Treat the post as a self/text post if Reddit marked it so OR
+       * if the link URL points back at the post itself (Reddit posts
+       * a /comments/... permalink as `url` for self posts). */
+      isSelf = !!(data.is_self || (data.url && /\/comments\//.test(data.url)));
+      text = String(data.selftext || "");
+      linkUrl = String(data.url || "");
+    }
+
+    if (text.length > maxBody) text = text.slice(0, maxBody);
+
     const params = ["title=" + enc(title)];
-    /* Treat the post as a self/text post if Reddit marked it so OR if
-     * the link URL points back at the post itself (Reddit posts a
-     * /comments/... permalink as `url` for self posts). */
-    const isSelf = post.is_self || (post.url && /\/comments\//.test(post.url));
     if (isSelf) {
-      const raw = String(post.selftext || "");
-      const text = raw.length > 30000 ? raw.slice(0, 30000) : raw;
       params.push("selftext=true");
       if (text) params.push("text=" + enc(text));
-    } else if (post.url) {
+    } else if (linkUrl) {
       params.push("selftext=false");
-      params.push("url=" + enc(post.url));
+      params.push("url=" + enc(linkUrl));
+    } else {
+      /* Draft with neither body nor URL — still render a self-post
+       * skeleton so the user lands on the compose page with a title
+       * filled in but the body empty for them to type fresh. */
+      params.push("selftext=true");
     }
     return "https://www.reddit.com/r/" + enc(subName) + "/submit?" + params.join("&");
   };
