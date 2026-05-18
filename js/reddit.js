@@ -40,15 +40,58 @@
   const CUSTOM_PROXY_KEY = "rj.customProxy";
 
   function getCustomProxyUrl() {
-    try { return localStorage.getItem(CUSTOM_PROXY_KEY) || ""; }
-    catch (_) { return ""; }
+    try {
+      const raw = localStorage.getItem(CUSTOM_PROXY_KEY) || "";
+      const normalized = normalizeCustomProxyUrl(raw);
+      /* One-time auto-heal: if the stored value isn't already
+       * canonical (trailing slash, extra whitespace, etc.), rewrite
+       * it. This rescues users who pasted before the
+       * normalization fix shipped — without this, their old
+       * entry keeps producing broken `/?url=` URLs forever. */
+      if (raw !== normalized) {
+        try { localStorage.setItem(CUSTOM_PROXY_KEY, normalized); } catch (_) {}
+      }
+      return normalized;
+    } catch (_) { return ""; }
   }
   function setCustomProxyUrl(url) {
     try {
-      const v = String(url || "").trim();
+      const v = normalizeCustomProxyUrl(url);
       if (v) localStorage.setItem(CUSTOM_PROXY_KEY, v);
       else localStorage.removeItem(CUSTOM_PROXY_KEY);
     } catch (_) {}
+  }
+  /* Normalize a user-pasted proxy URL.
+   *
+   * Why: users routinely paste with a trailing slash
+   * (`https://x.workers.dev/`). For a Cloudflare Worker, that slash
+   * is meaningless — the worker has no /path routing. But the OLD
+   * customBuild used `endsWith("/")` as a signal that the user
+   * wanted CODETABS-STYLE PATH-BASED proxying:
+   *
+   *   "https://x.workers.dev/" + "https://www.reddit.com/…"
+   *   -> "https://x.workers.dev/https://www.reddit.com/…"
+   *
+   * Our worker reads its target from ?url=, not from the path, so
+   * it would reject every such request with
+   *   {"error":400,"message":"Missing ?url= parameter."}
+   *
+   * Fix: strip a trailing slash when the URL is bare-host (no
+   * other path component, no query). That preserves explicit path
+   * proxies like `https://my.com/proxy/` while disambiguating the
+   * common Cloudflare Worker paste case.
+   */
+  function normalizeCustomProxyUrl(url) {
+    let v = String(url || "").trim();
+    if (!v) return "";
+    try {
+      const parsed = new URL(v);
+      /* Bare host: pathname is "/" and no search params. */
+      if (parsed.pathname === "/" && !parsed.search) {
+        v = parsed.protocol + "//" + parsed.host;
+      }
+    } catch (_) { /* malformed input — leave as-is, customBuild will fail loudly */ }
+    return v;
   }
   Reddit.getCustomProxyUrl = getCustomProxyUrl;
   Reddit.setCustomProxyUrl = setCustomProxyUrl;
@@ -65,22 +108,26 @@
   function customBuild(reddit) {
     const base = getCustomProxyUrl();
     if (!base) return null;
+    /* 1. Explicit `?url=` / `?` / `&` stub — caller has pre-shaped
+     *    the proxy URL; we just append the encoded target. */
     if (/[\?&]url=$/i.test(base) || base.endsWith("?") || base.endsWith("&")) {
       return base + encodeURIComponent(reddit);
     }
-    if (/\/proxy\/?$/i.test(base) || base.endsWith("/")) {
-      return base + reddit;
+    /* 2. Codetabs-style path-based proxy — caller put `/proxy/` in
+     *    the path. We append the FULL Reddit URL with no encoding. */
+    if (/\/proxy\/?$/i.test(base)) {
+      return base.replace(/\/?$/, "/") + reddit;
     }
-    /* Has a query already — append as another param. */
+    /* 3. Already has a query — append as another param. */
     if (base.includes("?")) {
       return base + "&url=" + encodeURIComponent(reddit);
     }
-    /* Bare host with no path/query (e.g. `https://x.workers.dev`).
-     * Normalize to `https://x.workers.dev/?url=…` so the URL is
-     * canonically shaped — browsers tolerate the missing `/` but
-     * some upstream proxies (and CDNs in front of them) treat the
-     * two as different cache keys. */
-    return base + "/?url=" + encodeURIComponent(reddit);
+    /* 4. DEFAULT: append `/?url=…`. This is the right shape for a
+     *    Cloudflare Worker. We strip any trailing slash on the
+     *    base first (setCustomProxyUrl normalizes already, but
+     *    this is belt-and-suspenders for share-link payloads that
+     *    might have escaped normalization). */
+    return base.replace(/\/+$/, "") + "/?url=" + encodeURIComponent(reddit);
   }
 
   /* A "transport" wraps a Reddit URL into a CORS-friendly request.

@@ -72,7 +72,7 @@
  *
  * ===================================================================== */
 
-const VERSION = "v2.0";
+const VERSION = "v2.1";
 
 const ALLOWED_HOSTS = new Set([
   "www.reddit.com",
@@ -123,10 +123,45 @@ export default {
       }, { cache: false });
     }
 
-    /* --- Pull and validate the target URL --- */
-    const targetParam = url.searchParams.get("url");
+    /* --- Pull and validate the target URL ---
+     *
+     * Two formats supported:
+     *
+     *   1. Query-string (preferred, what the dashboard sends):
+     *        /?url=<encoded reddit URL>
+     *
+     *   2. Path-based fallback (codetabs-style, defensive):
+     *        /<full reddit URL>
+     *      e.g. /https://www.reddit.com/r/50501/hot.json
+     *
+     * (2) catches users whose proxy-URL paste had a trailing slash,
+     *     which made the dashboard's customBuild emit
+     *     `https://worker/https://www.reddit.com/...` instead of
+     *     `https://worker/?url=...`. Without this fallback every
+     *     such request returned 400 "Missing ?url=" and the
+     *     dashboard's circuit-breaker would compound the failure.
+     */
+    let targetParam = url.searchParams.get("url");
     if (!targetParam) {
-      return jsonResponse(400, { error: 400, message: "Missing ?url= parameter. Pass an encoded Reddit JSON URL." });
+      const pathMatch = url.pathname.match(/^\/(https?:\/\/.+)$/);
+      if (pathMatch) {
+        /* Re-attach any query string the dashboard appended to the
+         * Reddit URL (raw_json=1 etc.). url.search includes the
+         * leading "?" or is empty. */
+        targetParam = pathMatch[1] + url.search;
+      }
+    }
+    if (!targetParam) {
+      return jsonResponse(400, {
+        error: 400,
+        message: "Missing target URL. Pass it as ?url=<encoded reddit URL> or as a /<full reddit URL> path.",
+        examples: [
+          "/?url=https%3A%2F%2Fwww.reddit.com%2Fr%2F50501%2Fhot.json",
+          "/https://www.reddit.com/r/50501/hot.json",
+          "/?ping",
+        ],
+        worker: VERSION,
+      });
     }
 
     let targetUrl;

@@ -9,14 +9,15 @@ allows. Deploying your own worker takes about **3 minutes** and gives
 you a stable proxy the dashboard can hit. **No credit card. 100,000
 free requests per day.**
 
-> **Already running v1?** v1 had a cache-poisoning bug where
-> Cloudflare cached Reddit's 429 / 403 errors for 60 seconds —
-> meaning one transient Reddit hiccup left your worker stuck
-> returning errors for a full minute. **v2 (this file) fixes
-> that** by only caching successful responses. If you deployed
-> v1 and you're seeing "got 100 results then everything fails",
-> redeploy with the v2 code — see [§ Updating an existing
-> worker](#updating-an-existing-worker) below.
+> **Already running v1 / v2.0?** v1 had a cache-poisoning bug where
+> Cloudflare cached Reddit's 429 / 403 errors for 60 seconds. v2.0
+> fixed that. v2.1 (this file) additionally accepts path-based
+> URLs as a fallback so a stray trailing slash in your dashboard
+> proxy-URL field doesn't produce 400s. If you deployed any earlier
+> version, redeploy with the v2.1 code — see
+> [§ Updating an existing worker](#updating-an-existing-worker)
+> below. You can verify the running version any time with
+> `https://<your-worker>.workers.dev/?ping`.
 
 ---
 
@@ -97,6 +98,9 @@ In the left sidebar:
 - In the topbar / Filters, find **Data source** and pick **Custom (your
   CORS proxy)**.
 - Paste your worker URL into the field that appears.
+  - Either `https://reddit-proxy.<your-account>.workers.dev`
+    or `https://reddit-proxy.<your-account>.workers.dev/` works —
+    the dashboard normalizes the trailing slash automatically.
 - Tap **Refresh** (or **Go**) — your fetches now route through your
   worker.
 
@@ -138,8 +142,9 @@ Should return immediately:
 {"ok":true,"version":"v2.0","worker":"reddit-proxy","time":"…"}
 ```
 
-If `version` is missing or doesn't say `v2.0`, you're still running an
-older deployment — go through the [update flow](#updating-an-existing-worker).
+If `version` is missing or doesn't say `v2.1` (or newer), you're
+still running an older deployment — go through the
+[update flow](#updating-an-existing-worker).
 
 End-to-end check (fetches Reddit JSON via your worker):
 
@@ -153,6 +158,22 @@ You should see Reddit JSON. If you see a `403 Blocked` page, see
 ---
 
 ## Troubleshooting
+
+### `{"error":400,"message":"Missing ?url= parameter…"}`
+
+This message means the worker is alive but received a request with
+no target URL. Two ways to see it:
+
+- **You opened the bare worker URL directly in a browser.** Expected.
+  The worker doesn't know what to fetch unless you append `?url=`
+  or `?ping`. Try `https://<your-worker>.workers.dev/?ping` instead
+  — should return `{"ok":true,"version":"v2.1",…}`.
+- **The dashboard sends requests that produce this 400.** Was a
+  bug in the dashboard prior to this fix — pasting the worker URL
+  with a trailing slash made the dashboard build path-based URLs
+  the worker didn't accept. Redeploy this v2.1 worker (which
+  accepts both formats) AND make sure the dashboard is on the
+  latest version.
 
 ### "Got 100 results then everything fails" / stuck failing for ~60s
 
