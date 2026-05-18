@@ -38,7 +38,11 @@
    * never reorder — index positions are part of the wire format. */
   const LISTINGS   = ["hot", "new", "top", "rising", "controversial"];
   const TIMES      = ["hour", "day", "week", "month", "year", "all"];
-  const TRANSPORTS = ["auto", "codetabs", "allorigins", "corsproxy", "isomorphic", "direct"];
+  /* "custom" was appended in May 2026 when Reddit's IP block lists
+   * killed the public proxies and we shipped Cloudflare-Worker
+   * support. NEVER reorder — older shared links rely on these
+   * indexes mapping to the same names. */
+  const TRANSPORTS = ["auto", "codetabs", "allorigins", "corsproxy", "isomorphic", "direct", "custom"];
 
   function idx(arr, v, fallback) {
     const i = arr.indexOf(v);
@@ -72,6 +76,11 @@
         time: safe("rj.time") || "week",
         limit: num(safe("rj.limit")) || 100,
         transport: safe("rj.transport") || "auto",
+        /* The Cloudflare Worker URL the user pasted into Data
+         * source → Custom. Sharing it lets a teammate inherit
+         * the same proxy from a single shared link instead of
+         * deploying a worker each. */
+        customProxy: safe("rj.customProxy") || "",
       },
     };
   };
@@ -125,7 +134,7 @@
       Number(prefs.limit) || 100,
       idx(TRANSPORTS, prefs.transport || "auto"),
     ];
-    return [
+    const out = [
       2,
       Number(payload.ts) || Date.now(),
       campaigns,
@@ -133,6 +142,12 @@
       payload.activeSpheres || [],
       prefsArr,
     ];
+    /* OPTIONAL position [6] — custom proxy URL. Appended only when
+     * the user has actually configured one, to keep the common-case
+     * payload short. Older clients (length-6 reads) ignore it
+     * harmlessly. */
+    if (prefs.customProxy) out.push(String(prefs.customProxy));
+    return out;
   }
   function decompactify(arr) {
     if (!Array.isArray(arr) || arr.length < 6 || arr[0] !== 2) return null;
@@ -161,6 +176,13 @@
       limit:     Number(prefsArr[2]) || 100,
       transport: TRANSPORTS[prefsArr[3] | 0] || "auto",
     };
+    /* Position [6] is the optional custom proxy URL (Cloudflare
+     * Worker, typically). Older shared links omit this — leave
+     * the field empty so applyPayload doesn't clobber the user's
+     * existing local setting in that case. */
+    if (typeof arr[6] === "string" && arr[6]) {
+      prefs.customProxy = arr[6];
+    }
     return {
       v: 2,
       ts: ts || Date.now(),
@@ -454,6 +476,10 @@
     pref("rj.time", prefs.time);
     pref("rj.limit", prefs.limit);
     pref("rj.transport", prefs.transport);
+    /* Only overwrite customProxy when the incoming payload actually
+     * carries one — empty/missing values must never wipe a local
+     * worker URL the user has already set up. */
+    if (prefs.customProxy) pref("rj.customProxy", prefs.customProxy);
 
     return {
       mode,

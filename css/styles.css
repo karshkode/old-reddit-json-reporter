@@ -179,6 +179,36 @@ button { font-family: inherit; }
 }
 .topbar-select select:focus { border-color: var(--accent); outline: none; }
 
+/* Custom-proxy URL input shown next to the Data source dropdown
+ * when the user picks "Custom (your CORS proxy)". Width is generous
+ * because most worker URLs are 35-45 chars. The mobile twin lives
+ * inside .control-group and inherits the form-control reset. */
+.topbar-custom-proxy {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0;
+  min-width: 240px;
+  max-width: 320px;
+}
+.topbar-custom-proxy:focus { border-color: var(--accent); outline: none; }
+.custom-proxy-input {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  width: 100%;
+  margin-top: 4px;
+}
+.custom-proxy-input:focus { border-color: var(--accent); outline: none; }
+
 /* ---------- Buttons ---------- */
 
 .btn {
@@ -1881,6 +1911,51 @@ footer {
   padding: 8px 16px;
   margin: 0 max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
   box-shadow: 0 4px 18px rgba(255, 87, 34, 0.10);
+}
+
+/* "Reddit is blocking the public proxies" banner. Sits below the
+ * action-banner, styled in the negative-state palette so users
+ * read it as urgent, not informational. Only appears when both
+ * conditions are met:
+ *   1. recent transport stats show the public proxies failing, AND
+ *   2. the user has NOT configured a custom proxy URL. */
+.proxy-down-banner {
+  position: sticky;
+  top: calc(var(--topbar-h, 64px) + 60px);
+  z-index: 18;
+  background: linear-gradient(180deg, rgba(220, 53, 69, 0.16), rgba(220, 53, 69, 0.06));
+  border: 1px solid rgba(220, 53, 69, 0.45);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin: 8px max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
+  color: var(--text);
+}
+.proxy-down-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.proxy-down-banner-text {
+  flex: 1 1 280px;
+  min-width: 240px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.proxy-down-banner-text em {
+  font-style: normal;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.proxy-down-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) {
+  .proxy-down-banner { margin: 6px 0 0 0; border-radius: 0; border-left-width: 0; border-right-width: 0; }
+  .proxy-down-banner-text { font-size: 12px; }
 }
 
 /* Single row containing the status text + (optional) progress fill on
