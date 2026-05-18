@@ -3281,3 +3281,15 @@ body.modal-open { overflow: hidden; }
 
 /* (Legacy .go-banner / .progress-banner styles removed — superseded by
  * the unified .action-banner block higher up in this file.) */
+
+/* =====================================================================
+   REDDIT-NATIVE QUALITY FLAGS — pill tags rendered next to flair on
+   each post row. Surface mod-pinned (📌), removed (🗑), NSFW, spoiler,
+   and locked posts so downstream analysis isn't conflated with
+   organic breakouts.
+   ===================================================================== */
+.tag.flag-stickied { background: rgba(96, 165, 250, 0.18); color: var(--info); border-color: rgba(96, 165, 250, 0.35); }
+.tag.flag-removed  { background: rgba(239, 68, 68, 0.18);  color: var(--bad);  border-color: rgba(239, 68, 68, 0.35); }
+.tag.flag-nsfw     { background: rgba(239, 68, 68, 0.22);  color: #fff;        border-color: rgba(239, 68, 68, 0.5); font-weight: 700; letter-spacing: 0.4px; }
+.tag.flag-spoiler  { background: rgba(251, 191, 36, 0.18); color: var(--warn); border-color: rgba(251, 191, 36, 0.35); }
+.tag.flag-locked   { background: rgba(148, 163, 184, 0.18); color: var(--text-mute); border-color: rgba(148, 163, 184, 0.35); }

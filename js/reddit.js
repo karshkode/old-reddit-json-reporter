@@ -422,6 +422,21 @@
     const m = d.media || {};
     const oe = (m && m.oembed) || {};
     const sm = d.secure_media_embed || {};
+    /* Reddit-native data-quality flags. These distort score-based
+     * analytics (mod-pinned posts get artificial boost; removed posts
+     * have no real engagement) so downstream UI can call them out and
+     * the median/percentile math can exclude them. */
+    const removedReason = d.removed_by_category || null;
+    const isRemoved = !!(d.removed || (d.selftext === "[removed]") || (d.author === "[deleted]") || removedReason);
+    const isModPinned = !!(d.stickied || d.pinned);
+    const isLocked = !!d.locked;
+    const isOver18 = !!d.over_18;
+    const isSpoiler = !!d.spoiler;
+    /* Reddit-native crosspost (a post that REPOSTS another post via
+     * Reddit's /submit-crosspost UI). The parent's full data is in
+     * crosspost_parent_list[0] when present. */
+    const xpParentList = Array.isArray(d.crosspost_parent_list) ? d.crosspost_parent_list : [];
+    const xpParent = xpParentList[0] || null;
     return {
       id: d.id,
       fullname: d.name,
@@ -437,20 +452,27 @@
       num_comments: d.num_comments,
       view_count: d.view_count,
       url: d.url,
+      url_canonical: canonicalizeUrl(d.url),
       permalink: "https://www.reddit.com" + (d.permalink || ""),
       domain: d.domain,
       is_self: d.is_self,
       is_video: !!d.is_video,
       is_gallery: !!d.is_gallery,
-      over_18: d.over_18,
-      stickied: d.stickied,
-      spoiler: d.spoiler,
-      locked: d.locked,
+      /* Reddit-native quality flags */
+      over_18:        isOver18,
+      stickied:       isModPinned,
+      pinned:         !!d.pinned,
+      spoiler:        isSpoiler,
+      locked:         isLocked,
+      removed:        isRemoved,
+      removed_reason: removedReason,
       flair: d.link_flair_text,
       flair_css: d.link_flair_css_class,
       total_awards: d.total_awards_received,
-      crosspost_parent_id: d.crosspost_parent,
-      selftext: d.selftext || "",
+      crosspost_parent_id: d.crosspost_parent || (xpParent && xpParent.name) || null,
+      crosspost_parent_sub: xpParent ? xpParent.subreddit : null,
+      crosspost_parent_title: xpParent ? xpParent.title : null,
+      selftext: isRemoved ? "" : (d.selftext || ""),
       thumbnail: d.thumbnail,
       /* Embedded-media metadata (see comment above). */
       media_title:    oe.title         || sm.title         || null,
@@ -459,6 +481,65 @@
       media_thumbnail: oe.thumbnail_url || null,
     };
   }
+
+  /* Strip tracking params + collapse known equivalent hostnames so two
+   * posts that link to "the same content with different garnish" group
+   * together in cross-post detection. Leaves the original .url field
+   * untouched (we still want to render it / link to it); only drives
+   * the matching key. */
+  /* Tracking params to drop. The first group is exact-match parameter
+   * names; the second is prefix match (utm_*, mc_*, _ga*). */
+  const TRACKING_EXACT = new Set(["ref","ref_src","ref_url","fbclid","gclid","igshid","si","t","feature","cid","src","spm","cmpid","smid","s","y","ncid","sr_share","share_id"]);
+  const TRACKING_PREFIX = /^(utm_|mc_|ga_|_ga|_hs|hs)/i;
+  const HOST_ALIASES = {
+    "youtu.be":     "youtube.com",
+    "m.youtube.com": "youtube.com",
+    "music.youtube.com": "youtube.com",
+    "old.reddit.com":   "reddit.com",
+    "www.reddit.com":   "reddit.com",
+    "new.reddit.com":   "reddit.com",
+    "np.reddit.com":    "reddit.com",
+    "i.redd.it":        "reddit.com",
+    "v.redd.it":        "reddit.com",
+    "mobile.twitter.com": "twitter.com",
+    "x.com":            "twitter.com",
+    "nitter.net":       "twitter.com",
+    "m.facebook.com":   "facebook.com",
+    "lm.facebook.com":  "facebook.com",
+    "amp.cnn.com":      "cnn.com",
+    "amp.theguardian.com": "theguardian.com",
+  };
+  function canonicalizeUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== "string") return rawUrl;
+    /* self-text posts have url === permalink; use the permalink path
+     * itself as the key — collapses /comments/<id>/* variants. */
+    try {
+      const u = new URL(rawUrl);
+      let host = u.hostname.toLowerCase();
+      if (host.startsWith("www.")) host = host.slice(4);
+      if (HOST_ALIASES[host]) host = HOST_ALIASES[host];
+      /* youtu.be/<id> -> youtube.com/watch?v=<id> */
+      if (u.hostname === "youtu.be") {
+        const id = u.pathname.replace(/^\/+/, "").split("/")[0];
+        if (id) return "https://youtube.com/watch?v=" + id;
+      }
+      /* Strip tracking params, sort the rest for stable order. */
+      const keep = [];
+      for (const [k, v] of u.searchParams) {
+        if (TRACKING_EXACT.has(k.toLowerCase())) continue;
+        if (TRACKING_PREFIX.test(k)) continue;
+        keep.push([k, v]);
+      }
+      keep.sort((a, b) => a[0].localeCompare(b[0]));
+      const search = keep.length ? "?" + keep.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&") : "";
+      /* Drop trailing slash on path (but not on root) and drop fragment. */
+      let path = u.pathname.replace(/\/+$/, "") || "/";
+      return "https://" + host + path + search;
+    } catch (_) {
+      return String(rawUrl).split("?")[0].replace(/\/+$/, "");
+    }
+  }
+  Reddit.canonicalizeUrl = canonicalizeUrl;
 
   Reddit.normalizePost = normalizePost;
 
