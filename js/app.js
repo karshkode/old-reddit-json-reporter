@@ -414,6 +414,50 @@
     Util.setActionPhase("pending", reason ? `${reason} — ${tail}` : tail);
   }
 
+  /* "Deploy a Cloudflare Worker" suggestion banner.
+   *
+   * Visibility rules:
+   *   - Hidden if the user already pasted a custom proxy URL (they're
+   *     already on the recommended path).
+   *   - Hidden if the user has manually dismissed it this session.
+   *   - Shown when public-proxy stats meet *both*:
+   *       a. ≥3 attempts have been observed across the public proxies, AND
+   *       b. NONE of the public proxies have a recent-window success rate
+   *          ≥ 50%.
+   *   This avoids false positives on first-load (no stats yet) and
+   *   on transient single-proxy failures. */
+  let proxyDownBannerDismissed = false;
+  function maybeShowProxyDownBanner(statsByTransport) {
+    const el = document.getElementById("proxy-down-banner");
+    if (!el) return;
+    if (proxyDownBannerDismissed) { el.hidden = true; return; }
+    if (Reddit.getCustomProxyUrl && Reddit.getCustomProxyUrl()) { el.hidden = true; return; }
+
+    const PUBLIC = ["codetabs", "allorigins", "corsproxy", "isomorphic"];
+    let totalAttempts = 0;
+    let anyHealthy = false;
+    for (const name of PUBLIC) {
+      const s = (statsByTransport || {})[name];
+      if (!s) continue;
+      const recent = (s.recent || []).slice(-20);
+      const total = recent.length || (s.ok + s.fail);
+      if (!total) continue;
+      const ok = recent.length ? recent.filter((x) => x).length : s.ok;
+      const rate = total ? ok / total : 1;
+      totalAttempts += total;
+      if (rate >= 0.5) anyHealthy = true;
+    }
+
+    el.hidden = !(totalAttempts >= 3 && !anyHealthy);
+  }
+  /* Wire the dismiss button — moved here so it's defined before
+   * bind() runs. The button itself is set up in bind(). */
+  function dismissProxyDownBanner() {
+    proxyDownBannerDismissed = true;
+    const el = document.getElementById("proxy-down-banner");
+    if (el) el.hidden = true;
+  }
+
   /* ---------- Data fetch ---------- */
 
   async function refreshData(force) {
@@ -1436,11 +1480,62 @@
     populateTransportSelect(transportSelect);
     populateTransportSelect(transportSelectMobile);
 
+    /* Custom-proxy URL inputs. Visible when:
+     *   - the user picks "Custom (your CORS proxy)" from Data source, OR
+     *   - they've already pasted a URL (so they can re-edit even on auto)
+     *
+     * The input is paired with localStorage via Reddit.{get,set}CustomProxyUrl.
+     * Cross-device sharing rides through the existing Sync payload. */
+    const customInput = document.getElementById("custom-proxy-input");
+    const customInputMobile = document.getElementById("custom-proxy-input-mobile");
+
+    function syncCustomInputVisibility() {
+      const t = Reddit.getTransport();
+      const haveUrl = !!Reddit.getCustomProxyUrl();
+      const visible = t === "custom" || haveUrl;
+      [customInput, customInputMobile].forEach((el) => {
+        if (!el) return;
+        el.hidden = !visible;
+        el.value = Reddit.getCustomProxyUrl();
+      });
+    }
+
+    function onCustomProxyChange(e) {
+      const v = String(e.target.value || "").trim();
+      Reddit.setCustomProxyUrl(v);
+      if (customInput && customInput !== e.target) customInput.value = v;
+      if (customInputMobile && customInputMobile !== e.target) customInputMobile.value = v;
+      Reddit.clearCache();
+      if (typeof Reddit.resetCircuitBreaker === "function") Reddit.resetCircuitBreaker();
+      Util.toast(v ? "Custom proxy saved" : "Custom proxy cleared", "ok");
+      markPending();
+    }
+
+    if (customInput) {
+      customInput.addEventListener("change", onCustomProxyChange);
+      customInput.addEventListener("blur", onCustomProxyChange);
+    }
+    if (customInputMobile) {
+      customInputMobile.addEventListener("change", onCustomProxyChange);
+      customInputMobile.addEventListener("blur", onCustomProxyChange);
+    }
+
+    syncCustomInputVisibility();
+
+    /* Dismiss button on the "Reddit blocked" suggestion banner.
+     * Once dismissed it stays hidden until the user reloads the tab,
+     * matching the behavior of the share-import banner. */
+    const proxyDownDismiss = document.getElementById("proxy-down-banner-dismiss");
+    if (proxyDownDismiss) {
+      proxyDownDismiss.addEventListener("click", dismissProxyDownBanner);
+    }
+
     function onTransportChange(e) {
       const v = e.target.value;
       Reddit.setTransport(v);
       if (transportSelect && transportSelect !== e.target) transportSelect.value = v;
       if (transportSelectMobile && transportSelectMobile !== e.target) transportSelectMobile.value = v;
+      syncCustomInputVisibility();
       Reddit.clearCache();
       Util.toast(`Data source: ${v}`, "ok");
       refreshData(true);
@@ -1456,24 +1551,35 @@
      * Updates after every fetch attempt via Reddit.onTransportStats. */
     Reddit.onTransportStats = function (statsByTransport) {
       const el = document.getElementById("proxy-health");
-      if (!el) return;
       const entries = Object.entries(statsByTransport || {});
-      if (!entries.length) { el.hidden = true; return; }
-      el.hidden = false;
-      const pills = entries.map(([name, s]) => {
-        /* Recent-window success rate (last 20 attempts). Falls back to
-         * the all-time rate when fewer than 5 attempts. */
-        const recent = (s.recent || []).slice(-20);
-        const total = recent.length || (s.ok + s.fail);
-        const ok = recent.length ? recent.filter((x) => x).length : s.ok;
-        const rate = total ? ok / total : 1;
-        const cls = rate >= 0.9 ? "ok" : rate >= 0.5 ? "warn" : "bad";
-        const sym = rate >= 0.9 ? "✓" : rate >= 0.5 ? "⚠" : "✗";
-        const tail = (rate < 1 && s.lastKind) ? ` · last: ${s.lastKind}` : "";
-        const tip = `${s.ok} ok / ${s.fail} fail (last ${total})${tail}`;
-        return `<span class="proxy-pill ${cls}" title="${Util.escapeHtml(tip)}">${sym} ${Util.escapeHtml(name)} <strong>${Math.round(rate * 100)}%</strong></span>`;
-      });
-      el.innerHTML = `<span class="proxy-health-label">Proxy health:</span>${pills.join("")}`;
+
+      /* --- The visible health pills in the footer --- */
+      if (el) {
+        if (!entries.length) {
+          el.hidden = true;
+        } else {
+          el.hidden = false;
+          const pills = entries.map(([name, s]) => {
+            const recent = (s.recent || []).slice(-20);
+            const total = recent.length || (s.ok + s.fail);
+            const ok = recent.length ? recent.filter((x) => x).length : s.ok;
+            const rate = total ? ok / total : 1;
+            const cls = rate >= 0.9 ? "ok" : rate >= 0.5 ? "warn" : "bad";
+            const sym = rate >= 0.9 ? "✓" : rate >= 0.5 ? "⚠" : "✗";
+            const tail = (rate < 1 && s.lastKind) ? ` · last: ${s.lastKind}` : "";
+            const tip = `${s.ok} ok / ${s.fail} fail (last ${total})${tail}`;
+            return `<span class="proxy-pill ${cls}" title="${Util.escapeHtml(tip)}">${sym} ${Util.escapeHtml(name)} <strong>${Math.round(rate * 100)}%</strong></span>`;
+          });
+          el.innerHTML = `<span class="proxy-health-label">Proxy health:</span>${pills.join("")}`;
+        }
+      }
+
+      /* --- The "deploy a Cloudflare Worker" suggestion banner ---
+       * Triggered when the public proxies are demonstrably failing
+       * AND the user hasn't already set up their own. The banner
+       * stays dismissable; once dismissed it doesn't return until
+       * the user opens a fresh tab. */
+      maybeShowProxyDownBanner(statsByTransport);
     };
 
     const filtersToggle = document.getElementById("filters-toggle");

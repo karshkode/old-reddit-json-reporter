@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
   <link rel="preconnect" href="https://api.allorigins.win" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260518l" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260518m" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4500'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
@@ -40,6 +40,17 @@
         <span>Data source</span>
         <select id="transport-select"></select>
       </label>
+      <!-- Custom-proxy URL input. Hidden until the user picks Custom
+           or auto-detection promotes it. Persists to localStorage
+           and rides cross-device through the existing Sync payload. -->
+      <input id="custom-proxy-input"
+             class="topbar-custom-proxy hide-mobile"
+             type="url"
+             placeholder="https://reddit-proxy.you.workers.dev"
+             autocomplete="off"
+             spellcheck="false"
+             title="Your Cloudflare Worker URL — see cloudflare-worker/SETUP.md in the repo for the 3-minute setup."
+             hidden />
       <button id="clear-cache-btn" class="btn ghost hide-mobile" title="Clear cached responses">Clear cache</button>
       <a class="btn ghost hide-mobile" href="https://github.com/karshkode/old-reddit-json-reporter" id="repo-link" target="_blank" rel="noopener">Source</a>
     </div>
@@ -109,6 +120,13 @@
     <div class="control-group only-mobile cg-data-source-mobile">
       <label for="transport-select-mobile" class="group-label">Data source</label>
       <select id="transport-select-mobile"></select>
+      <input id="custom-proxy-input-mobile"
+             class="custom-proxy-input"
+             type="url"
+             placeholder="https://reddit-proxy.you.workers.dev"
+             autocomplete="off"
+             spellcheck="false"
+             hidden />
       <button id="clear-cache-btn-mobile" class="btn small ghost" type="button">Clear cache</button>
     </div>
 
@@ -156,6 +174,29 @@
         <span class="action-btn-icon" aria-hidden="true">▶</span>
         <span class="action-btn-label">Go</span>
       </button>
+    </div>
+  </div>
+
+  <!-- Auto-shown when the dashboard detects that ALL public CORS
+       proxies are failing AND the user hasn't configured a custom one
+       (typically a Cloudflare Worker). Reddit periodically tightens
+       their datacenter-IP block list and breaks the public proxies en
+       masse; instead of leaving the user staring at red errors we
+       point them at the SETUP.md walkthrough. -->
+  <div id="proxy-down-banner" class="proxy-down-banner" hidden role="alert" aria-live="assertive">
+    <div class="proxy-down-banner-row">
+      <div class="proxy-down-banner-text">
+        <strong>Reddit is blocking the public proxies.</strong>
+        Deploy your own free Cloudflare Worker (~3 minutes, no credit card)
+        and paste the URL into <em>Data source → Custom</em> above.
+      </div>
+      <div class="proxy-down-banner-actions">
+        <a id="proxy-down-banner-guide"
+           class="btn primary"
+           href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md"
+           target="_blank" rel="noopener">3-min setup guide ↗</a>
+        <button id="proxy-down-banner-dismiss" class="btn ghost" type="button" aria-label="Dismiss">Dismiss</button>
+      </div>
     </div>
   </div>
 
@@ -621,15 +662,15 @@
     </div>
   </div>
 
-  <script src="./js/util.js?v=20260518l"></script>
-  <script src="./js/sync.js?v=20260518l"></script>
-  <script src="./js/reddit.js?v=20260518l"></script>
-  <script src="./js/seeds.js?v=20260518l"></script>
-  <script src="./js/analysis.js?v=20260518l"></script>
-  <script src="./js/charts.js?v=20260518l"></script>
-  <script src="./js/campaigns.js?v=20260518l"></script>
-  <script src="./js/ui.js?v=20260518l"></script>
-  <script src="./js/app.js?v=20260518l"></script>
+  <script src="./js/util.js?v=20260518m"></script>
+  <script src="./js/sync.js?v=20260518m"></script>
+  <script src="./js/reddit.js?v=20260518m"></script>
+  <script src="./js/seeds.js?v=20260518m"></script>
+  <script src="./js/analysis.js?v=20260518m"></script>
+  <script src="./js/charts.js?v=20260518m"></script>
+  <script src="./js/campaigns.js?v=20260518m"></script>
+  <script src="./js/ui.js?v=20260518m"></script>
+  <script src="./js/app.js?v=20260518m"></script>
   <!-- Service Worker registration (PR 7). Caches static assets for
        offline use + stale-while-revalidate so the dashboard boots
        instantly on repeat visits even with no network. Skipped on

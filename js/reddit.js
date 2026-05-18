@@ -32,6 +32,56 @@
   const memCache = new Map();
   const inflight = new Map();
   const STORAGE_KEY = "rj.transport";
+  /* User-configured custom proxy URL (e.g. their own Cloudflare Worker).
+   * See cloudflare-worker/SETUP.md for deployment instructions. The
+   * dashboard appends ?url=<encoded-reddit-url> automatically; the
+   * `customBuild` helper below is permissive about exactly how the
+   * URL is shaped (with or without trailing `?` / `&` / `?url=`). */
+  const CUSTOM_PROXY_KEY = "rj.customProxy";
+
+  function getCustomProxyUrl() {
+    try { return localStorage.getItem(CUSTOM_PROXY_KEY) || ""; }
+    catch (_) { return ""; }
+  }
+  function setCustomProxyUrl(url) {
+    try {
+      const v = String(url || "").trim();
+      if (v) localStorage.setItem(CUSTOM_PROXY_KEY, v);
+      else localStorage.removeItem(CUSTOM_PROXY_KEY);
+    } catch (_) {}
+  }
+  Reddit.getCustomProxyUrl = getCustomProxyUrl;
+  Reddit.setCustomProxyUrl = setCustomProxyUrl;
+
+  /* Build the per-request URL for a custom proxy. Tolerates three
+   * common shapes the user might paste:
+   *   1. Bare Cloudflare Worker URL          ->  appends `?url=<enc>`
+   *      e.g. https://reddit-proxy.alex.workers.dev
+   *   2. Worker with trailing query stub     ->  appends `<enc>`
+   *      e.g. https://reddit-proxy.alex.workers.dev/?url=
+   *   3. codetabs-style path proxy           ->  appends `<full url>`
+   *      e.g. https://my-proxy.example.com/proxy/
+   */
+  function customBuild(reddit) {
+    const base = getCustomProxyUrl();
+    if (!base) return null;
+    if (/[\?&]url=$/i.test(base) || base.endsWith("?") || base.endsWith("&")) {
+      return base + encodeURIComponent(reddit);
+    }
+    if (/\/proxy\/?$/i.test(base) || base.endsWith("/")) {
+      return base + reddit;
+    }
+    /* Has a query already — append as another param. */
+    if (base.includes("?")) {
+      return base + "&url=" + encodeURIComponent(reddit);
+    }
+    /* Bare host with no path/query (e.g. `https://x.workers.dev`).
+     * Normalize to `https://x.workers.dev/?url=…` so the URL is
+     * canonically shaped — browsers tolerate the missing `/` but
+     * some upstream proxies (and CDNs in front of them) treat the
+     * two as different cache keys. */
+    return base + "/?url=" + encodeURIComponent(reddit);
+  }
 
   /* A "transport" wraps a Reddit URL into a CORS-friendly request.
    * Each transport's `build(redditUrl)` returns the URL the browser hits.
@@ -41,7 +91,8 @@
    * keep it as a manual option but never auto-pick it.
    */
   const TRANSPORTS = [
-    { name: "auto", label: "Auto (try proxies in order)" },
+    { name: "auto", label: "Auto (try custom proxy + public proxies)" },
+    { name: "custom", label: "Custom (your CORS proxy)", build: customBuild },
     { name: "codetabs", label: "codetabs.com proxy", build: (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u) },
     { name: "allorigins", label: "allorigins.win proxy", build: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u) },
     { name: "corsproxy", label: "corsproxy.io proxy", build: (u) => "https://corsproxy.io/?" + encodeURIComponent(u) },
@@ -50,13 +101,12 @@
   ];
   Reddit.TRANSPORTS = TRANSPORTS;
 
-  /* Auto-rotation order. `isomorphic` (cors.isomorphic-git.org) was
-   * removed because the public deployment now returns 403 + 0 bytes
-   * for every Reddit URL — it pollutes the auto chain with
-   * "Load failed" errors that aren't actually informative. It's still
-   * available as a manual option via the Data Source dropdown in
-   * case the upstream comes back online. */
-  const AUTO_ORDER = ["codetabs", "allorigins", "corsproxy"];
+  /* Auto-rotation order. The custom proxy (if configured) is tried
+   * FIRST — it's the user's own infrastructure, statistically the
+   * most reliable. Public proxies follow as fallbacks. `isomorphic`
+   * (cors.isomorphic-git.org) is left out because its deployment is
+   * effectively dead. */
+  const AUTO_ORDER_BASE = ["codetabs", "allorigins", "corsproxy"];
 
   let preferredTransport = "auto";
   try { preferredTransport = localStorage.getItem(STORAGE_KEY) || "auto"; } catch (_) {}
@@ -117,21 +167,33 @@
 
   function transportsToTry() {
     if (preferredTransport === "auto") {
-      const order = AUTO_ORDER.slice();
-      // Bubble the most recently successful transport to the front so a
-      // slow/dead proxy isn't tried first on every subsequent request.
+      const order = AUTO_ORDER_BASE.slice();
+      /* If the user has configured their own proxy (typically a
+       * Cloudflare Worker), put it FIRST. It's the most reliable
+       * link in the chain since the user controls the upstream IP. */
+      if (getCustomProxyUrl()) order.unshift("custom");
+      /* Bubble the most recently successful transport to the front so a
+       * slow/dead proxy isn't tried first on every subsequent request.
+       * The custom proxy already starts at the front so this only
+       * shuffles the public ones. */
       const last = Reddit._lastTransport;
-      if (last && order.includes(last)) {
+      if (last && order.includes(last) && last !== "custom") {
         const i = order.indexOf(last);
-        if (i > 0) {
+        if (i > 1) {  /* skip index 0 if it's the custom proxy */
           const [t] = order.splice(i, 1);
-          order.unshift(t);
+          /* Insert AFTER custom (if present) so custom stays first. */
+          order.splice(getCustomProxyUrl() ? 1 : 0, 0, t);
         }
       }
-      return order.map(getTransportByName).filter(Boolean);
+      return order.map(getTransportByName).filter((t) => t && t.build);
     }
     const t = getTransportByName(preferredTransport);
-    return t && t.build ? [t] : AUTO_ORDER.map(getTransportByName).filter(Boolean);
+    /* If the user picked "custom" but hasn't configured a URL yet, fall
+     * back to auto — better than throwing on every fetch. */
+    if (preferredTransport === "custom" && !getCustomProxyUrl()) {
+      return AUTO_ORDER_BASE.map(getTransportByName).filter((t) => t && t.build);
+    }
+    return t && t.build ? [t] : AUTO_ORDER_BASE.map(getTransportByName).filter((t) => t && t.build);
   }
 
   function looksLikeBlockedHtml(text) {
@@ -175,6 +237,12 @@
 
   async function tryTransport(transport, redditUrl, attempt) {
     const target = transport.build(redditUrl);
+    /* customBuild returns null when the user picked Custom but
+     * hasn't pasted a URL yet. Fail fast with a helpful message
+     * instead of attempting fetch(null). */
+    if (!target) {
+      throw throwTransportError(transport, "no proxy URL configured", attempt);
+    }
     /* 8s hard timeout per proxy attempt — without this a slow proxy can
      * block the entire fallback chain. AbortController is widely supported
      * including iOS Safari 12.1+. */
