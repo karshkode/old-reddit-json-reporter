@@ -268,10 +268,31 @@
     if (res.status === 429) {
       const retry = parseInt(res.headers.get("Retry-After") || "0", 10);
       await Util.sleep(Math.max(800 * Math.pow(2, attempt), retry * 1000));
-      throw throwTransportError(transport, "rate limited (429)", attempt);
+      /* Phrase 429s differently for the user's own proxy vs a public
+       * one — actionable advice is different ("wait and retry" vs
+       * "Reddit is rate-limiting your Cloudflare Worker — wait
+       * 30-60s, the worker's edge cache will mostly absorb future
+       * refreshes once it warms up"). */
+      const phrase = transport.name === "custom"
+        ? "Reddit rate-limited your worker (429) — wait 30-60s, then retry"
+        : "rate limited (429)";
+      throw throwTransportError(transport, phrase, attempt);
     }
     if (!res.ok) {
-      throw throwTransportError(transport, "HTTP " + res.status, attempt);
+      /* Worker v2.0 surfaces Reddit block-pages as 503 with a
+       * structured JSON body. Try to extract the human-readable
+       * `message` so the dashboard error matches the worker's
+       * diagnosis exactly. */
+      let detail = "";
+      if (res.status === 503 && transport.name === "custom") {
+        try {
+          const body = await res.clone().json();
+          if (body && body.message) {
+            detail = ": " + String(body.message).slice(0, 120);
+          }
+        } catch (_) {}
+      }
+      throw throwTransportError(transport, "HTTP " + res.status + detail, attempt);
     }
     const text = await res.text();
     /* Empty 200 — codetabs sometimes returns 200 with a 0-byte body
@@ -467,8 +488,23 @@
       }
       const err = new Error(summary);
       err.attempts = entries.map(([t, k]) => ({ transport: t, kind: k }));
-      /* Trip the breaker so subsequent calls fast-fail. */
-      tripCircuitBreaker(summary);
+      /* Trip the breaker so subsequent calls fast-fail.
+       *
+       * EXCEPT when the only transport that was tried is the user's
+       * own custom proxy. The breaker exists to save the user from
+       * sitting through 30+ seconds of public-proxy timeouts when
+       * everything's down — but a custom proxy responds in well
+       * under a second whether it's healthy or not. Tripping the
+       * breaker on custom-only failures just means the user gets
+       * "fast-fail: …" for 60 seconds every time their personal
+       * worker hiccups once, which is worse than just letting them
+       * tap Refresh and find out immediately. */
+      const onlyCustom = entries.length === 1 && entries[0][0] === "custom";
+      if (!onlyCustom) {
+        tripCircuitBreaker(summary);
+      } else {
+        console.warn("[reddit] custom-only transport failed (" + summary + ") — NOT tripping circuit breaker");
+      }
       throw err;
     })();
     inflight.set(key, promise);
