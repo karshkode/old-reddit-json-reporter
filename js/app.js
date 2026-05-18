@@ -1414,6 +1414,32 @@
 
     Reddit.onTransportSuccess = function (name) { state.lastTransport = name; };
 
+    /* Per-proxy health dashboard. Renders into #proxy-health in the
+     * footer with a small status pill per transport showing recent
+     * success rate ("codetabs ✓ 100% · allorigins ⚠ 60% blocked").
+     * Updates after every fetch attempt via Reddit.onTransportStats. */
+    Reddit.onTransportStats = function (statsByTransport) {
+      const el = document.getElementById("proxy-health");
+      if (!el) return;
+      const entries = Object.entries(statsByTransport || {});
+      if (!entries.length) { el.hidden = true; return; }
+      el.hidden = false;
+      const pills = entries.map(([name, s]) => {
+        /* Recent-window success rate (last 20 attempts). Falls back to
+         * the all-time rate when fewer than 5 attempts. */
+        const recent = (s.recent || []).slice(-20);
+        const total = recent.length || (s.ok + s.fail);
+        const ok = recent.length ? recent.filter((x) => x).length : s.ok;
+        const rate = total ? ok / total : 1;
+        const cls = rate >= 0.9 ? "ok" : rate >= 0.5 ? "warn" : "bad";
+        const sym = rate >= 0.9 ? "✓" : rate >= 0.5 ? "⚠" : "✗";
+        const tail = (rate < 1 && s.lastKind) ? ` · last: ${s.lastKind}` : "";
+        const tip = `${s.ok} ok / ${s.fail} fail (last ${total})${tail}`;
+        return `<span class="proxy-pill ${cls}" title="${Util.escapeHtml(tip)}">${sym} ${Util.escapeHtml(name)} <strong>${Math.round(rate * 100)}%</strong></span>`;
+      });
+      el.innerHTML = `<span class="proxy-health-label">Proxy health:</span>${pills.join("")}`;
+    };
+
     const filtersToggle = document.getElementById("filters-toggle");
     if (filtersToggle) {
       filtersToggle.addEventListener("click", () => {

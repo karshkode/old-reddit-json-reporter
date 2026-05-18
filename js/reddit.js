@@ -214,6 +214,24 @@
     return { data, transport: transport.name };
   }
 
+  /* Per-proxy success/failure tally so the UI can render a small
+   * health dashboard ("codetabs ✓ 100% · allorigins ⚠ 60% blocked").
+   * Recent-window EMA — gives more weight to recent attempts so a
+   * proxy that just came back online doesn't stay flagged forever. */
+  Reddit._stats = { byTransport: {} };
+  function recordTransportOutcome(transportName, ok, kind) {
+    if (!transportName) return;
+    const s = Reddit._stats.byTransport[transportName] = Reddit._stats.byTransport[transportName] || { ok: 0, fail: 0, lastKind: null, recent: [] };
+    s.ok += ok ? 1 : 0;
+    s.fail += ok ? 0 : 1;
+    if (!ok && kind) s.lastKind = kind;
+    s.recent.push(ok ? 1 : 0);
+    if (s.recent.length > 20) s.recent.shift();
+    if (typeof Reddit.onTransportStats === "function") {
+      try { Reddit.onTransportStats(Reddit._stats.byTransport); } catch (_) {}
+    }
+  }
+
   async function fetchJson(path, params) {
     const url = new URL(BASE + path);
     url.searchParams.set("raw_json", "1");
@@ -241,12 +259,14 @@
             const out = await tryTransport(t, redditUrl, attempt);
             cacheSet(key, out.data);
             Reddit._lastTransport = out.transport;
+            recordTransportOutcome(out.transport, true);
             if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
             return out.data;
           } catch (err) {
             const tName = (err && err.transport) || (t && t.name) || "?";
             const kind = (err && err.kind) || (err && err.message) || String(err);
             lastByTransport.set(tName, kind);
+            recordTransportOutcome(tName, false, kind);
           }
         }
         await Util.sleep(250 * Math.pow(2, attempt));
