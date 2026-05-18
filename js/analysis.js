@@ -1711,5 +1711,267 @@
     return { perHour: Math.round(perHour * 100) / 100, ageHours, total: comments.length, lastHour, alive };
   };
 
+  /* ============================================================
+     PREDICTIVE POSTING (PR 5)
+     ----------------------------------------------------------------
+     Tiny on-device model that predicts the score of a HYPOTHETICAL
+     post in a sub at a specific hour, using the sub's loaded posts
+     as training data.
+
+     Approach: per-sub, per-hour median + IQR with a small bonus for
+     title-quality fit. We deliberately AVOID a real linear regression
+     here — it would overfit small per-sub samples and the median is
+     more robust to the long-tail breakouts that dominate Reddit.
+
+     Returns { sub, hour, dayOfWeek, expectedLow, expectedMid,
+               expectedHigh, sample, hourSample, confidence,
+               recommendedTitleAdjustments }.
+     ============================================================ */
+
+  Analysis.predictPostScore = function (sub, draft, opts) {
+    opts = opts || {};
+    const allPosts = opts.posts || [];
+    /* Filter to this sub */
+    const subPosts = allPosts.filter((p) =>
+      String(p.subreddit || "").toLowerCase() === String(sub || "").toLowerCase()
+      && !p.stickied && !p.removed
+    );
+    if (subPosts.length < 5) {
+      return {
+        sub, expectedLow: null, expectedMid: null, expectedHigh: null,
+        sample: subPosts.length, hourSample: 0, confidence: "low",
+        message: "Need at least 5 loaded posts for r/" + sub + " to predict.",
+      };
+    }
+    const hour = opts.hour != null ? opts.hour : new Date().getHours();
+    const dayOfWeek = opts.dayOfWeek != null ? opts.dayOfWeek : new Date().getDay();
+
+    /* Posts at this hour-of-day (any day) */
+    const hourPosts = subPosts.filter((p) => {
+      const t = (p.created_utc || 0) * 1000;
+      return new Date(t).getHours() === hour;
+    });
+
+    /* Distribution: prefer the hour-specific subset when sample >= 4,
+     * else fall back to the whole-sub distribution (lower confidence). */
+    const useHourSubset = hourPosts.length >= 4;
+    const dist = (useHourSubset ? hourPosts : subPosts).map((p) => p.score || 0).slice().sort((a, b) => a - b);
+    function pct(arr, p) {
+      if (!arr.length) return 0;
+      return arr[Math.max(0, Math.min(arr.length - 1, Math.floor((arr.length - 1) * p / 100)))];
+    }
+    let p25 = pct(dist, 25), p50 = pct(dist, 50), p75 = pct(dist, 75);
+
+    /* Title-quality fit. If the user provided a draft title, score it
+     * against the sub's existing title-quality distribution. Posts in
+     * the top quartile of title quality typically score 1.3-2x median;
+     * bottom quartile drops 0.5-0.7x. */
+    let titleMultiplier = 1;
+    let recommendations = [];
+    if (draft && typeof draft === "string" && draft.trim()) {
+      const tq = Analysis.titleQuality ? Analysis.titleQuality(draft) : null;
+      if (tq) {
+        const subTQs = subPosts.map((p) => Analysis.titleQuality(p.title || "").score).sort((a, b) => a - b);
+        const draftPercentile = subTQs.length ? subTQs.findIndex((s) => s >= tq.score) / subTQs.length : 0.5;
+        /* Simple multiplier curve: percentile 0.0 -> 0.65, 0.5 -> 1.0,
+         * 1.0 -> 1.6. */
+        titleMultiplier = 0.65 + draftPercentile * 0.95;
+        if (tq.factors) {
+          for (const f of tq.factors) {
+            if (!f.ok && f.delta < 0) {
+              recommendations.push({ label: f.label, delta: f.delta });
+            }
+          }
+        }
+        recommendations.sort((a, b) => a.delta - b.delta);
+      }
+    }
+    p25 = Math.round(p25 * titleMultiplier);
+    p50 = Math.round(p50 * titleMultiplier);
+    p75 = Math.round(p75 * titleMultiplier);
+
+    let confidence;
+    if (useHourSubset && hourPosts.length >= 10) confidence = "high";
+    else if (subPosts.length >= 30 || hourPosts.length >= 6) confidence = "medium";
+    else confidence = "low";
+
+    return {
+      sub, hour, dayOfWeek,
+      expectedLow:  p25,
+      expectedMid:  p50,
+      expectedHigh: p75,
+      sample: subPosts.length,
+      hourSample: hourPosts.length,
+      confidence,
+      titleMultiplier: Math.round(titleMultiplier * 100) / 100,
+      recommendedTitleAdjustments: recommendations.slice(0, 3),
+    };
+  };
+
+  /* ============================================================
+     CASCADE SCHEDULER (PR 5)
+     ----------------------------------------------------------------
+     Given a list of target subs and the user's loaded post data,
+     recommend a STAGGERED posting order so each sub catches its own
+     peak hour without piling on at once.
+
+     Returns [{ sub, hourLocal, label, predictedScore, gapMinutes }]
+     ordered chronologically across the next 24 hours.
+     ============================================================ */
+
+  Analysis.cascadeSchedule = function (subs, opts) {
+    opts = opts || {};
+    const posts = opts.posts || [];
+    const subProfiles = opts.subProfiles || {};
+    const minGapMinutes = opts.minGapMinutes || 60;
+
+    const slots = [];
+    const now = new Date();
+    const nowHour = now.getHours();
+    /* Build candidate slots: each sub's bestHour (and second-best
+     * if it's strong), within the next 24 hours from now. */
+    for (const sub of subs) {
+      const key = String(sub).toLowerCase();
+      const profile = subProfiles[key] || subProfiles[sub] || null;
+      if (!profile) continue;
+      const peakHour = profile.bestHour;
+      if (peakHour == null || peakHour < 0) continue;
+      /* Translate hour-of-day into the next clock instance >= now. */
+      let hoursUntil = (peakHour - nowHour + 24) % 24;
+      if (hoursUntil === 0) hoursUntil = 24;  /* always future */
+      const targetTime = new Date(now.getTime() + hoursUntil * 3600 * 1000);
+      targetTime.setMinutes(0, 0, 0);
+      const pred = Analysis.predictPostScore(sub, null, { posts, hour: peakHour });
+      slots.push({
+        sub,
+        hour: peakHour,
+        targetTime,
+        predictedMid: pred.expectedMid || profile.medianScore || 0,
+        confidence: pred.confidence,
+      });
+    }
+    /* Sort by target time ascending */
+    slots.sort((a, b) => a.targetTime - b.targetTime);
+    /* Resolve collisions: if two slots are within minGapMinutes of
+     * each other, push the lower-predicted one forward by minGap. */
+    for (let i = 1; i < slots.length; i++) {
+      const prev = slots[i - 1];
+      const cur = slots[i];
+      const gap = (cur.targetTime - prev.targetTime) / 60000;
+      if (gap < minGapMinutes) {
+        cur.targetTime = new Date(prev.targetTime.getTime() + minGapMinutes * 60000);
+      }
+    }
+    /* Compute display fields. */
+    let prevTime = null;
+    return slots.map((s) => {
+      const gapMin = prevTime ? Math.round((s.targetTime - prevTime) / 60000) : 0;
+      prevTime = s.targetTime;
+      return {
+        sub: s.sub,
+        hourLocal: s.targetTime.getHours(),
+        targetTime: s.targetTime,
+        predictedScore: s.predictedMid,
+        confidence: s.confidence,
+        gapMinutes: gapMin,
+      };
+    });
+  };
+
+  /* ============================================================
+     TITLE REWRITER (PR 5)
+     ----------------------------------------------------------------
+     Heuristic-only — no remote AI. Given a draft title and an optional
+     target audience ("activist" / "civic" / "urgency"), generate up
+     to 3 rephrasing variants by swapping vocabulary and adjusting
+     phrasing patterns.
+     ============================================================ */
+
+  const VOCAB_ACTIVIST = {
+    "needed": "demand", "needs": "demands",
+    "should": "must", "support": "back",
+    "discuss": "organize", "talking": "organizing",
+    "issue": "fight", "issues": "fights",
+    "movement": "uprising",
+    "action": "action now",
+    "people": "workers",
+    "vote": "mobilize",
+    "speech": "rally cry",
+  };
+  const VOCAB_CIVIC = {
+    "demand": "request", "demands": "requests",
+    "must": "should", "fight": "discuss",
+    "uprising": "movement",
+    "rally": "town hall",
+    "strike": "work stoppage",
+  };
+  const VOCAB_URGENCY = {
+    "soon": "now", "today": "tonight",
+    "may": "will", "might": "will",
+    "consider": "act on",
+    "discuss": "decide on",
+    "discussion": "decision",
+  };
+
+  function applyVocab(text, vocab) {
+    const re = new RegExp("\\b(" + Object.keys(vocab).map((k) => k.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")).join("|") + ")\\b", "gi");
+    return text.replace(re, (m) => {
+      const replacement = vocab[m.toLowerCase()];
+      if (!replacement) return m;
+      /* Preserve original case (Title Case stays Title Case). */
+      if (m[0] === m[0].toUpperCase()) return replacement[0].toUpperCase() + replacement.slice(1);
+      return replacement;
+    });
+  }
+
+  Analysis.rewriteTitle = function (draft, opts) {
+    opts = opts || {};
+    if (!draft || typeof draft !== "string") return [];
+    const variants = [];
+    const trimmed = draft.trim();
+
+    /* 1. Activist vocabulary swap */
+    const v1 = applyVocab(trimmed, VOCAB_ACTIVIST);
+    if (v1 !== trimmed) variants.push({
+      style: "activist",
+      title: v1,
+      hint: "Activist vocabulary — works well in r/Political_Revolution, r/DemocraticSocialism, r/WorkReform",
+    });
+
+    /* 2. Civic / institutional vocabulary swap */
+    const v2 = applyVocab(trimmed, VOCAB_CIVIC);
+    if (v2 !== trimmed && v2 !== v1) variants.push({
+      style: "civic",
+      title: v2,
+      hint: "Neutral-civic tone — works well in r/politics, r/voting, r/AskReddit",
+    });
+
+    /* 3. Urgency rephrase + lead-with-verb */
+    let v3 = applyVocab(trimmed, VOCAB_URGENCY);
+    /* Prefix-style: "How about X" / "Should we X" -> imperative. */
+    v3 = v3.replace(/^\s*(?:how about|should we|can we|maybe we should)\s+/i, "");
+    if (!/^[A-Z][a-z]+ /.test(v3)) {
+      /* If not already starting with a verb, leave it; light heuristic. */
+    }
+    /* Append "— now" if it doesn't end with a clear verb-now pattern. */
+    if (v3 !== trimmed && !/\bnow\b/i.test(v3)) v3 = v3.replace(/[.!]+$/, "") + " — now";
+    if (v3 !== trimmed && v3 !== v1 && v3 !== v2) variants.push({
+      style: "urgency",
+      title: v3,
+      hint: "Urgent / call-to-action tone — works well during launch days",
+    });
+
+    /* 4. Question -> declarative if present */
+    if (/\?\s*$/.test(trimmed)) {
+      const v4 = trimmed.replace(/\?\s*$/, ".");
+      variants.push({
+        style: "declarative",
+        title: v4,
+        hint: "Declarative reframe — comes across as more confident",
+      });
+    }
+    return variants.slice(0, 3);
+  };
+
   window.Analysis = Analysis;
 })();

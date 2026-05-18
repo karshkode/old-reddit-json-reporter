@@ -373,6 +373,102 @@
     `;
   }
 
+  /* Predict + rewrite block (PR 5). Renders inside the campaign
+   * detail panel as a small inline tool: paste a draft title, see
+   * predicted score in this campaign's loaded subs at their peak
+   * hours, plus 3 rephrasing variants. */
+  UI.renderPredictAndRewrite = function (container) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    el.innerHTML = `
+      <div class="predict-tool">
+        <div class="predict-head">
+          <strong>What if I posted this?</strong>
+          <span class="hint">Paste a draft title — we'll guess how it'd land in each loaded sub at its peak hour, plus 3 rephrasings.</span>
+        </div>
+        <input type="text" data-role="predict-draft" placeholder="Your draft title…" maxlength="300" />
+        <div class="predict-results" data-role="predict-results"></div>
+        <div class="rewrite-results" data-role="rewrite-results"></div>
+      </div>
+    `;
+  };
+
+  UI.renderPredictResults = function (container, predictions, rewrites) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    const presEl = el.querySelector('[data-role="predict-results"]');
+    const rewEl  = el.querySelector('[data-role="rewrite-results"]');
+    if (presEl) {
+      if (!predictions || !predictions.length) {
+        presEl.innerHTML = "";
+      } else {
+        presEl.innerHTML = `<div class="predict-list">${predictions.map((p) => {
+          const cls = p.confidence === "high" ? "good" : p.confidence === "medium" ? "info" : "warn";
+          if (p.expectedMid == null) {
+            return `<div class="predict-row"><span class="ps-sub">r/${Util.escapeHtml(p.sub)}</span><span class="meta">${Util.escapeHtml(p.message || "insufficient data")}</span></div>`;
+          }
+          return `<div class="predict-row">
+            <span class="ps-sub">r/${Util.escapeHtml(p.sub)}</span>
+            <span class="ps-range"><strong>${Util.fmtNum(p.expectedLow)}–${Util.fmtNum(p.expectedHigh)}</strong> pts</span>
+            <span class="ps-mid">~${Util.fmtNum(p.expectedMid)}</span>
+            <span class="badge ${cls}">${p.confidence}</span>
+            <span class="ps-hour meta">peak ${String(p.hour).padStart(2,"0")}:00</span>
+          </div>`;
+        }).join("")}</div>`;
+      }
+    }
+    if (rewEl) {
+      if (!rewrites || !rewrites.length) {
+        rewEl.innerHTML = "";
+      } else {
+        rewEl.innerHTML = `
+          <div class="rewrite-head"><strong>Try a different angle</strong></div>
+          ${rewrites.map((r) => `
+            <div class="rewrite-row">
+              <button class="btn small ghost" type="button" data-rewrite-pick="${Util.escapeHtml(r.title)}" title="Use this variant">${Util.escapeHtml(r.style)}</button>
+              <span class="rewrite-title">${Util.escapeHtml(r.title)}</span>
+              <span class="meta">${Util.escapeHtml(r.hint)}</span>
+            </div>
+          `).join("")}
+        `;
+      }
+    }
+  };
+
+  /* Cascade scheduler block (PR 5). Shows the staggered posting
+   * order recommended for a list of subs. */
+  UI.renderCascadeSchedule = function (container, schedule) {
+    const el = typeof container === "string" ? document.getElementById(container) : container;
+    if (!el) return;
+    if (!schedule || !schedule.length) {
+      el.innerHTML = '<div class="empty">Need at least one loaded sub with a peak hour to plan a cascade.</div>';
+      return;
+    }
+    const fmtTime = (d) => {
+      try { return d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
+      catch (_) { return String(d); }
+    };
+    el.innerHTML = `
+      <div class="cascade-list">
+        ${schedule.map((s, i) => {
+          const cls = s.confidence === "high" ? "good" : s.confidence === "medium" ? "info" : "warn";
+          const gapBit = i === 0 ? "" : `<span class="meta">+${s.gapMinutes}m later</span>`;
+          return `
+            <div class="cascade-row">
+              <span class="cascade-index">${i + 1}.</span>
+              <span class="cascade-time"><strong>${Util.escapeHtml(fmtTime(s.targetTime))}</strong></span>
+              <span class="cascade-sub">r/${Util.escapeHtml(s.sub)}</span>
+              <span class="cascade-pred">~${Util.fmtNum(s.predictedScore)} pts</span>
+              <span class="badge ${cls}">${s.confidence}</span>
+              ${gapBit}
+            </div>
+          `;
+        }).join("")}
+      </div>
+      <div class="cascade-hint meta">Staggered to avoid overlap; one sub per slot, ≥60min gap. Times in your local zone.</div>
+    `;
+  };
+
   function renderTitleQualityBlock(tq) {
     const band = tq.band || "okay";
     const cls = band === "excellent" ? "good" : band === "good" ? "info" : band === "okay" ? "warn" : "bad";
