@@ -2295,11 +2295,14 @@
         setTimeout(() => ta.dispatchEvent(new Event("input", { bubbles: true })), 0);
       });
 
-      /* Click delegation: Add posts / Remove from campaign / Copy digest. */
+      /* Click delegation: Add posts / Remove from campaign / Copy digest /
+       * Edit goals (open form, save, cancel). */
       campaignDetailBody.addEventListener("click", async (e) => {
         const addBtn = e.target.closest && e.target.closest('[data-action="add-posts"]');
         const rmBtn  = e.target.closest && e.target.closest('[data-action="remove-post"]');
         const digestBtn = e.target.closest && e.target.closest('[data-action="copy-campaign-digest"]');
+        const editGoalsBtn = e.target.closest && e.target.closest('[data-action="edit-campaign-goals"]');
+        const cancelGoalsBtn = e.target.closest && e.target.closest('[data-action="cancel-edit-goals"]');
 
         if (addBtn) {
           e.preventDefault();
@@ -2323,15 +2326,64 @@
             Util.toast("Open a campaign first.", "error");
             return;
           }
-          const md = buildCampaignDigest(camp, summary, summary.deep);
-          const ok = await copyToClipboard(md);
+          const text = buildCampaignDigest(camp, summary, summary.deep);
+          const ok = await copyToClipboard(text);
           if (ok) {
             Util.toast(`Digest for "${camp.name}" copied — paste into Signal/Slack/etc.`, "ok");
           } else {
             Util.toast("Could not access clipboard. Digest in console.", "error");
-            console.log("[digest]\n" + md);
+            console.log("[digest]\n" + text);
           }
           return;
+        }
+        if (editGoalsBtn) {
+          e.preventDefault();
+          /* Toggle the inline goals form. Hide the toolbar buttons
+           * while editing so the user's eye goes to the form. */
+          const form = campaignDetailBody.querySelector(".goals-edit-form");
+          const toolbar = campaignDetailBody.querySelector(".campaign-toolbar");
+          if (form) {
+            form.hidden = false;
+            const firstInput = form.querySelector('input[data-field="goalScore"]');
+            if (firstInput) try { firstInput.focus(); firstInput.select(); } catch (_) {}
+          }
+          if (toolbar) toolbar.classList.add("editing-goals");
+          return;
+        }
+        if (cancelGoalsBtn) {
+          e.preventDefault();
+          const form = campaignDetailBody.querySelector(".goals-edit-form");
+          const toolbar = campaignDetailBody.querySelector(".campaign-toolbar");
+          if (form) form.hidden = true;
+          if (toolbar) toolbar.classList.remove("editing-goals");
+          return;
+        }
+      });
+
+      /* Submit handler for the inline goals editor. */
+      campaignDetailBody.addEventListener("submit", async (e) => {
+        const form = e.target.closest && e.target.closest(".goals-edit-form");
+        if (!form) return;
+        e.preventDefault();
+        const id = form.dataset.campaignId || state.openCampaignId;
+        if (!id) { Util.toast("No active campaign.", "error"); return; }
+        const camp = Campaigns.get(id);
+        if (!camp) { Util.toast("Campaign not found.", "error"); return; }
+        const scoreInput = form.querySelector('input[data-field="goalScore"]');
+        const commentsInput = form.querySelector('input[data-field="goalComments"]');
+        const goalScore = scoreInput ? Math.max(0, Number(scoreInput.value) || 0) : 0;
+        const goalComments = commentsInput ? Math.max(0, Number(commentsInput.value) || 0) : 0;
+        try {
+          Campaigns.update(id, { goalScore, goalComments });
+          Util.toast(`Goals updated for "${camp.name}".`, "ok");
+          /* Re-open the campaign so the detail re-renders with the
+           * new goals and progress bars recalculate. */
+          const fresh = Campaigns.get(id);
+          if (fresh) await openCampaign(fresh);
+          UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
+        } catch (err) {
+          console.error("[goals-edit] failed:", err);
+          Util.toast(`Couldn't save goals: ${(err && err.message) || err}`, "error");
         }
       });
     }
@@ -3094,34 +3146,35 @@ const bestCampaignPost = (summary.posts || [])
 
   /* ---------- Markdown digest export (PR 3) ---------- */
 
+  /* Build a Signal-friendly campaign summary. Plain text — no Markdown
+   * (Signal doesn't render *bold* or _italic_), emoji-led bullet lines
+   * so the structure scans visually, and no footer credit. */
   function buildCampaignDigest(campaign, agg, deep) {
     if (!campaign) return "";
     const lines = [];
-    lines.push(`*${campaign.name}*`);
+    lines.push(`📊 ${campaign.name}`);
     const subList = (agg.subs || []).slice(0, 8).map((s) => `r/${s}`).join(", ");
-    lines.push(`• ${campaign.postIds.length} posts across ${agg.subs.length} sub${agg.subs.length === 1 ? "" : "s"}${subList ? " (" + subList + (agg.subs.length > 8 ? ", …" : "") + ")" : ""}`);
+    lines.push(`📝 ${campaign.postIds.length} posts across ${agg.subs.length} sub${agg.subs.length === 1 ? "" : "s"}${subList ? " (" + subList + (agg.subs.length > 8 ? ", …" : "") + ")" : ""}`);
     const goalBit = campaign.goalScore
       ? ` (${Math.round(Math.min(1, agg.totalScore / campaign.goalScore) * 100)}% of ${Util.fmtNum(campaign.goalScore)} goal)`
       : "";
-    lines.push(`• ${Util.fmtNum(agg.totalScore)} upvotes${goalBit}`);
+    lines.push(`⬆️ ${Util.fmtNum(agg.totalScore)} upvotes${goalBit}`);
     const cgoalBit = campaign.goalComments
       ? ` (${Math.round(Math.min(1, agg.totalComments / campaign.goalComments) * 100)}% of ${Util.fmtNum(campaign.goalComments)} goal)`
       : "";
-    lines.push(`• ${Util.fmtNum(agg.totalComments)} comments${cgoalBit}`);
+    lines.push(`💬 ${Util.fmtNum(agg.totalComments)} comments${cgoalBit}`);
     const top = (agg.posts || []).slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0];
     if (top) {
-      lines.push(`• Best performer: r/${top.subreddit} — ${Util.fmtNum(top.score)} pts, ${Util.fmtNum(top.num_comments)} comments`);
-      lines.push(`  ${top.permalink}`);
+      lines.push(`🏆 Top: r/${top.subreddit} — ${Util.fmtNum(top.score)} pts, ${Util.fmtNum(top.num_comments)} comments`);
+      lines.push(`🔗 ${top.permalink}`);
     }
     if (deep && deep.profile && deep.profile.themes && deep.profile.themes.length) {
       const themes = deep.profile.themes.slice(0, 3).map((t) => t.kind === "phrase" ? `"${t.term}"` : t.term).join(", ");
-      lines.push(`• Top themes: ${themes}`);
+      lines.push(`🏷️ Themes: ${themes}`);
     }
     if (deep && deep.profile && deep.profile.bestHour >= 0) {
-      lines.push(`• Best posting hour: ${String(deep.profile.bestHour).padStart(2, "0")}:00 ${Util.getTzLabel()}`);
+      lines.push(`⏰ Best hour: ${String(deep.profile.bestHour).padStart(2, "0")}:00 ${Util.getTzLabel()}`);
     }
-    lines.push("");
-    lines.push(`_Reported via Reddit Campaign Reporter — ${new Date().toLocaleDateString()}_`);
     return lines.join("\n");
   }
 

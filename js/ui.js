@@ -1341,8 +1341,30 @@
       ${missingNote}
 
       <div class="campaign-toolbar">
-        <button type="button" class="btn small ghost" data-action="copy-campaign-digest" title="Copy a Slack/Signal-friendly markdown summary of this campaign to the clipboard">📋 Copy digest</button>
+        <button type="button" class="btn small ghost" data-action="copy-campaign-digest" title="Copy a Signal/Slack-friendly summary of this campaign to the clipboard">📋 Copy digest</button>
+        <button type="button" class="btn small ghost" data-action="edit-campaign-goals" title="Edit upvote / comment goals for this campaign">🎯 Edit goals</button>
       </div>
+
+      <!-- Inline goals editor — hidden until the user taps the Edit
+           button. Wired in app.js. Saves via Campaigns.update. -->
+      <form class="goals-edit-form" data-campaign-id="${Util.escapeHtml(campaign.id)}" hidden>
+        <div class="goals-edit-row">
+          <label>
+            <span class="group-label">Goal upvotes</span>
+            <input type="number" data-field="goalScore" min="0" inputmode="numeric"
+                   placeholder="e.g. 5000" value="${campaign.goalScore || ""}" />
+          </label>
+          <label>
+            <span class="group-label">Goal comments</span>
+            <input type="number" data-field="goalComments" min="0" inputmode="numeric"
+                   placeholder="e.g. 200" value="${campaign.goalComments || ""}" />
+          </label>
+        </div>
+        <div class="goals-edit-actions">
+          <button type="button" class="btn small ghost" data-action="cancel-edit-goals">Cancel</button>
+          <button type="submit" class="btn small primary" data-action="save-campaign-goals">Save</button>
+        </div>
+      </form>
 
       <div class="add-posts-form" data-campaign-id="${Util.escapeHtml(campaign.id)}">
         <div class="add-posts-head">
