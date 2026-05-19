@@ -4620,3 +4620,36 @@ body.modal-open { overflow: hidden; }
     order: -1;
   }
 }
+
+/* "Copy as rich text" button next to the body counter — for users
+ * pasting into Reddit's mobile app, which doesn't render markdown.
+ * Visible at all viewport widths because the mobile use case is
+ * the primary one. */
+.composer-counter-row .composer-copy-rich {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 4px 10px;
+  flex-shrink: 0;
+}
+.composer-counter-row { flex-wrap: wrap; gap: 8px; }
+
+/* Subtle accent on the mobile-app hint so it stands out from the
+ * generic "first checked target is the seed" hint above. The two
+ * sit adjacent and look identical otherwise. */
+.composer-mobile-hint {
+  background: rgba(56, 189, 248, 0.08);
+  border-left: 3px solid rgba(56, 189, 248, 0.55);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+}
+@media (max-width: 720px) {
+  .composer-counter-row .composer-copy-rich {
+    /* On phones the body counter and the copy button stack — give
+     * the copy button full width so it's tap-friendly. */
+    flex: 1 1 100%;
+    margin-left: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}

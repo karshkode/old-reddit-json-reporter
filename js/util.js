@@ -444,6 +444,66 @@
    * exist; that silent typo always threw and surfaced as "Couldn't
    * copy — select & copy manually" in the UI.
    */
+  /* Copy formatted text to the clipboard as BOTH text/html and
+   * text/plain so the pasting app can pick whichever it
+   * understands.
+   *
+   * Why this exists: Reddit's mobile app body editor is rich-text-
+   * only — it doesn't parse markdown. A user composing in our
+   * dashboard's markdown editor would tap "Open submit URL", land
+   * in the Reddit app, paste their `**bold**` markdown, and watch
+   * Reddit show the literal asterisks instead of rendering bold.
+   *
+   * Pasting HTML into Reddit's app editor (and most other rich-
+   * text composers — Notes, Slack, Pages, Linear, etc.) is
+   * converted to the app's native formatted output. Bold/italic/
+   * lists/headings/quotes/links all carry through.
+   *
+   * `htmlOrPromise` and `plainOrPromise` may be strings or
+   * thenables. The Promise variant matters on iOS Safari, which
+   * loses the user-gesture context if we `await` before calling
+   * `clipboard.write` — same issue copyToClipboard solves with
+   * the ClipboardItem-with-Promise pattern.
+   *
+   * Returns true if something landed on the clipboard (HTML on
+   * the rich path, plain on the fallback), false on failure. */
+  Util.copyAsRichText = async function (htmlOrPromise, plainOrPromise) {
+    const fallbackPlain = plainOrPromise == null ? htmlOrPromise : plainOrPromise;
+
+    /* Path 1 — ClipboardItem-with-Promise carrying both MIME types.
+     * iOS Safari 13.4+, Chrome 76+, Firefox 116+ all support
+     * text/html through ClipboardItem; older runtimes refuse and
+     * we fall through to the plain-text path. */
+    if (typeof ClipboardItem !== "undefined"
+        && navigator.clipboard && typeof navigator.clipboard.write === "function") {
+      try {
+        const htmlBlobPromise = Promise.resolve(htmlOrPromise)
+          .then((h) => new Blob([String(h)], { type: "text/html" }));
+        const textBlobPromise = Promise.resolve(fallbackPlain)
+          .then((t) => new Blob([String(t)], { type: "text/plain" }));
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": htmlBlobPromise,
+            "text/plain": textBlobPromise,
+          }),
+        ]);
+        return true;
+      } catch (_) {
+        /* Fall through to plain-text path. Common reasons:
+         *   - User-gesture lost (iOS) — but we used the Promise
+         *     variant so this should be rare
+         *   - Browser doesn't accept text/html via ClipboardItem
+         *   - User denied clipboard permission */
+      }
+    }
+
+    /* Path 2 — fall back to plain-text-only. The user pasting
+     * into Reddit app gets the markdown source — uglier than
+     * rich-text but readable. Pasting into a markdown-aware
+     * editor (web/desktop Reddit, GitHub) renders correctly. */
+    return Util.copyToClipboard(fallbackPlain);
+  };
+
   Util.copyToClipboard = async function (textOrPromise) {
     const isPromise = textOrPromise && typeof textOrPromise.then === "function";
 
