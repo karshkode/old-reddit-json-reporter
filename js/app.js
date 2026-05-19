@@ -4277,6 +4277,7 @@ const bestCampaignPost = (summary.posts || [])
       selectNoneBtn: document.getElementById("composer-targets-none"),
       selectUnpostedBtn: document.getElementById("composer-targets-unposted"),
       selectCount:   document.getElementById("composer-targets-count"),
+      copyRichBtn:   document.getElementById("composer-copy-rich"),
     };
   }
 
@@ -4497,6 +4498,13 @@ const bestCampaignPost = (summary.posts || [])
       const clipboardBtn = composerImageBlob
         ? `<button type="button" class="btn small ghost" data-composer-action="copy-image" data-sub="${Util.escapeHtml(t.sub)}" title="Copy attached image to clipboard so you can paste it on Reddit's submit page">Copy img</button>`
         : "";
+      /* Copy this target's body as RICH TEXT (text/html + plain
+       * fallback) — for users whose 'Open submit' lands them in
+       * Reddit's mobile app, which is rich-text-only and renders
+       * pasted markdown literally. Pasting HTML on the app's
+       * body field carries through bold/italic/lists/headings/
+       * quotes/links as native rich-text. */
+      const copyBodyBtn = `<button type="button" class="btn small ghost" data-composer-action="copy-target-body" data-sub="${Util.escapeHtml(t.sub)}" title="Copy this body as rich text. Use before Open submit if you'll be pasting into Reddit's mobile app — its editor is rich-text-only and ignores raw markdown.">📋 Body</button>`;
       const editor = (draft.mode === "per-target" && t.checked) ? `
         <div class="composer-target-editor">
           <label class="group-label">Title (per-target)</label>
@@ -4531,6 +4539,7 @@ const bestCampaignPost = (summary.posts || [])
           </span>
           <span class="composer-target-actions">
             ${submitBtn}
+            ${copyBodyBtn}
             ${truncateBtn}
             ${clipboardBtn}
             ${t.checked && !t.seed ? `<button type="button" class="btn small ghost" data-composer-action="make-seed" data-sub="${Util.escapeHtml(t.sub)}" title="Make this the seed (post first)">★</button>` : ""}
@@ -4642,6 +4651,10 @@ const bestCampaignPost = (summary.posts || [])
       }
       if (action === "copy-image") {
         copyComposerImageToClipboard();
+        return;
+      }
+      if (action === "copy-target-body") {
+        copyTargetBodyAsRichText(btn.dataset.sub);
         return;
       }
       if (action === "open-submit") {
@@ -4866,6 +4879,14 @@ const bestCampaignPost = (summary.posts || [])
       refreshComposer();
     });
 
+    /* Global "Copy as rich text" — bound here on the static button
+     * (not via the targets-list event delegation, since this one
+     * lives next to the body counter at the top of the editor and
+     * doesn't need a sub argument). */
+    if (refs.copyRichBtn) {
+      refs.copyRichBtn.addEventListener("click", () => copyCanonicalBodyAsRichText());
+    }
+
     /* Targets actions */
     refs.fromRecommended.addEventListener("click", () => {
       const c = composerState.campaignId ? Campaigns.get(composerState.campaignId) : null;
@@ -4932,6 +4953,60 @@ const bestCampaignPost = (summary.posts || [])
    * paste it into Reddit's image upload after the submit page opens.
    * Uses the modern ClipboardItem API; falls back to a download if
    * the browser refuses (e.g. older Safari). */
+  /* Copy a target's effective body as rich text. Used when the
+   * user is going to paste into Reddit's mobile app, which only
+   * accepts rich-text input — markdown pasted as plain text shows
+   * up literally with the asterisks visible.
+   *
+   * "Effective" body: per-target override (mode B), else canonical
+   * body (mode A). Same resolution Composer.emitSubmitUrls uses.
+   *
+   * Renders the markdown via Composer.renderMarkdown (sanitized,
+   * spoiler-aware, mention-linkified) and feeds both the HTML and
+   * the original markdown source to Util.copyAsRichText. The
+   * markdown source is the text/plain fallback so apps that
+   * don't accept HTML still get the user's typed content. */
+  async function copyTargetBodyAsRichText(sub) {
+    if (!composerState) { Util.toast("Composer not open.", "error"); return; }
+    const t = (composerState.targets || []).find((x) => x.sub === sub);
+    if (!t) return;
+    const body = (composerState.mode === "per-target" && t.body != null) ? t.body : composerState.body;
+    if (!body || !body.trim()) {
+      Util.toast("Body is empty — nothing to copy.", "error");
+      return;
+    }
+    const html = (typeof Composer !== "undefined" && Composer.renderMarkdown) ? Composer.renderMarkdown(body) : body;
+    /* Wrap in a minimal HTML envelope. Some clipboard consumers
+     * (older WebKit, certain Linux environments) prefer to see a
+     * full document and ignore loose body fragments. The Reddit
+     * mobile app accepts either, but the envelope is harmless and
+     * improves cross-app paste reliability. */
+    const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
+    const ok = await Util.copyAsRichText(wrapped, body);
+    if (ok) {
+      Util.toast(`Body for r/${sub} copied as rich text — paste into Reddit app's body field.`, "ok");
+    } else {
+      Util.toast("Couldn't copy. Long-press the body to copy manually.", "error");
+    }
+  }
+
+  async function copyCanonicalBodyAsRichText() {
+    if (!composerState) { Util.toast("Composer not open.", "error"); return; }
+    const body = composerState.body;
+    if (!body || !body.trim()) {
+      Util.toast("Body is empty — nothing to copy.", "error");
+      return;
+    }
+    const html = (typeof Composer !== "undefined" && Composer.renderMarkdown) ? Composer.renderMarkdown(body) : body;
+    const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
+    const ok = await Util.copyAsRichText(wrapped, body);
+    if (ok) {
+      Util.toast("Body copied as rich text — paste into Reddit app's body field to keep formatting.", "ok");
+    } else {
+      Util.toast("Couldn't copy. Long-press the body to copy manually.", "error");
+    }
+  }
+
   async function copyComposerImageToClipboard() {
     if (!composerImageBlob) { Util.toast("No image attached.", "error"); return; }
     try {
