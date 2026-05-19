@@ -4966,6 +4966,39 @@ const bestCampaignPost = (summary.posts || [])
    * the original markdown source to Util.copyAsRichText. The
    * markdown source is the text/plain fallback so apps that
    * don't accept HTML still get the user's typed content. */
+  /* Build the (html, plain) pair for a Reddit-mobile-app paste.
+   * Single source of truth for both target-row and global copy
+   * buttons so the format stays consistent.
+   *
+   * Renderer: Composer.renderForMobilePaste — uses ONLY the inline
+   * tags Reddit's mobile app accepts on paste (<strong>, <em>,
+   * <s>, <a>, <code>) inside <p>+<br>; lists/quotes/headings get
+   * flattened with Unicode prefixes (•, 1., ▎) so the visual
+   * structure survives the app's plain-text fallback path.
+   *
+   * Plain-text fallback: Composer.renderForMobilePastePlain —
+   * the Unicode-prefixed text content, suitable for apps that
+   * pick text/plain instead of text/html (some Slack channels,
+   * iMessage, etc.). The user's original markdown source is
+   * deliberately NOT used as the plain fallback because that
+   * defeats the whole point — pasting `**bold**` into a non-
+   * markdown editor shows literal asterisks. */
+  function buildMobilePasteBlobs(body) {
+    const html = (typeof Composer !== "undefined" && Composer.renderForMobilePaste)
+      ? Composer.renderForMobilePaste(body)
+      : ((typeof Composer !== "undefined" && Composer.renderMarkdown) ? Composer.renderMarkdown(body) : body);
+    const plain = (typeof Composer !== "undefined" && Composer.renderForMobilePastePlain)
+      ? Composer.renderForMobilePastePlain(body)
+      : body;
+    /* Wrap in a minimal HTML envelope. Some clipboard consumers
+     * (older WebKit, certain Linux environments) prefer to see a
+     * full document and ignore loose body fragments. The Reddit
+     * mobile app accepts either, but the envelope is harmless and
+     * improves cross-app paste reliability. */
+    const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
+    return { html: wrapped, plain };
+  }
+
   async function copyTargetBodyAsRichText(sub) {
     if (!composerState) { Util.toast("Composer not open.", "error"); return; }
     const t = (composerState.targets || []).find((x) => x.sub === sub);
@@ -4975,16 +5008,10 @@ const bestCampaignPost = (summary.posts || [])
       Util.toast("Body is empty — nothing to copy.", "error");
       return;
     }
-    const html = (typeof Composer !== "undefined" && Composer.renderMarkdown) ? Composer.renderMarkdown(body) : body;
-    /* Wrap in a minimal HTML envelope. Some clipboard consumers
-     * (older WebKit, certain Linux environments) prefer to see a
-     * full document and ignore loose body fragments. The Reddit
-     * mobile app accepts either, but the envelope is harmless and
-     * improves cross-app paste reliability. */
-    const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
-    const ok = await Util.copyAsRichText(wrapped, body);
+    const { html, plain } = buildMobilePasteBlobs(body);
+    const ok = await Util.copyAsRichText(html, plain);
     if (ok) {
-      Util.toast(`Body for r/${sub} copied as rich text — paste into Reddit app's body field.`, "ok");
+      Util.toast(`Body for r/${sub} copied — paste in Reddit app's body. Bullets/headers preserved.`, "ok");
     } else {
       Util.toast("Couldn't copy. Long-press the body to copy manually.", "error");
     }
@@ -4997,11 +5024,10 @@ const bestCampaignPost = (summary.posts || [])
       Util.toast("Body is empty — nothing to copy.", "error");
       return;
     }
-    const html = (typeof Composer !== "undefined" && Composer.renderMarkdown) ? Composer.renderMarkdown(body) : body;
-    const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
-    const ok = await Util.copyAsRichText(wrapped, body);
+    const { html, plain } = buildMobilePasteBlobs(body);
+    const ok = await Util.copyAsRichText(html, plain);
     if (ok) {
-      Util.toast("Body copied as rich text — paste into Reddit app's body field to keep formatting.", "ok");
+      Util.toast("Body copied — paste in Reddit app's body. Bullets/headers preserved via Unicode.", "ok");
     } else {
       Util.toast("Couldn't copy. Long-press the body to copy manually.", "error");
     }
