@@ -592,7 +592,9 @@
     const fullReset = force === "full";
     let cachedPool = [];
     if (fullReset) {
-      if (typeof PostCache !== "undefined") PostCache.clear();
+      if (typeof PostCache !== "undefined") {
+        try { await PostCache.clear(); } catch (_) {}
+      }
       state.cache.hasCache = false;
       state.cache.savedAt = 0;
       state.cache.cachedCount = 0;
@@ -1809,7 +1811,13 @@
     function fullReset() {
       Reddit.clearCache();
       if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
-      if (typeof PostCache !== "undefined") PostCache.clear();
+      /* PostCache.clear is async (IndexedDB transaction). Use the
+       * sync helper here so the UI reflects the wipe immediately;
+       * the IDB clear fires fire-and-forget in the background. */
+      if (typeof PostCache !== "undefined") {
+        if (typeof PostCache.clearSync === "function") PostCache.clearSync();
+        else { try { PostCache.clear(); } catch (_) {} }
+      }
       state.cache.hasCache = false;
       state.cache.savedAt = 0;
       state.cache.cachedCount = 0;

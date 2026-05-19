@@ -12,37 +12,137 @@
  *   -> tap Refresh -> fresh fetch merged with cache, only the
  *   delta is visible as "+N new posts since last refresh".
  *
- * Storage: localStorage. Up to ~5 MB on Safari/iOS, more on
- * Chrome/Firefox. We gzip-compress payloads above 8 KB to stay
- * comfortably below the cap even with hundreds of posts. The
- * compression happens via the same CompressionStream API used
- * by sync.js, which is supported on every browser >= Safari 16,
- * Chrome 80, Firefox 113. Falls back to plain JSON on older
- * runtimes.
+ * STORAGE BACKEND: IndexedDB (primary) + localStorage (fallback)
  *
- * Schema (gzipped JSON):
- *   { v: 1,
+ *   At ~99 subs * 100 posts = ~10,000 fresh posts per refresh,
+ *   localStorage's ~5 MB iOS quota becomes the bottleneck (raw
+ *   JSON for 10,000 posts is ~10-20 MB, gzipped to ~3-5 MB).
+ *   IndexedDB has effectively unlimited quota on every modern
+ *   browser (50% of disk space on Chrome/Edge, 1 GB+ on Firefox,
+ *   500 MB+ on Safari) so 50,000+ post caches comfortably fit.
+ *
+ *   IDB is the primary path. localStorage with gzip is the
+ *   fallback for environments that lack IDB (vanishingly rare —
+ *   Safari has had IDB since iOS 8). On first load with the new
+ *   code, any existing localStorage cache is automatically
+ *   migrated to IDB and the localStorage entries are deleted to
+ *   free space.
+ *
+ * Schema (stored as a structured-clone object in IDB; gzipped
+ * JSON in the LS fallback):
+ *   { v: 2,
  *     savedAt: <ms epoch>,
  *     fetchKey: "subs=A,B|listing=hot|time=week|limit=100",
+ *     activeSubs: ["A", "B", ...],
  *     posts: [...] }
  *
- * Cache lifetime is *open-ended* — we don't TTL the whole blob
+ * Cache lifetime is open-ended — we don't TTL the whole blob
  * because the user may want to see fall-off-hot posts that haven't
- * appeared in their listing for days. Instead, individual posts
- * are aged out at merge time (default 14 days from `created_utc`).
+ * appeared in their listing for days. Individual posts are aged
+ * out at merge time (default 14 days from `created_utc`).
  */
 (function () {
   const Cache = {};
-  const KEY_PLAIN = "rj.postCache";
-  const KEY_GZIP  = "rj.postCache.gz";
-  const VERSION = 1;
-  const COMPRESS_THRESHOLD = 8000;       // bytes before we bother gzipping
+
+  /* IndexedDB layout. One DB, one object store, one fixed key. */
+  const DB_NAME = "rj-postcache";
+  const DB_VERSION = 1;
+  const STORE = "blob";
+  const IDB_KEY = "current";
+
+  /* localStorage fallback keys. Same names as v1 of this module so
+   * an existing cache is detected for migration on first load. */
+  const LS_KEY_PLAIN = "rj.postCache";
+  const LS_KEY_GZIP  = "rj.postCache.gz";
+
+  const VERSION = 2;
+  const COMPRESS_THRESHOLD = 8000;
   const DEFAULT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
-  const POSTS_HARD_CAP = 5000;            // safety: don't try to persist >5000 posts
+  /* 50,000 posts. At ~99 subs * 100 fresh posts per refresh and
+   * a 14-day age cap, this leaves ample headroom for the merged
+   * pool to grow over weeks of regular use. IndexedDB's quota
+   * comfortably fits this even with all the metadata. */
+  const POSTS_HARD_CAP = 50000;
+
   Cache.VERSION = VERSION;
   Cache.DEFAULT_MAX_AGE_MS = DEFAULT_MAX_AGE_MS;
+  Cache.POSTS_HARD_CAP = POSTS_HARD_CAP;
 
-  /* ------------------------- low-level helpers ------------------------- */
+  let migrationDone = false;
+
+  /* ============================================================
+   * IndexedDB helpers
+   *
+   * Tiny one-shot wrappers — open, txn, close. We don't keep a
+   * long-lived db handle because the cache is read once at boot
+   * and written once per refresh; the open cost (single-digit ms)
+   * is dwarfed by the structured-clone serialization.
+   * ============================================================ */
+
+  function idbAvailable() {
+    try { return typeof indexedDB !== "undefined" && indexedDB; }
+    catch (_) { return false; }
+  }
+
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      if (!idbAvailable()) return reject(new Error("indexedDB unavailable"));
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error("indexedDB open failed"));
+      req.onblocked = () => reject(new Error("indexedDB open blocked"));
+    });
+  }
+
+  async function idbSave(payload) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      try {
+        const tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).put(payload, IDB_KEY);
+        tx.oncomplete = () => { db.close(); resolve(true); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+        tx.onabort = () => { db.close(); reject(tx.error || new Error("idb save aborted")); };
+      } catch (e) { db.close(); reject(e); }
+    });
+  }
+
+  async function idbLoad() {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      try {
+        const tx = db.transaction(STORE, "readonly");
+        const req = tx.objectStore(STORE).get(IDB_KEY);
+        req.onsuccess = () => { db.close(); resolve(req.result || null); };
+        req.onerror  = () => { db.close(); reject(req.error); };
+      } catch (e) { db.close(); reject(e); }
+    });
+  }
+
+  async function idbClear() {
+    if (!idbAvailable()) return;
+    let db;
+    try { db = await openDb(); } catch (_) { return; }
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).delete(IDB_KEY);
+        tx.oncomplete = () => { db.close(); resolve(true); };
+        tx.onerror = () => { db.close(); resolve(false); };
+      } catch (_) { db.close(); resolve(false); }
+    });
+  }
+
+  /* ============================================================
+   * localStorage fallback (gzip-compressed JSON)
+   *
+   * Used when IDB is unavailable AND for migration of v1 caches
+   * written by the previous release of this module.
+   * ============================================================ */
 
   function bytesToBase64(bytes) {
     let bin = "";
@@ -73,71 +173,144 @@
     } catch (_) { return null; }
   }
 
-  /* ------------------------------ save ------------------------------- */
-
-  Cache.save = async function (posts, opts) {
-    if (!Array.isArray(posts) || !posts.length) return false;
-    opts = opts || {};
-    const data = {
-      v: VERSION,
-      savedAt: Date.now(),
-      fetchKey: String(opts.fetchKey || ""),
-      activeSubs: Array.isArray(opts.activeSubs) ? opts.activeSubs.slice() : [],
-      posts: posts.slice(0, POSTS_HARD_CAP),
-    };
-    const json = JSON.stringify(data);
+  async function lsSave(payload) {
+    if (typeof localStorage === "undefined") return false;
+    const json = JSON.stringify(payload);
     try {
       if (json.length > COMPRESS_THRESHOLD) {
         const gz = await gzipString(json);
         if (gz) {
-          localStorage.setItem(KEY_GZIP, bytesToBase64(gz));
-          /* Drop the plain entry so we don't double-store. */
-          try { localStorage.removeItem(KEY_PLAIN); } catch (_) {}
+          localStorage.setItem(LS_KEY_GZIP, bytesToBase64(gz));
+          try { localStorage.removeItem(LS_KEY_PLAIN); } catch (_) {}
           return true;
         }
       }
-      localStorage.setItem(KEY_PLAIN, json);
-      try { localStorage.removeItem(KEY_GZIP); } catch (_) {}
+      localStorage.setItem(LS_KEY_PLAIN, json);
+      try { localStorage.removeItem(LS_KEY_GZIP); } catch (_) {}
       return true;
     } catch (e) {
-      /* QuotaExceededError on iOS Safari = drop the cache rather
-       * than leave a half-written entry. The user just won't get a
-       * cached view next reload, which is the existing behavior. */
-      console.warn("[postcache] save failed:", e && e.message);
-      try { localStorage.removeItem(KEY_PLAIN); } catch (_) {}
-      try { localStorage.removeItem(KEY_GZIP); } catch (_) {}
+      console.warn("[postcache] LS save failed:", e && e.message);
+      try { localStorage.removeItem(LS_KEY_PLAIN); } catch (_) {}
+      try { localStorage.removeItem(LS_KEY_GZIP); } catch (_) {}
       return false;
     }
-  };
+  }
 
-  /* ------------------------------ load ------------------------------- */
-
-  Cache.load = async function () {
+  async function lsLoad() {
+    if (typeof localStorage === "undefined") return null;
     try {
-      const gz = (typeof localStorage !== "undefined") ? localStorage.getItem(KEY_GZIP) : null;
+      const gz = localStorage.getItem(LS_KEY_GZIP);
       if (gz) {
         const json = await gunzipBytes(base64ToBytes(gz));
-        if (json) {
-          const parsed = JSON.parse(json);
-          if (parsed && parsed.v === VERSION) return parsed;
-        }
+        if (json) return JSON.parse(json);
       }
-      const raw = (typeof localStorage !== "undefined") ? localStorage.getItem(KEY_PLAIN) : null;
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.v === VERSION) return parsed;
-      }
+      const raw = localStorage.getItem(LS_KEY_PLAIN);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { console.warn("[postcache] LS load failed:", e && e.message); }
+    return null;
+  }
+
+  function lsClear() {
+    if (typeof localStorage === "undefined") return;
+    try { localStorage.removeItem(LS_KEY_PLAIN); } catch (_) {}
+    try { localStorage.removeItem(LS_KEY_GZIP); } catch (_) {}
+  }
+
+  /* ============================================================
+   * One-time migration: v1 cache lived in localStorage. On first
+   * load with v2 code, copy it to IndexedDB and clear the LS
+   * entries so the user reclaims that 5 MB of quota.
+   * ============================================================ */
+
+  async function migrateLsToIdbIfNeeded() {
+    if (migrationDone) return;
+    migrationDone = true;
+    if (!idbAvailable()) return;
+    let existingIdb;
+    try { existingIdb = await idbLoad(); } catch (_) { existingIdb = null; }
+    if (existingIdb) return;  /* IDB already has data; nothing to migrate */
+    const fromLs = await lsLoad();
+    if (!fromLs) return;
+    /* Re-tag with current schema version so downstream readers
+     * don't see a v1 marker and bail. The v1 schema is a strict
+     * subset of v2 (just no activeSubs field on some saves), so a
+     * direct copy works. */
+    fromLs.v = VERSION;
+    try {
+      await idbSave(fromLs);
+      lsClear();
+      console.log("[postcache] migrated v1 LS cache -> IDB (" +
+        ((fromLs.posts && fromLs.posts.length) || 0) + " posts)");
     } catch (e) {
-      console.warn("[postcache] load failed:", e && e.message);
+      console.warn("[postcache] LS->IDB migration failed:", e && e.message);
     }
+  }
+
+  /* ============================================================
+   * Public API
+   *
+   * Save / load / clear all use the IDB-first, LS-fallback flow.
+   * Callers don't have to know which backend is active.
+   * ============================================================ */
+
+  Cache.save = async function (posts, opts) {
+    if (!Array.isArray(posts) || !posts.length) return false;
+    opts = opts || {};
+    const payload = {
+      v: VERSION,
+      savedAt: Date.now(),
+      fetchKey: String(opts.fetchKey || ""),
+      activeSubs: Array.isArray(opts.activeSubs) ? opts.activeSubs.slice() : [],
+      posts: posts.length > POSTS_HARD_CAP ? posts.slice(0, POSTS_HARD_CAP) : posts,
+    };
+
+    if (idbAvailable()) {
+      try {
+        await idbSave(payload);
+        /* Belt-and-suspenders: if a stale LS cache from v1 still
+         * exists, drop it now that we've successfully written to
+         * IDB. This is also done by migrateLsToIdbIfNeeded but
+         * that only runs once per process. */
+        lsClear();
+        return true;
+      } catch (e) {
+        /* QuotaExceededError or version conflict — fall through to
+         * the LS path. The user just won't get a cache larger than
+         * LS can hold, but they'll still get *something*. */
+        console.warn("[postcache] IDB save failed, falling back to LS:", e && e.message);
+      }
+    }
+    return lsSave(payload);
+  };
+
+  Cache.load = async function () {
+    await migrateLsToIdbIfNeeded();
+    if (idbAvailable()) {
+      try {
+        const v = await idbLoad();
+        if (v && (v.v === VERSION || v.v === 1)) return v;
+      } catch (e) {
+        console.warn("[postcache] IDB load failed, falling back to LS:", e && e.message);
+      }
+    }
+    const ls = await lsLoad();
+    if (ls && (ls.v === VERSION || ls.v === 1)) return ls;
     return null;
   };
 
-  /* ------------------------------ clear ------------------------------ */
+  Cache.clear = async function () {
+    /* Always clear BOTH backends so a Full reset is comprehensive
+     * regardless of which one the runtime ended up using. */
+    try { await idbClear(); } catch (_) {}
+    lsClear();
+  };
 
-  Cache.clear = function () {
-    try { if (typeof localStorage !== "undefined") localStorage.removeItem(KEY_PLAIN); } catch (_) {}
-    try { if (typeof localStorage !== "undefined") localStorage.removeItem(KEY_GZIP); } catch (_) {}
+  /* Synchronous variant for callers that can't await (e.g. the
+   * Full reset button handler that wants the UI to reflect the
+   * wipe immediately). The IDB clear fires fire-and-forget. */
+  Cache.clearSync = function () {
+    if (idbAvailable()) { idbClear().catch(() => {}); }
+    lsClear();
   };
 
   /* ----------------------------- merge ------------------------------- *
@@ -150,11 +323,10 @@
    *     (newer score / comments / removed-flag).
    *   - For posts present only in cached: keep them IF they're in the
    *     active-sub set AND younger than maxAgeMs (default 14 days).
-   *   - For posts only in fresh: keep them all (the listing the user
-   *     just queried defines what's in scope).
+   *   - For posts only in fresh: keep them all.
    *
-   * Returns { posts, kept, dropped, replaced, totalCached, totalFresh }
-   * for diagnostic logging / status bar text.
+   * Returns { posts, kept, droppedAge, droppedSub, replaced,
+   *           totalCached, totalFresh } for diagnostic logging.
    */
   Cache.merge = function (cached, fresh, opts) {
     opts = opts || {};
@@ -166,7 +338,6 @@
     const map = new Map();
     let replaced = 0;
 
-    /* Fresh first — they win on conflict. */
     for (const p of fresh || []) {
       if (p && p.id) map.set(p.id, p);
     }
@@ -199,19 +370,11 @@
 
   /* ------------------------- fetch-key helper ------------------------ */
 
-  /* Build a deterministic key describing the fetch parameters that
-   * produced a cached pool. Used to detect "filters changed since
-   * cache was saved" so the dashboard can hint that a Refresh is
-   * worth doing. */
   Cache.buildFetchKey = function (subs, listing, timeWindow, limit) {
     const subList = Array.isArray(subs) ? subs.slice().map(String).sort().join(",") : String(subs || "");
     return `subs=${subList}|listing=${listing || ""}|time=${timeWindow || ""}|limit=${limit || ""}`;
   };
 
-  /* Filter cached posts to a given active-sub set without merging. Used
-   * during initial hydration where there's no fresh-fetch to merge
-   * against — we just want to surface the cached posts that match the
-   * user's currently-active filter. */
   Cache.filterByActiveSubs = function (cached, activeSubs) {
     if (!Array.isArray(cached) || !cached.length) return [];
     if (!Array.isArray(activeSubs) || !activeSubs.length) return cached.slice();
@@ -219,13 +382,8 @@
     return cached.filter((p) => p && p.subreddit && set.has(String(p.subreddit).toLowerCase()));
   };
 
-  /* ------------------------- relative time ---------------------------
-   * "12 min ago" / "2 h ago" / "yesterday at 3:14 PM" — driven from
-   * the savedAt millisecond stamp in the cache payload. Same pattern
-   * Util.js has elsewhere for post timestamps; copied here so the
-   * cache module is self-contained and doesn't depend on Util being
-   * loaded first.
-   * ------------------------------------------------------------- */
+  /* ------------------------- relative time ----------------------- */
+
   Cache.formatAge = function (savedAt) {
     if (!savedAt) return "";
     const elapsed = Math.max(0, Date.now() - Number(savedAt));
@@ -236,6 +394,17 @@
     if (sec < 86400) return Math.floor(sec / 3600) + " h ago";
     if (sec < 86400 * 2) return "yesterday";
     return Math.floor(sec / 86400) + " days ago";
+  };
+
+  /* ------------------------- backend probe ----------------------- *
+   * Lets the dashboard surface "Storage: IndexedDB" / "Storage:
+   * localStorage" / "Storage: in-memory only" in the cache-age
+   * banner so a user debugging a quota issue can see at a glance
+   * which path is active. */
+  Cache.activeBackend = function () {
+    if (idbAvailable()) return "indexeddb";
+    if (typeof localStorage !== "undefined") return "localstorage";
+    return "none";
   };
 
   if (typeof window !== "undefined") window.PostCache = Cache;
