@@ -414,5 +414,88 @@
     return results;
   };
 
+  /* Robust clipboard-write that survives iOS Safari's user-gesture
+   * rule. Accepts either a string or a Promise<string>:
+   *
+   *   await Util.copyToClipboard("hello")              // sync text
+   *   await Util.copyToClipboard(Sync.toShareUrl())    // async-computed text
+   *
+   * The async case is critical on iOS Safari. If a click handler
+   * `await`s anything before calling navigator.clipboard.writeText,
+   * the user-gesture context is gone and Safari throws
+   *   NotAllowedError: The request is not allowed by the user agent
+   *   or the platform in the current context, possibly because the
+   *   user denied permission.
+   *
+   * The standard workaround is `navigator.clipboard.write` with a
+   * `ClipboardItem` whose value is a *Promise* — Safari awaits the
+   * promise inside the same gesture. We use that path whenever the
+   * caller passed a thenable. Then we have two more fallbacks:
+   *   - plain `clipboard.writeText` (for browsers without ClipboardItem)
+   *   - hidden <textarea> + document.execCommand("copy") for ancient
+   *     browsers / Safari edge cases that reject everything else.
+   *
+   * Returns true on success, false on every-fallback-exhausted.
+   *
+   * Lives on Util (not as a private helper in app.js) so any module
+   * — composer, sync, campaign-detail, etc. — can share the same
+   * battle-hardened implementation. The composer's AI prompt copy
+   * was previously calling `Util.copyToClipboard` which didn't
+   * exist; that silent typo always threw and surfaced as "Couldn't
+   * copy — select & copy manually" in the UI.
+   */
+  Util.copyToClipboard = async function (textOrPromise) {
+    const isPromise = textOrPromise && typeof textOrPromise.then === "function";
+
+    /* Path 1 — ClipboardItem-with-Promise. Preserves iOS Safari's
+     * user-gesture context across async work like CompressionStream
+     * gzip. Supported macOS Safari 13.1+ / iOS Safari 13.4+ /
+     * Chrome 76+ / Firefox 116+. */
+    if (isPromise && typeof ClipboardItem !== "undefined"
+        && navigator.clipboard && typeof navigator.clipboard.write === "function") {
+      try {
+        const blobPromise = Promise.resolve(textOrPromise)
+          .then((t) => new Blob([String(t)], { type: "text/plain" }));
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blobPromise })]);
+        return true;
+      } catch (_) {
+        /* Fall through. */
+      }
+    }
+
+    let text;
+    try { text = isPromise ? await textOrPromise : String(textOrPromise); }
+    catch (_) { return false; }
+
+    /* Path 2 — standard async writeText. */
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) { /* Fall through. */ }
+    }
+
+    /* Path 3 — hidden textarea + execCommand. Last-resort, but
+     * surprisingly reliable on Safari when nothing else works. */
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (_) {
+      return false;
+    }
+  };
+
   window.Util = Util;
 })();

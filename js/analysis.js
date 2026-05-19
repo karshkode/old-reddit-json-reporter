@@ -1341,8 +1341,82 @@
     const subs = candidate.subscribers || 0;
     const popularity = clamp01(Math.log10(subs + 10) / 6);
 
-    const ratio = subs > 0 ? (candidate.active_user_count || 0) / subs : 0;
-    const engagement = clamp01(ratio * 1000);
+    /* Engagement / "Activity" — three fallback paths in priority
+     * order so the meter is never empty when SOMETHING is known
+     * about the sub:
+     *
+     *   1. Local post data (the user already loaded posts for this
+     *      sub in their dashboard) — use comments-per-post avg
+     *      and posts-loaded-in-window. This is the richest signal
+     *      because it's measured directly from the same posts the
+     *      user is going to see.
+     *
+     *   2. Reddit's `active_user_count` (when populated by the
+     *      search endpoint) — combine the raw count log-scaled
+     *      AND the active/subs ratio. The pure ratio formula
+     *      (`ratio * 1000`) used to be the sole signal; that gave
+     *      a 0 bar for every sub Reddit didn't bother including
+     *      `active_user_count` for, which was most of them.
+     *
+     *   3. Subscribers-per-day-since-creation as a weak baseline
+     *      so subs with NEITHER local data NOR active_user_count
+     *      still get a non-zero (but capped) bar. Better than
+     *      perma-zero misleading the user into thinking a known-
+     *      busy sub is dead.
+     *
+     * Path is exposed in the returned object so the renderer can
+     * surface a tooltip explaining where the number came from. */
+    const sp = opts && opts.subProfile;
+    const activeNow = candidate.active_user_count || candidate.accounts_active || 0;
+    const activeRatio = subs > 0 ? activeNow / subs : 0;
+
+    let engagement = 0;
+    let engagementSource = "no-data";
+    let engagementDetail = null;
+
+    if (sp && sp.count > 0) {
+      /* commentsPerPost: rewards subs where posts spark discussion,
+       * not just upvotes. Log-scaled so 1000 cpp = 1.0, 100 cpp =
+       * ~0.67, 10 cpp = ~0.33. Most political / civic subs sit in
+       * the 5-50 cpp range. */
+      const cpp = (sp.totalComments || 0) / sp.count;
+      const cppScore = clamp01(Math.log10(cpp + 1) / 3);
+      /* fillScore: how "full" the sub's loaded window is. The
+       * dashboard fetches up to `state.limit` (default 100) posts;
+       * a sub returning 50+ in that window is sustaining a steady
+       * post flow. Caps at 50 so a small sub with 30 posts in the
+       * week looks active without being dwarfed by a 100-post
+       * mega-sub. */
+      const fillScore = clamp01(sp.count / 50);
+      /* Active-user count is still useful even with local data —
+       * it adds a real-time "people are here NOW" component. */
+      const activeLog = activeNow > 0 ? clamp01(Math.log10(activeNow + 1) / 4) : 0;
+      engagement = clamp01(0.45 * cppScore + 0.30 * fillScore + 0.15 * activeLog + 0.10 * Math.min(1, activeRatio * 1000));
+      engagementSource = "local-data";
+      engagementDetail = { cpp, posts: sp.count, activeNow };
+    } else if (activeNow > 0) {
+      /* No local data but Reddit gave us active_user_count.
+       * Combine the log-scaled raw count (rewards having ANY
+       * active users — a 1000-active sub is more vibrant than
+       * a 10-active sub regardless of size) with the ratio
+       * (rewards small dedicated subs that have a high % online). */
+      const activeLog = clamp01(Math.log10(activeNow + 1) / 4); // 10000 active = 1.0
+      engagement = clamp01(0.55 * activeLog + 0.45 * Math.min(1, activeRatio * 1000));
+      engagementSource = "active-users";
+      engagementDetail = { activeNow, activeRatio };
+    } else if (subs > 0 && candidate.created_utc) {
+      /* No active count and no local data — fall back to
+       * subscribers-per-day-since-creation as a very weak proxy.
+       * Capped at 0.5 because growth alone is a poor activity
+       * proxy (a sub gaining 10 subs/day might be totally dead
+       * inside; a slow-growing 50k-sub might be very active). */
+      const ageSec = Math.max(86400, Date.now()/1000 - candidate.created_utc);
+      const subsPerDay = subs / (ageSec / 86400);
+      const growthScore = clamp01(Math.log10(subsPerDay + 1) / 2); // 100/day = 1.0
+      engagement = growthScore * 0.5;
+      engagementSource = "growth";
+      engagementDetail = { subsPerDay };
+    }
 
     const safety = candidate.over18 ? 0 : 1;
 
@@ -1407,13 +1481,24 @@
     if (queryHits >= 2) reasons.push(`appeared in <strong>${queryHits}</strong> of your search angles`);
     if (isCatalogMember) reasons.unshift(`<span class="badge good">in catalog</span> · ${catalogTags.map((t) => Util.escapeHtml(t.replace("state:", "📍 ").replace("demo:", "👥 "))).join(" · ")}`);
     reasons.push(`<strong>${Util.fmtNum(subs)}</strong> subscribers`);
-    if (candidate.active_user_count) {
-      const pct = (ratio * 100).toFixed(2);
-      reasons.push(`<strong>${Util.fmtNum(candidate.active_user_count)}</strong> active right now (${pct}% of subs)`);
+    /* Activity reason — surfaces what the Activity bar is actually
+     * measuring so a 67/100 doesn't feel like a magic number. */
+    if (engagementSource === "local-data" && engagementDetail) {
+      const cppRounded = Math.round(engagementDetail.cpp);
+      reasons.push(`<strong>${Util.fmtNum(cppRounded)}</strong> comments/post avg · <strong>${Util.fmtNum(engagementDetail.posts)}</strong> posts loaded${engagementDetail.activeNow ? ` · <strong>${Util.fmtNum(engagementDetail.activeNow)}</strong> active now` : ""}`);
+    } else if (engagementSource === "active-users" && engagementDetail) {
+      const pct = (engagementDetail.activeRatio * 100).toFixed(2);
+      reasons.push(`<strong>${Util.fmtNum(engagementDetail.activeNow)}</strong> active right now (${pct}% of subs)`);
+    } else if (engagementSource === "growth" && engagementDetail) {
+      const perDay = engagementDetail.subsPerDay >= 1
+        ? Math.round(engagementDetail.subsPerDay)
+        : engagementDetail.subsPerDay.toFixed(2);
+      reasons.push(`<span class="meta">~${perDay} new subs/day since creation (Reddit didn't expose live-active count for this sub)</span>`);
     }
     return {
       score, composite,
       themeMatch, popularity, engagement,
+      engagementSource, engagementDetail,
       matchedKeys, matchedPhrases,
       queryHits, postHits,
       sphereHits, offtopicHits,
@@ -1441,6 +1526,12 @@
     const alreadyOut = [];
     const strict = opts.strict !== false; /* default strict */
     let droppedOfftopic = 0, droppedWeak = 0, droppedMega = 0;
+    /* state.subProfiles is keyed by lowercase sub name. When a
+     * candidate matches one we already loaded, scoreCandidate
+     * uses the local engagement data (comments-per-post + post
+     * frequency) instead of falling back to active_user_count
+     * — much richer signal for the alreadyLoaded section. */
+    const subProfiles = (opts.subProfiles && typeof opts.subProfiles === "object") ? opts.subProfiles : {};
     for (const c of (rawSearchResults || [])) {
       if (!c || !c.display_name) continue;
       const name = String(c.display_name).toLowerCase();
@@ -1451,6 +1542,7 @@
       const scored = Analysis.scoreCandidate(c, campaignProfile, {
         queryHits: queryHitsByName[name] || 0,
         postHits: postHitsByName[name] || 0,
+        subProfile: subProfiles[name] || null,
       });
       if (!scored) continue;
       const item = {

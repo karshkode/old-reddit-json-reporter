@@ -1335,85 +1335,28 @@
     el.textContent = msg;
   }
 
-  /* Best-effort clipboard write — falls back to a hidden textarea if
-   * the Async Clipboard API isn't available (e.g. http://localhost in
-   * some browsers). */
-  /* Robust clipboard-write that survives iOS Safari's user-gesture
-   * rule. Accepts either a string or a Promise<string>:
+  /* Backward-compatible local alias — the implementation lives in
+   * util.js as Util.copyToClipboard so other modules (composer,
+   * sync, etc.) can share the same iOS-Safari-gesture-safe code
+   * path. Existing callers in this file still use the bare name
+   * via this alias.
    *
-   *   await copyToClipboard("hello")              // sync text
-   *   await copyToClipboard(Sync.toShareUrl())    // async-computed text
-   *
-   * The async case is critical on iOS Safari. If a click handler
-   * `await`s anything before calling navigator.clipboard.writeText,
-   * the user-gesture context is gone and Safari throws
-   *   NotAllowedError: The request is not allowed by the user agent
-   *   or the platform in the current context, possibly because the
-   *   user denied permission.
-   *
-   * The standard workaround is `navigator.clipboard.write` with a
-   * `ClipboardItem` whose value is a *Promise* — Safari awaits the
-   * promise inside the same gesture. We use that path whenever the
-   * caller passed a thenable. Then we have two more fallbacks:
-   *   - plain `clipboard.writeText` (for browsers without ClipboardItem)
-   *   - hidden <textarea> + document.execCommand("copy") for ancient
-   *     browsers / Safari edge cases that reject everything else.
-   */
+   * Wrapped in a function (rather than a direct const = …) so it
+   * works regardless of script-load order; if util.js hasn't
+   * finished evaluating yet at IIFE-time, we still resolve to the
+   * latest Util.copyToClipboard at call time. */
   async function copyToClipboard(textOrPromise) {
-    const isPromise = textOrPromise && typeof textOrPromise.then === "function";
-
-    /* Path 1 — ClipboardItem-with-Promise. Preserves iOS Safari's
-     * user-gesture context across async work like CompressionStream
-     * gzip. Supported macOS Safari 13.1+ / iOS Safari 13.4+ /
-     * Chrome 76+ / Firefox 116+. */
-    if (isPromise && typeof ClipboardItem !== "undefined"
-        && navigator.clipboard && typeof navigator.clipboard.write === "function") {
-      try {
-        const blobPromise = Promise.resolve(textOrPromise)
-          .then((t) => new Blob([String(t)], { type: "text/plain" }));
-        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blobPromise })]);
-        return true;
-      } catch (_) {
-        /* Fall through. If the ClipboardItem path fails (e.g. permission
-         * denied, or a browser that rejects this API), we still try
-         * the writeText + execCommand fallbacks below. */
-      }
+    if (typeof Util !== "undefined" && Util.copyToClipboard) {
+      return Util.copyToClipboard(textOrPromise);
     }
-
-    /* Resolve the text now. If we lost the gesture, the writeText
-     * call below may itself throw — handled in its own try/catch so
-     * we still reach the execCommand fallback. */
-    let text;
-    try { text = isPromise ? await textOrPromise : String(textOrPromise); }
-    catch (_) { return false; }
-
-    /* Path 2 — standard async writeText. */
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      try {
-        await navigator.clipboard.writeText(text);
-        return true;
-      } catch (_) {
-        /* Fall through. */
-      }
-    }
-
-    /* Path 3 — hidden textarea + execCommand. Last-resort, but
-     * surprisingly reliable on Safari when nothing else works. */
+    /* Local fallback is intentionally tiny — primary path is
+     * Util's robust three-fallback implementation. This branch
+     * only fires if util.js failed to load at all. */
     try {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      ta.style.top = "0";
-      ta.style.left = "0";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      ta.setSelectionRange(0, text.length);
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return !!ok;
+      const t = (textOrPromise && typeof textOrPromise.then === "function")
+        ? await textOrPromise : String(textOrPromise);
+      await navigator.clipboard.writeText(t);
+      return true;
     } catch (_) {
       return false;
     }
@@ -3380,6 +3323,13 @@
             alreadyLimit: 100,
             queryHitsByName,
             postHitsByName,
+            /* Pass through state.subProfiles so candidates that
+             * are already in the dashboard's loaded data get
+             * scored on real comments-per-post + post-frequency
+             * signals instead of Reddit's frequently-zero
+             * active_user_count metadata. Fixes the "Activity"
+             * bar always reading 0. */
+            subProfiles: state.subProfiles || {},
             strict: state.discoverStrict !== false,
           }
         );
