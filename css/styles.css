@@ -4152,11 +4152,17 @@ body.modal-open { overflow: hidden; }
   .composer-modal .modal-card.composer-card { width: 100vw; max-height: 100vh; border-radius: 0; }
   .composer-pane-toggle { display: inline-flex; }
   .composer-split { grid-template-columns: 1fr; }
-  .composer-source-pane[data-composer-pane-content="source"]:not(.active),
-  .composer-preview-pane[data-composer-pane-content="preview"]:not(.active) {
-    display: none;
-  }
-  /* Mobile shows only the active pane */
+  /* Mobile shows only the active pane.
+   *
+   * The pane-toggle JS adds the `composer-pane-source` /
+   * `composer-pane-preview` class to <body>, NOT to the panes
+   * themselves, so we drive visibility off those body classes.
+   *
+   * (Earlier rule used `.composer-source-pane:not(.active)` which
+   *  was always true — `.active` is only added to the toggle
+   *  buttons, never to the panes — and so it hid both panes
+   *  unconditionally on mobile, leaving the user staring at a
+   *  composer with no body textarea visible.) */
   body.composer-pane-source .composer-preview-pane { display: none; }
   body.composer-pane-preview .composer-source-pane { display: none; }
   .composer-source-pane textarea { min-height: 220px; }
