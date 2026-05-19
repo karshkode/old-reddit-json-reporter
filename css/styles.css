@@ -4536,3 +4536,21 @@ body.modal-open { overflow: hidden; }
   content: "✓";
   font-weight: 700;
 }
+
+/* "Full reset" button — softer-than-danger, hotter-than-ghost.
+ * Hover/focus ramp into bad red so the destructive intent is
+ * unmistakable without screaming for attention by default
+ * (Clear cache and Full reset sit next to each other; we don't
+ * want a wall of red). */
+.btn.danger-soft {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: transparent;
+  position: relative;
+}
+.btn.danger-soft:hover,
+.btn.danger-soft:focus-visible {
+  color: var(--bad);
+  border-color: var(--bad);
+  background: rgba(248, 113, 113, 0.08);
+}

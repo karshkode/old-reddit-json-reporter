@@ -86,6 +86,18 @@
     /* skip expensive renders (themes, profiles, charts) while a batch
      * fetch is still in progress — KPI + table render only. */
     rendering: { light: false },
+    /* Persistent post cache metadata. Set by hydrateFromPostCache()
+     * on init and updated after every successful refreshData() so the
+     * UI can show "Cached from N min ago" / "Refreshed: +12 new
+     * since last fetch". */
+    cache: {
+      hasCache: false,
+      savedAt: 0,         // ms epoch — when the cache blob was written
+      fetchKey: "",       // params under which it was last fetched
+      cachedSubs: [],     // active subs at the time of caching
+      cachedCount: 0,     // number of posts in the cached blob (pre-filter)
+      lastRefreshAt: 0,   // ms epoch — when the user last hit Refresh in this session
+    },
   };
 
   function isMobile() {
@@ -122,6 +134,95 @@
     localStorage.setItem(STORAGE_KEYS.listing, state.listing);
     localStorage.setItem(STORAGE_KEYS.time, state.timeWindow);
     localStorage.setItem(STORAGE_KEYS.limit, String(state.limit));
+  }
+
+  /* Hydrate state.posts from the persistent post cache so a page
+   * reload doesn't have to re-fetch from Reddit before the dashboard
+   * is usable.
+   *
+   * - Cached posts whose subreddit is no longer in state.activeSubs
+   *   are filtered out (they'd render but the user can't see why,
+   *   since they're not in the chip set anymore). They stay in the
+   *   on-disk cache for when the user re-adds the sub.
+   * - The action banner is set to a "cached" phase showing the age
+   *   of the cache and a Refresh button. The user must tap Refresh
+   *   to fetch new data; we no longer auto-fetch on every reload.
+   * - If the cache's fetchKey doesn't match the current settings
+   *   (user changed listing/time/limit since last fetch), we still
+   *   hydrate but mark pendingChanges so the action banner reads
+   *   "Filters changed since cache — tap Go for fresh data".
+   * - Returns true if cache hydration succeeded; the caller can
+   *   skip the empty-state "Add subs and tap Go" banner in that case.
+   */
+  async function hydrateFromPostCache() {
+    if (typeof PostCache === "undefined") return false;
+    let cached;
+    try { cached = await PostCache.load(); } catch (_) { cached = null; }
+    if (!cached || !Array.isArray(cached.posts) || !cached.posts.length) return false;
+
+    const activeArr = Array.from(state.activeSubs);
+    const filtered = PostCache.filterByActiveSubs(cached.posts, activeArr);
+    state.posts = filtered;
+    state.cache.hasCache = true;
+    state.cache.savedAt = Number(cached.savedAt) || 0;
+    state.cache.fetchKey = String(cached.fetchKey || "");
+    state.cache.cachedSubs = Array.isArray(cached.activeSubs) ? cached.activeSubs.slice() : [];
+    state.cache.cachedCount = cached.posts.length;
+
+    /* Detect filter mismatch — if the user changed settings since
+     * the last save, we have stale data relative to their chosen
+     * listing/time/limit. Hydrate it anyway (something is better
+     * than nothing) but flag pendingChanges so the action banner
+     * recommends a Refresh. */
+    const currentKey = PostCache.buildFetchKey(activeArr, state.listing, state.timeWindow, state.limit);
+    state.pendingChanges = (currentKey !== state.cache.fetchKey);
+
+    console.log(`[postcache] hydrated ${filtered.length} posts (${cached.posts.length} cached, age=${PostCache.formatAge(cached.savedAt)})${state.pendingChanges ? " — filters changed since cache" : ""}`);
+    return true;
+  }
+
+  /* Drive the action banner into a "cached/loaded" phase that
+   * shows the cache age + a Refresh CTA. Called once after
+   * hydrateFromPostCache returns true. */
+  function showCachedActionBanner() {
+    if (typeof Util === "undefined" || !Util.setActionPhase) return;
+    const ageStr = (typeof PostCache !== "undefined" && state.cache.savedAt)
+      ? PostCache.formatAge(state.cache.savedAt)
+      : "";
+    const head = state.pendingChanges
+      ? "Filters changed since cache"
+      : `Showing cached data from ${ageStr}`;
+    const tail = state.pendingChanges
+      ? "Tap Go for fresh data."
+      : `${state.posts.length} posts loaded · tap Refresh to fetch new posts.`;
+    /* The action button reads "Go" in pending phase and "Refresh"
+     * in loaded — picked here based on whether the user has
+     * unfetched changes since the last cached refresh. */
+    Util.setActionPhase(state.pendingChanges ? "pending" : "loaded", `${head}. ${tail}`);
+  }
+
+  /* Persist current state.posts to the post cache. Fire-and-forget;
+   * failures are logged but don't break the render pipeline. */
+  async function persistPostCache() {
+    if (typeof PostCache === "undefined") return;
+    if (!state.posts.length) return;  /* don't overwrite a good cache with empty */
+    try {
+      await PostCache.save(state.posts, {
+        fetchKey: PostCache.buildFetchKey(
+          Array.from(state.activeSubs),
+          state.listing,
+          state.timeWindow,
+          state.limit
+        ),
+        activeSubs: Array.from(state.activeSubs),
+      });
+      state.cache.hasCache = true;
+      state.cache.savedAt = Date.now();
+      state.cache.cachedSubs = Array.from(state.activeSubs);
+      state.cache.cachedCount = state.posts.length;
+    } catch (e) {
+      console.warn("[postcache] persist failed:", e && e.message);
+    }
   }
 
   /* ---------- Banner ---------- */
@@ -460,6 +561,16 @@
 
   /* ---------- Data fetch ---------- */
 
+  /* @param force  truthy means the user explicitly tapped Refresh and
+   *               wants fresh data. The string "full" means a full
+   *               reset — wipe both Reddit's request cache AND the
+   *               persistent post cache before fetching, ignoring
+   *               any merge with the previously cached pool. Plain
+   *               truthy (true / 1 etc.) does a "soft" refresh:
+   *               clear Reddit's request cache so we hit network,
+   *               but PRESERVE the persistent post cache so we can
+   *               merge fall-off-hot posts back into the new
+   *               results.                                       */
   async function refreshData(force) {
     if (!state.activeSubs.size) {
       state.posts = [];
@@ -473,6 +584,29 @@
       return;
     }
     if (force) Reddit.clearCache();
+
+    /* "Full reset" wipes the persistent post cache too so the merge
+     * step below has nothing to merge against — equivalent to first-
+     * time fetch behavior. Soft refresh (force === true) keeps the
+     * cache so fall-off-hot posts are preserved across reloads. */
+    const fullReset = force === "full";
+    let cachedPool = [];
+    if (fullReset) {
+      if (typeof PostCache !== "undefined") PostCache.clear();
+      state.cache.hasCache = false;
+      state.cache.savedAt = 0;
+      state.cache.cachedCount = 0;
+    } else if (typeof PostCache !== "undefined") {
+      /* Stash the existing cached pool so we can merge it back in
+       * after the fresh fetch completes. We re-load from disk
+       * (rather than reusing state.posts) so we get cached posts
+       * from subs that aren't currently displayed but should be
+       * preserved through the merge. */
+      try {
+        const existing = await PostCache.load();
+        cachedPool = (existing && Array.isArray(existing.posts)) ? existing.posts : [];
+      } catch (_) {}
+    }
 
     /* The action banner now switches to "loading" via the first
      * Util.setProgress() call below. No separate hide step needed. */
@@ -588,7 +722,28 @@
       return;
     }
 
-    state.posts = Util.uniqBy(collected, (p) => p.id);
+    const freshUnique = Util.uniqBy(collected, (p) => p.id);
+    /* Merge the fresh fetch with the previously-cached pool (if any)
+     * so a Refresh keeps showing posts that fell off the user's
+     * current listing without re-fetching the whole tail. The merge
+     * helper:
+     *   - Prefers fresh copies on conflict (newer score / comments)
+     *   - Drops cached posts > 14 days old
+     *   - Drops cached posts whose subreddit is no longer active
+     *
+     * "Full reset" callers reach this branch with cachedPool = []
+     * so it's a no-op merge. */
+    let mergeSummary = null;
+    if (cachedPool.length) {
+      const merged = PostCache.merge(cachedPool, freshUnique, {
+        activeSubs: Array.from(state.activeSubs),
+      });
+      state.posts = merged.posts;
+      mergeSummary = merged;
+      console.log(`[postcache] merged ${merged.totalFresh} fresh + ${merged.kept} kept from cache (${merged.replaced} replaced, ${merged.droppedAge} aged out, ${merged.droppedSub} now-inactive sub)`);
+    } else {
+      state.posts = freshUnique;
+    }
     state.lastTransport = Reddit._lastTransport || state.lastTransport;
     state.rendering.light = false;
     /* Fetch finished — the dataset now matches the user's settings, so
@@ -596,8 +751,16 @@
      * action banner from "loading" -> "loaded" (button becomes
      * Refresh ↻, fill bar fades, text shows the load summary). */
     state.pendingChanges = false;
+    state.cache.lastRefreshAt = Date.now();
+    const newCount = mergeSummary ? freshUnique.length - mergeSummary.replaced : state.posts.length;
     const tail = ` · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`;
-    Util.hideProgress(`Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}${tail}`);
+    const loadedLine = mergeSummary
+      ? `Refreshed: ${freshUnique.length} fetched (+${newCount} new) · ${state.posts.length} total in view${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}${tail}`
+      : `Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}${tail}`;
+    Util.hideProgress(loadedLine);
+
+    /* Persist to disk for the NEXT page reload. Fire-and-forget. */
+    persistPostCache().catch(() => {});
 
     const totalMs = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
     console.log(`[refreshData] complete: ${state.posts.length} unique posts in ${totalMs}ms (errors=${errors})`);
@@ -1624,14 +1787,69 @@
       refreshData(true);
     });
 
-    const clearBtn = document.getElementById("clear-cache-btn");
-    if (clearBtn) clearBtn.addEventListener("click", () => {
+    /* "Clear cache" is a soft cache reset. It wipes Reddit's request
+     * memCache (so the next fetch hits network instead of in-page
+     * cache) and trips the circuit breaker, but preserves the
+     * persistent post cache so the user's existing dataset stays
+     * visible. For a hard reset that also wipes the persistent
+     * post cache, use the "Full reset" entry below — typically
+     * exposed via shift-click on Clear cache or via a confirm()
+     * dialog when the user holds the option key. We keep the
+     * default behavior soft because it's the more common case
+     * (refresh the request layer, keep the data). */
+    function softClearCache() {
       Reddit.clearCache();
       if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
-      Util.toast("Cache cleared", "ok");
+      Util.toast("Cache cleared. Tap Refresh to re-fetch.", "ok");
+    }
+    /* Full reset: wipes BOTH Reddit's request cache AND the on-disk
+     * persistent post cache. Drops state.posts so the next refresh
+     * starts from scratch. Triggered by shift+click on Clear cache,
+     * or programmatically via the confirm() in the action banner. */
+    function fullReset() {
+      Reddit.clearCache();
+      if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
+      if (typeof PostCache !== "undefined") PostCache.clear();
+      state.cache.hasCache = false;
+      state.cache.savedAt = 0;
+      state.cache.cachedCount = 0;
+      state.posts = [];
+      rerenderAll();
+      Util.toast("Full reset — all cached posts cleared. Tap Go to fetch fresh data.", "ok");
+      Util.setActionPhase("pending", describePendingFetch());
+      state.pendingChanges = true;
+    }
+
+    const clearBtn = document.getElementById("clear-cache-btn");
+    if (clearBtn) clearBtn.addEventListener("click", (e) => {
+      /* Shift-click = full reset (also wipes persistent post cache).
+       * Plain click = soft (request-cache only).
+       * Discoverable via the title attribute on the button. */
+      if (e.shiftKey) fullReset(); else softClearCache();
     });
     const clearBtnMobile = document.getElementById("clear-cache-btn-mobile");
-    if (clearBtnMobile) clearBtnMobile.addEventListener("click", () => { Reddit.clearCache(); Util.toast("Cache cleared", "ok"); });
+    if (clearBtnMobile) clearBtnMobile.addEventListener("click", (e) => {
+      if (e.shiftKey) fullReset(); else softClearCache();
+    });
+
+    /* Full reset button (separate, explicit). Lets users on touch
+     * devices (no shift key) wipe everything cleanly, and surfaces
+     * the destructive action visually so first-time users discover
+     * it. Wired below to a button we add to the topbar in HTML. */
+    const fullResetBtn = document.getElementById("full-reset-btn");
+    if (fullResetBtn) fullResetBtn.addEventListener("click", () => {
+      if (!state.posts.length) { fullReset(); return; }
+      if (confirm("Full reset will discard all cached posts (" + state.posts.length + " in view) and re-fetch from scratch. Continue?")) {
+        fullReset();
+      }
+    });
+    const fullResetBtnMobile = document.getElementById("full-reset-btn-mobile");
+    if (fullResetBtnMobile) fullResetBtnMobile.addEventListener("click", () => {
+      if (!state.posts.length) { fullReset(); return; }
+      if (confirm("Full reset will discard all cached posts (" + state.posts.length + " in view) and re-fetch from scratch. Continue?")) {
+        fullReset();
+      }
+    });
 
     /* Filter changes (listing / time / limit) no longer auto-trigger
      * a fetch. They mark the dataset stale and reveal the Go banner;
@@ -3847,10 +4065,31 @@ const bestCampaignPost = (summary.posts || [])
     safeRun("wireTopbarHeightVar", wireTopbarHeightVar);
     safeRun("wireSyncSession", wireSyncSession);
     safeRun("renderChips", renderChips);
+    /* Hydrate from the persistent post cache BEFORE the first
+     * rerender so the user immediately sees their previous data
+     * instead of an empty-state on every reload. Async because
+     * gzip decoding is async. The action banner phase is set in
+     * showInitialActionBanner below, which now branches on
+     * whether hydration produced a cached view. */
+    safeRun("hydratePostCache", () => {
+      hydrateFromPostCache().then((ok) => {
+        if (ok) {
+          rerenderAll();
+          showCachedActionBanner();
+        }
+      }).catch((e) => console.warn("[postcache] hydrate failed:", e && e.message));
+    });
     safeRun("rerenderAll", rerenderAll);
     safeRun("wireMediaPreview", wireMediaPreview);
     safeRun("showStarterPacksIfEmpty", showStarterPacksIfEmpty);
-    safeRun("showInitialActionBanner", () => Util.setActionPhase("pending", describePendingFetch()));
+    safeRun("showInitialActionBanner", () => {
+      /* If hydrate succeeded synchronously already (extremely fast
+       * path), it set the cache banner — don't overwrite it here.
+       * In the async path the cache banner is set inside the .then
+       * above. */
+      if (state.cache.hasCache && state.posts.length) return;
+      Util.setActionPhase("pending", describePendingFetch());
+    });
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
     safeRun("wirePredictCard", wirePredictCard);
     safeRun("wireCascadeCard", wireCascadeCard);
