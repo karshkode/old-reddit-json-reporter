@@ -523,7 +523,11 @@
 
   Analysis.recommendTargets = function (campaignProfile, subProfiles, opts) {
     opts = opts || {};
-    const limit = opts.limit || 10;
+    /* Default cap raised to 200 so the renderer has plenty of
+     * material to paginate over. Callers can override down for
+     * narrow uses (e.g. composer's "From recommended" wants the
+     * top ~12 to seed its target list). */
+    const limit = opts.limit != null ? opts.limit : 200;
     const subs = Object.values(subProfiles || {});
     if (!subs.length || !campaignProfile || !campaignProfile.count) return [];
 
@@ -1494,9 +1498,16 @@
     }
     newOut.sort((a, b) => b.score - a.score);
     alreadyOut.sort((a, b) => b.score - a.score);
+    /* Caps moved up to give the renderer enough material to paginate
+     * over. The previous caps (20 new + 8 already-loaded) were just
+     * the visible-list size; now the renderer slices its own page
+     * so the engine returns the full ranked tail. 200/100 is enough
+     * to surface every viable candidate without the JSON ballooning
+     * (most discovery passes find ~50-150 viable candidates after
+     * filtering anyway). */
     return {
-      candidates: newOut.slice(0, opts.limit || 20),
-      alreadyLoaded: alreadyOut.slice(0, 8),
+      candidates: newOut.slice(0, opts.limit != null ? opts.limit : 200),
+      alreadyLoaded: alreadyOut.slice(0, opts.alreadyLimit != null ? opts.alreadyLimit : 100),
       totalScanned: seen.size,
       filtered: { offtopic: droppedOfftopic, weak: droppedWeak, mega: droppedMega },
       strict: strict,

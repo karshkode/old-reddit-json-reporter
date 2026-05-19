@@ -1071,10 +1071,26 @@
       el.innerHTML = `<div class="empty">Load more subreddits in the dashboard to compute targeting fits for "${Util.escapeHtml(campaign.name)}". Targeting compares the campaign's themes/sentiment against each loaded sub.</div>`;
       return;
     }
+
+    /* Paging — opts.paging = { page, pageSize }. surfaceKey threads
+     * through to the data-attrs so the click handler can route page
+     * changes back to the correct slot in state.recommend.targeting.
+     * Default pageSize 25 matches the Posts table for consistency. */
+    const surfaceKey = opts.surfaceKey || "default";
+    const pageSize = (opts.paging && opts.paging.pageSize) || 25;
+    const page = (opts.paging && opts.paging.page) || 0;
+    const total = targets.length;
+    const isAll = pageSize === "all";
+    const totalPages = isAll ? 1 : Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages - 1);
+    const slice = isAll ? targets : targets.slice(safePage * pageSize, (safePage + 1) * pageSize);
+
     const head = opts.heading
       ? `<div class="meta" style="margin-bottom:8px">Best loaded subreddits for <strong>${Util.escapeHtml(campaign.name)}</strong>, ranked by theme overlap, sentiment alignment, audience reception, and activity.</div>`
       : "";
-    el.innerHTML = head + targets.map((t, i) => {
+
+    const cards = slice.map((t, i) => {
+      const absRank = (isAll ? 0 : safePage * pageSize) + i + 1;
       const cls = t.score >= 70 ? "good" : t.score >= 50 ? "info" : t.score >= 30 ? "warn" : "bad";
       const reasonsHtml = t.reasons.map((r) => `<li>${r}</li>`).join("");
       const segments = `
@@ -1089,7 +1105,7 @@
         <div class="target-row${t.alreadyTargeted ? " already" : ""}">
           <div class="target-head">
             <div>
-              <span class="rank">#${i + 1}</span>
+              <span class="rank">#${absRank}</span>
               <strong>r/${Util.escapeHtml(t.subreddit)}</strong>
               <span class="badge ${cls}">fit ${t.score}</span>
             </div>
@@ -1100,6 +1116,40 @@
         </div>
       `;
     }).join("");
+
+    /* Top controls: page-size selector + result count.
+     * Bottom controls: prev/next pager.
+     * Both omitted when total <= 10 (no need to paginate a tiny list). */
+    const showControls = total > 10;
+    const sizeChips = ["10", "25", "50", "100", "all"].map((sz) => {
+      const isOn = String(pageSize) === sz;
+      const label = sz === "all" ? "All" : sz;
+      return `<button type="button" class="chip${isOn ? " active" : ""}" data-targeting-size="${sz}" data-targeting-surface="${Util.escapeHtml(surfaceKey)}" role="radio" aria-checked="${isOn}">${label}</button>`;
+    }).join("");
+    const sizeRow = showControls ? `
+      <div class="recommend-controls">
+        <span class="meta"><strong>${Util.fmtNum(total)}</strong> recommended sub${total === 1 ? "" : "s"}</span>
+        <div class="recommend-size" role="radiogroup" aria-label="Results per page">
+          <span class="recommend-size-label">Show</span>
+          ${sizeChips}
+        </div>
+      </div>
+    ` : `<div class="meta" style="margin-bottom:6px"><strong>${Util.fmtNum(total)}</strong> recommended sub${total === 1 ? "" : "s"}</div>`;
+
+    let pagerHtml = "";
+    if (showControls && !isAll && totalPages > 1) {
+      const start = safePage * pageSize + 1;
+      const end = Math.min(total, (safePage + 1) * pageSize);
+      pagerHtml = `
+        <div class="recommend-pager">
+          <button class="btn small" type="button" data-targeting-page="prev" data-targeting-surface="${Util.escapeHtml(surfaceKey)}" ${safePage === 0 ? "disabled" : ""}>« Prev</button>
+          <span class="pagination-info">Page <strong>${safePage + 1}</strong> of ${totalPages} · ${start}–${end} of ${Util.fmtNum(total)}</span>
+          <button class="btn small" type="button" data-targeting-page="next" data-targeting-surface="${Util.escapeHtml(surfaceKey)}" ${safePage >= totalPages - 1 ? "disabled" : ""}>Next »</button>
+        </div>
+      `;
+    }
+
+    el.innerHTML = head + sizeRow + cards + pagerHtml;
   };
 
   /* Render new-subreddit candidates discovered via Reddit search.
@@ -1225,21 +1275,88 @@
       `;
     }
 
+    /* Per-section pagination. New + already-loaded each get their
+     * own page state (passed in via ctx.paging) so a user paging
+     * through "New candidates" doesn't inadvertently reset their
+     * scroll position in the "Already in your dashboard" section.
+     * Falls back to "show first page of 25" when caller didn't
+     * supply paging — preserves backward compatibility. */
+    const pagingNew     = (ctx.paging && ctx.paging.new)     || { page: 0, pageSize: 25 };
+    const pagingAlready = (ctx.paging && ctx.paging.already) || { page: 0, pageSize: 25 };
+
+    function buildSection(items, surface, paging, opts) {
+      const total = items.length;
+      const pageSize = paging.pageSize || 25;
+      const isAll = pageSize === "all";
+      const totalPages = isAll ? 1 : Math.max(1, Math.ceil(total / pageSize));
+      const safePage = Math.min(paging.page || 0, totalPages - 1);
+      const slice = isAll ? items : items.slice(safePage * pageSize, (safePage + 1) * pageSize);
+      const showControls = total > 10;
+
+      const sizeChips = showControls ? ["10", "25", "50", "100", "all"].map((sz) => {
+        const isOn = String(pageSize) === sz;
+        const label = sz === "all" ? "All" : sz;
+        return `<button type="button" class="chip${isOn ? " active" : ""}" data-discover-size="${sz}" data-discover-surface="${surface}" role="radio" aria-checked="${isOn}">${label}</button>`;
+      }).join("") : "";
+
+      const sizeRow = showControls ? `
+        <div class="recommend-controls">
+          <span class="meta"><strong>${Util.fmtNum(total)}</strong> ${opts.totalLabel}</span>
+          <div class="recommend-size" role="radiogroup" aria-label="Results per page">
+            <span class="recommend-size-label">Show</span>
+            ${sizeChips}
+          </div>
+        </div>
+      ` : "";
+
+      let pagerHtml = "";
+      if (showControls && !isAll && totalPages > 1) {
+        const start = safePage * pageSize + 1;
+        const end = Math.min(total, (safePage + 1) * pageSize);
+        pagerHtml = `
+          <div class="recommend-pager">
+            <button class="btn small" type="button" data-discover-page="prev" data-discover-surface="${surface}" ${safePage === 0 ? "disabled" : ""}>« Prev</button>
+            <span class="pagination-info">Page <strong>${safePage + 1}</strong> of ${totalPages} · ${start}–${end} of ${Util.fmtNum(total)}</span>
+            <button class="btn small" type="button" data-discover-page="next" data-discover-surface="${surface}" ${safePage >= totalPages - 1 ? "disabled" : ""}>Next »</button>
+          </div>
+        `;
+      }
+
+      const cards = slice.map((c, i) => renderCard(c, (isAll ? 0 : safePage * pageSize) + i, opts.isAlready)).join("");
+      return { sizeRow, cards, pagerHtml };
+    }
+
     const newSection = candidates.length
-      ? `<div class="discover-section">
-           <h4 class="discover-h">New candidates (${candidates.length})</h4>
-           ${candidates.map((c, i) => renderCard(c, i, false)).join("")}
-         </div>`
+      ? (function () {
+          const built = buildSection(candidates, "new", pagingNew, {
+            totalLabel: "new candidate" + (candidates.length === 1 ? "" : "s"),
+            isAlready: false,
+          });
+          return `<div class="discover-section">
+             <h4 class="discover-h">New candidates (${candidates.length})</h4>
+             ${built.sizeRow}
+             ${built.cards}
+             ${built.pagerHtml}
+           </div>`;
+        })()
       : `<div class="discover-section"><h4 class="discover-h">New candidates (0)</h4>
            <div class="empty">Every match is already in your dashboard. Scroll down to see how your existing subs scored, or load fewer subs and re-run Discover for fresh ideas.</div>
          </div>`;
 
     const alreadySection = alreadyLoaded.length
-      ? `<div class="discover-section">
-           <h4 class="discover-h">Already in your dashboard (${alreadyLoaded.length})</h4>
-           <div class="discover-sub-hint">Confirms the engine ranked these high too — proof the discovery query is on-target.</div>
-           ${alreadyLoaded.map((c, i) => renderCard(c, i, true)).join("")}
-         </div>`
+      ? (function () {
+          const built = buildSection(alreadyLoaded, "already", pagingAlready, {
+            totalLabel: "already in your dashboard",
+            isAlready: true,
+          });
+          return `<div class="discover-section">
+             <h4 class="discover-h">Already in your dashboard (${alreadyLoaded.length})</h4>
+             <div class="discover-sub-hint">Confirms the engine ranked these high too — proof the discovery query is on-target.</div>
+             ${built.sizeRow}
+             ${built.cards}
+             ${built.pagerHtml}
+           </div>`;
+        })()
       : "";
 
     el.innerHTML = newSection + alreadySection;

@@ -79,6 +79,32 @@
       ai: null,         // selected campaign id for the AI Insights playground
       campaigns: null,  // selected campaign id for the Campaigns tab card
     },
+    /* Pagination state for recommendation surfaces. The rendered
+     * list of suggested subreddits used to be capped at 8-20
+     * depending on the surface; now the engine returns the full
+     * ranked tail (up to 200) and the renderer paginates with this
+     * state. Per-surface so each card remembers its own page across
+     * tab-switches. */
+    recommend: {
+      targeting: {
+        inline:    { page: 0, pageSize: 25 },
+        ai:        { page: 0, pageSize: 25 },
+        campaigns: { page: 0, pageSize: 25 },
+      },
+      discover: {
+        new:     { page: 0, pageSize: 25 },
+        already: { page: 0, pageSize: 25 },
+      },
+    },
+    /* Stash for the last-rendered targets per surface so paginator
+     * clicks can re-render without re-running Analysis.recommend-
+     * Targets (recompute is cheap but unnecessary when only the
+     * page index / size changed). */
+    lastRenderedTargeting: { inline: null, ai: null, campaigns: null },
+    /* Same for discover — stashed so paginator clicks don't trigger
+     * a full re-run of the multi-second discovery search. */
+    lastDiscoverResult: null,
+    lastDiscoverCtx: null,
     /* monotonic counter — every refreshData() call increments it; running
      * fetches that observe a change discard their results so a fast user
      * tapping Refresh repeatedly doesn't get stale data piled on top. */
@@ -927,7 +953,15 @@
       const deepLocal = computeCampaignDeep(campaign, localAgg);
       UI.renderCampaignDetail(campaign, localAgg, deepLocal);
       const inlineLocal = document.getElementById("campaign-detail-targets");
-      if (inlineLocal) UI.renderTargeting(campaign, deepLocal ? deepLocal.targets : [], inlineLocal, { heading: false });
+      if (inlineLocal) {
+        const targets = deepLocal ? deepLocal.targets : [];
+        state.lastRenderedTargeting.inline = { campaign, targets, container: inlineLocal, opts: { heading: false } };
+        UI.renderTargeting(campaign, targets, inlineLocal, {
+          heading: false,
+          surfaceKey: "inline",
+          paging: state.recommend.targeting.inline,
+        });
+      }
     } catch (_) {
       body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
     }
@@ -951,7 +985,15 @@
       UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
 
       const inlineEl = document.getElementById("campaign-detail-targets");
-      if (inlineEl) UI.renderTargeting(campaign, deep ? deep.targets : [], inlineEl, { heading: false });
+      if (inlineEl) {
+        const targets = deep ? deep.targets : [];
+        state.lastRenderedTargeting.inline = { campaign, targets, container: inlineEl, opts: { heading: false } };
+        UI.renderTargeting(campaign, targets, inlineEl, {
+          heading: false,
+          surfaceKey: "inline",
+          paging: state.recommend.targeting.inline,
+        });
+      }
 
       console.log(`[openCampaign] ${campaign.name}: local=${agg.resolvedFromLocal} network=${agg.resolvedFromNetwork} missing=${agg.missing.length}`);
     } catch (err) {
@@ -1015,7 +1057,10 @@
     })).sort((a, b) => b.totalScore - a.totalScore);
 
     const comparison = Analysis.compareTopBottom(agg.posts);
-    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 8 });
+    /* Was 8. Now full ranked tail so the inline targeting card in
+     * the campaign detail can paginate through the entire ranked
+     * list of loaded subs, not just the top handful. */
+    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 200 });
     const narrative = buildCampaignNarrative(campaign, profile, perSubArr, comparison);
 
     return { profile, perSub: perSubArr, comparison, targets, narrative };
@@ -1106,8 +1151,44 @@
       return;
     }
     const profile = Analysis.campaignProfile(summary.posts, campaign);
-    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 10 });
-    UI.renderTargeting(campaign, targets, out, { heading: true });
+    /* Was 10. Full ranked list so the AI Insights / Campaigns-tab
+     * targeting card has plenty of depth for pagination. */
+    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 200 });
+    /* Reset to page 0 on a fresh recompute (campaign change, etc.) so
+     * the user lands on the top of the new ranking instead of being
+     * stranded on page 5 of the previous campaign's results. */
+    if (state.recommend.targeting[which]) state.recommend.targeting[which].page = 0;
+    state.lastRenderedTargeting[which] = { campaign, targets, container: out, opts: { heading: true } };
+    UI.renderTargeting(campaign, targets, out, {
+      heading: true,
+      surfaceKey: which,
+      paging: state.recommend.targeting[which] || { page: 0, pageSize: 25 },
+    });
+  }
+
+  /* Re-render whichever recommendation surface the user just paged
+   * through. Looks up the stashed (campaign, targets, container) and
+   * calls UI.renderTargeting again with the latest paging state.
+   * Avoids re-running Analysis.recommendTargets — pagination is a
+   * pure display concern, the ranked list is unchanged. */
+  function rerenderTargeting(surfaceKey) {
+    const slot = state.lastRenderedTargeting[surfaceKey];
+    if (!slot || !slot.campaign || !slot.container) return;
+    UI.renderTargeting(slot.campaign, slot.targets, slot.container, Object.assign({}, slot.opts || {}, {
+      surfaceKey,
+      paging: state.recommend.targeting[surfaceKey] || { page: 0, pageSize: 25 },
+    }));
+  }
+  function rerenderDiscovery() {
+    if (!state.lastDiscoverResult) return;
+    const discoverResults = document.getElementById("discover-results");
+    if (!discoverResults) return;
+    UI.renderDiscoveryCandidates(state.lastDiscoverResult, discoverResults, Object.assign({}, state.lastDiscoverCtx || {}, {
+      paging: {
+        new:     state.recommend.discover.new,
+        already: state.recommend.discover.already,
+      },
+    }));
   }
 
   /* ---------- Wire UI ---------- */
@@ -3290,7 +3371,13 @@
           {
             excludeNames: Array.from(exclude),
             minSubs: 25,
-            limit: 20,
+            /* Was 20. Returning the full ranked tail (cap 200) lets
+             * the renderer paginate so the user can browse deep
+             * into the list — useful for civic campaigns that
+             * legitimately have 50-100+ relevant communities once
+             * geographic + topical hits accumulate. */
+            limit: 200,
+            alreadyLimit: 100,
             queryHitsByName,
             postHitsByName,
             strict: state.discoverStrict !== false,
@@ -3306,10 +3393,24 @@ const bestCampaignPost = (summary.posts || [])
           .slice()
           .sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
         const campaignSubs = new Set((profile.subreddits || []).map((s) => String(s).toLowerCase()));
+        /* Stash the full ranked result so paginator clicks can re-
+         * render against it without re-running the whole discovery
+         * search (which is multi-second and burns Reddit calls). */
+        state.lastDiscoverResult = result;
+        state.lastDiscoverCtx = { campaign, bestCampaignPost, campaignSubs };
+        /* Reset to page 0 on a fresh discovery run so the user sees
+         * the top of the new list instead of being stranded on page
+         * 5 of the previous campaign's results. */
+        state.recommend.discover.new.page = 0;
+        state.recommend.discover.already.page = 0;
         UI.renderDiscoveryCandidates(result, discoverResults, {
           campaign,
           bestCampaignPost,
           campaignSubs,
+          paging: {
+            new:     state.recommend.discover.new,
+            already: state.recommend.discover.already,
+          },
         });
         updateSphereChipScores(result);
         Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
@@ -4067,6 +4168,72 @@ const bestCampaignPost = (summary.posts || [])
     });
   }
 
+  /* Pagination handlers for the recommendation surfaces.
+   *
+   * Renderers emit page / size buttons with attributes like
+   *   data-targeting-page="next"   data-targeting-surface="ai"
+   *   data-targeting-size="50"     data-targeting-surface="inline"
+   *   data-discover-page="prev"    data-discover-surface="new"
+   *   data-discover-size="all"     data-discover-surface="already"
+   *
+   * Single document-level click handler routes every button into
+   * state.recommend.{targeting|discover}.<slot> and re-renders the
+   * affected surface from its stashed (campaign, targets, container)
+   * triplet. Doing this via delegation means the renderer is free
+   * to rebuild its DOM on every render without us having to re-bind
+   * handlers each time. */
+  function wireRecommendPagination() {
+    document.addEventListener("click", (e) => {
+      const t = e.target;
+
+      const tgtSize = t.closest && t.closest("[data-targeting-size]");
+      if (tgtSize) {
+        const surface = tgtSize.dataset.targetingSurface;
+        const slot = state.recommend.targeting[surface];
+        if (!slot) return;
+        const sz = tgtSize.dataset.targetingSize;
+        slot.pageSize = (sz === "all" ? "all" : Number(sz) || 25);
+        slot.page = 0;
+        rerenderTargeting(surface);
+        return;
+      }
+
+      const tgtPage = t.closest && t.closest("[data-targeting-page]");
+      if (tgtPage) {
+        const surface = tgtPage.dataset.targetingSurface;
+        const slot = state.recommend.targeting[surface];
+        if (!slot) return;
+        slot.page = (slot.page || 0) + (tgtPage.dataset.targetingPage === "next" ? 1 : -1);
+        if (slot.page < 0) slot.page = 0;
+        rerenderTargeting(surface);
+        return;
+      }
+
+      const dscSize = t.closest && t.closest("[data-discover-size]");
+      if (dscSize) {
+        const surface = dscSize.dataset.discoverSurface;
+        const slot = state.recommend.discover[surface];
+        if (!slot) return;
+        const sz = dscSize.dataset.discoverSize;
+        slot.pageSize = (sz === "all" ? "all" : Number(sz) || 25);
+        slot.page = 0;
+        rerenderDiscovery();
+        return;
+      }
+
+      const dscPage = t.closest && t.closest("[data-discover-page]");
+      if (dscPage) {
+        const surface = dscPage.dataset.discoverSurface;
+        const slot = state.recommend.discover[surface];
+        if (!slot) return;
+        slot.page = (slot.page || 0) + (dscPage.dataset.discoverPage === "next" ? 1 : -1);
+        if (slot.page < 0) slot.page = 0;
+        rerenderDiscovery();
+        return;
+      }
+    });
+  }
+
   function init() {
     safeRun("loadPersisted", loadPersisted);
     safeRun("bind", bind);
@@ -4105,6 +4272,7 @@ const bestCampaignPost = (summary.posts || [])
     safeRun("wireABCompare", wireABCompare);
     safeRun("wireVolunteer", wireVolunteer);
     safeRun("wireComposer", wireComposer);
+    safeRun("wireRecommendPagination", wireRecommendPagination);
         safeRun("checkStorageAvailability", checkStorageAvailability);
   }
 
