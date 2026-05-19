@@ -169,6 +169,194 @@
     return sanitize(html);
   };
 
+  /* Render markdown to "mobile-app-friendly" HTML.
+   *
+   * Background: Reddit's mobile app body editor is a Tiptap-style
+   * rich-text composer with a CONSERVATIVE paste schema. It accepts
+   *   <p>  <br>  <strong>  <em>  <s>  <code>  <a>
+   * but unwraps everything else to plain text — that means the
+   * structural tags `<h1>`-`<h6>`, `<ul>`/`<ol>`/`<li>`,
+   * `<blockquote>`, `<pre>`, `<table>` all collapse to their inner
+   * text content, losing visual structure.
+   *
+   * The user's screenshot showed exactly this: pasted body had
+   * bolded headings (h2 -> bold paragraph) but the bullet list of
+   * partner organizations rendered as plain text lines, no bullets.
+   *
+   * Fix: this renderer post-processes Composer.renderMarkdown's
+   * output to flatten structural tags into <p>/<br> with Unicode
+   * prefixes that survive the app's plain-text fallback path:
+   *
+   *   <h1>-<h6>      ->  <p><strong>...</strong></p>
+   *   <ul><li>x</li> ->  <p>•&nbsp;x<br>•&nbsp;y</p>
+   *   <ol><li>x</li> ->  <p>1.&nbsp;x<br>2.&nbsp;y</p>
+   *   <blockquote>   ->  <p>▎&nbsp;quoted text</p>
+   *   <pre><code>    ->  <p>code content</p>
+   *   <table>        ->  <p>row 1 cells | row 2 cells</p>
+   *
+   * Inline formatting (<strong>, <em>, <a>, <code>) inside the
+   * flattened blocks is preserved because the app's schema
+   * accepts those.
+   *
+   * The result reads correctly in EVERY paste destination tested:
+   *   - Reddit mobile app: bullets visible (via Unicode), bold
+   *     paragraphs render
+   *   - Reddit web (new/old): paragraphs with literal bullet chars,
+   *     readable but not "list-like"
+   *   - Apple Notes / Slack / Pages / Linear: same — paragraphs
+   *     with visible bullets
+   *
+   * The "list semantics get lost on web Reddit" trade is worth it
+   * because the user's primary workflow is mobile app paste. */
+  const FLATTEN_BLOCK_TAGS = "p, ul, ol, blockquote, pre, table, hr";
+  Composer.renderForMobilePaste = function (md) {
+    if (typeof md !== "string" || !md.trim()) return "";
+    const baseHtml = Composer.renderMarkdown(md);
+    if (!baseHtml) return "";
+
+    /* SSR / no-DOMParser fallback — return the standard HTML
+     * and let the caller rely on text/plain to carry the body. */
+    if (typeof DOMParser === "undefined") return baseHtml;
+
+    const doc = new DOMParser().parseFromString("<div>" + baseHtml + "</div>", "text/html");
+    const root = doc.body.firstChild;
+    if (!root) return baseHtml;
+
+    /* Helper: clone an <li> and strip nested block elements so the
+     * resulting fragment carries only inline children. Used so a
+     * list item like "<li><p>foo</p><ul>nested</ul></li>" produces
+     * "foo" + the nested list flattened separately. */
+    function inlineCloneOf(node) {
+      const clone = node.cloneNode(true);
+      clone.querySelectorAll(FLATTEN_BLOCK_TAGS).forEach((el) => {
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+        el.remove();
+      });
+      return clone;
+    }
+
+    /* 1. Headings -> <p><strong>…</strong></p>. Reddit's app already
+     *    collapses heading sizes to bold-paragraph anyway, so this
+     *    just makes the conversion explicit and predictable. */
+    root.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((h) => {
+      const p = doc.createElement("p");
+      const strong = doc.createElement("strong");
+      while (h.firstChild) strong.appendChild(h.firstChild);
+      p.appendChild(strong);
+      h.parentNode.replaceChild(p, h);
+    });
+
+    /* 2. Lists. Process from deepest-nested outward so a top-level
+     *    <ul> containing a sub-<ul> gets the children flattened
+     *    first, then the parent. Detected by absence of nested
+     *    list inside each candidate. Bounded loop so a malformed
+     *    DOM can't lock the page up. */
+    for (let pass = 0; pass < 12; pass++) {
+      const lists = Array.from(root.querySelectorAll("ul, ol"))
+        .filter((l) => !l.querySelector("ul, ol"));
+      if (!lists.length) break;
+      lists.forEach((list) => {
+        const ordered = list.tagName.toLowerCase() === "ol";
+        const items = Array.from(list.children).filter((c) => c.tagName.toLowerCase() === "li");
+        const p = doc.createElement("p");
+        items.forEach((li, i) => {
+          const prefix = ordered ? `${i + 1}.\u00A0` : "\u2022\u00A0";
+          p.appendChild(doc.createTextNode(prefix));
+          const inline = inlineCloneOf(li);
+          while (inline.firstChild) p.appendChild(inline.firstChild);
+          if (i < items.length - 1) p.appendChild(doc.createElement("br"));
+        });
+        list.parentNode.replaceChild(p, list);
+      });
+    }
+
+    /* 3. Blockquotes -> <p> prefixed with ▎ (left vertical bar
+     *    U+258E). Multi-paragraph quotes get one ▎ prefix per
+     *    paragraph, joined with <br>. */
+    root.querySelectorAll("blockquote").forEach((bq) => {
+      const paras = Array.from(bq.querySelectorAll("p"));
+      const p = doc.createElement("p");
+      if (paras.length) {
+        paras.forEach((inner, i) => {
+          p.appendChild(doc.createTextNode("\u258E\u00A0"));
+          const inline = inlineCloneOf(inner);
+          while (inline.firstChild) p.appendChild(inline.firstChild);
+          if (i < paras.length - 1) p.appendChild(doc.createElement("br"));
+        });
+      } else {
+        /* No nested <p> — quote was inline. Keep it simple. */
+        p.appendChild(doc.createTextNode("\u258E\u00A0"));
+        const inline = inlineCloneOf(bq);
+        while (inline.firstChild) p.appendChild(inline.firstChild);
+      }
+      bq.parentNode.replaceChild(p, bq);
+    });
+
+    /* 4. Code blocks -> <p>. Loses monospace + indentation but
+     *    Reddit's app strips those anyway; preserving the text is
+     *    the achievable goal. */
+    root.querySelectorAll("pre").forEach((pre) => {
+      const p = doc.createElement("p");
+      const code = pre.querySelector("code");
+      const text = (code ? code.textContent : pre.textContent) || "";
+      /* Preserve newlines as <br> so multi-line code reads right. */
+      const lines = text.replace(/\n+$/, "").split("\n");
+      lines.forEach((line, i) => {
+        p.appendChild(doc.createTextNode(line));
+        if (i < lines.length - 1) p.appendChild(doc.createElement("br"));
+      });
+      pre.parentNode.replaceChild(p, pre);
+    });
+
+    /* 5. Tables -> "row1 cell | row1 cell\nrow2 cell | row2 cell"
+     *    paragraphs. Crude but readable. */
+    root.querySelectorAll("table").forEach((table) => {
+      const lines = [];
+      table.querySelectorAll("tr").forEach((tr) => {
+        const cells = [];
+        tr.querySelectorAll("th, td").forEach((c) => cells.push((c.textContent || "").trim()));
+        lines.push(cells.join(" \u2502 "));
+      });
+      const p = doc.createElement("p");
+      lines.forEach((line, i) => {
+        p.appendChild(doc.createTextNode(line));
+        if (i < lines.length - 1) p.appendChild(doc.createElement("br"));
+      });
+      table.parentNode.replaceChild(p, table);
+    });
+
+    /* 6. <hr> -> <p>──────</p> (decorative line) */
+    root.querySelectorAll("hr").forEach((hr) => {
+      const p = doc.createElement("p");
+      p.textContent = "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500";
+      hr.parentNode.replaceChild(p, hr);
+    });
+
+    return root.innerHTML;
+  };
+
+  /* Plain-text equivalent of the mobile-paste HTML — extracts
+   * textContent from the flattened HTML so the Unicode prefixes
+   * are preserved. Used as the text/plain blob in the clipboard
+   * write so apps that pick text/plain instead of text/html still
+   * see visible bullets / quote markers / numbered items. */
+  Composer.renderForMobilePastePlain = function (md) {
+    const html = Composer.renderForMobilePaste(md);
+    if (!html) return "";
+    if (typeof DOMParser === "undefined") return md;
+    /* Convert <br> back to \n, <p> boundaries to \n\n. Inline tags
+     * (<strong>, <em>, <a>) are dropped — plain text can't render
+     * them. The Unicode prefixes (•, 1., ▎) are already in the
+     * text nodes so they survive textContent extraction. */
+    const doc = new DOMParser().parseFromString("<div>" + html + "</div>", "text/html");
+    const root = doc.body.firstChild;
+    /* Replace <br> with newline placeholder. */
+    root.querySelectorAll("br").forEach((br) => br.parentNode.replaceChild(doc.createTextNode("\n"), br));
+    /* Insert paragraph separators between <p> blocks. */
+    const paragraphs = Array.from(root.children).map((c) => c.textContent.trim()).filter(Boolean);
+    return paragraphs.join("\n\n");
+  };
+
   /* ---------------------------------------------------------------
    * Toolbar actions
    *
