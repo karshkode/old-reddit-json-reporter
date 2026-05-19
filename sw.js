@@ -23,7 +23,7 @@
  * iOS PWA installs, which retain SWs aggressively) stuck on an old
  * UI build until they manually reinstall the app.
  */
-const CACHE_VERSION = "v20260518y";
+const CACHE_VERSION = "v20260519a";
 const CACHE_NAME = "rj-static-" + CACHE_VERSION;
 
 const PRECACHE = [
@@ -38,6 +38,7 @@ const PRECACHE = [
   "./js/charts.js",
   "./js/campaigns.js",
   "./js/postcache.js",
+  "./js/sidebar.js",
   "./js/composer.js",
   "./js/ui.js",
   "./js/app.js",

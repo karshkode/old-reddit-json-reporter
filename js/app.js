@@ -2653,11 +2653,20 @@
     /* Inline add-posts form + per-row remove button inside the campaign
      * detail panel. We use event delegation on the body so the handlers
      * survive every re-render. */
+    /* Originally these were bound to #campaign-detail-body via
+     * delegation. With the campaign-hub refactor, the same
+     * interactive elements (add-posts form, posts list, goals
+     * editor, etc.) ALSO appear inside section sidebars — the
+     * hub renders compact tiles, each tile opens a Sidebar with
+     * the section's HTML. Binding to document keeps a single
+     * matcher pipeline alive regardless of where the element
+     * actually got rendered.
+     *
+     * The selectors haven't changed; only the event-target scope. */
     const campaignDetailBody = document.getElementById("campaign-detail-body");
-
-    if (campaignDetailBody) {
+    {
       /* Live paste preview under the add-posts textarea. */
-      campaignDetailBody.addEventListener("input", (e) => {
+      document.addEventListener("input", (e) => {
         const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
         if (!ta) return;
         const form = ta.closest(".add-posts-form");
@@ -2687,7 +2696,7 @@
         prev.innerHTML = `<div class="meta">${head.join(" · ")}</div>${idChips}${shareChips}`;
       });
 
-      campaignDetailBody.addEventListener("paste", (e) => {
+      document.addEventListener("paste", (e) => {
         const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
         if (!ta) return;
         setTimeout(() => ta.dispatchEvent(new Event("input", { bubbles: true })), 0);
@@ -2699,7 +2708,7 @@
        * UIs) instead of fishing for a small button — and combined
        * with the inline preview chips above, makes it visually
        * obvious that the IDs are about to be added. */
-      campaignDetailBody.addEventListener("keydown", (e) => {
+      document.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
         const ta = e.target.closest && e.target.closest('[data-role="add-posts-textarea"]');
         if (!ta) return;
@@ -2713,7 +2722,7 @@
 
       /* Click delegation: Add posts / Remove from campaign / Copy digest /
        * Edit goals (open form, save, cancel). */
-      campaignDetailBody.addEventListener("click", async (e) => {
+      document.addEventListener("click", async (e) => {
         const addBtn = e.target.closest && e.target.closest('[data-action="add-posts"]');
         const pasteBtn = e.target.closest && e.target.closest('[data-action="add-posts-paste"]');
         const rmBtn  = e.target.closest && e.target.closest('[data-action="remove-post"]');
@@ -2794,10 +2803,13 @@
         }
         if (editGoalsBtn) {
           e.preventDefault();
-          /* Toggle the inline goals form. Hide the toolbar buttons
-           * while editing so the user's eye goes to the form. */
-          const form = campaignDetailBody.querySelector(".goals-edit-form");
-          const toolbar = campaignDetailBody.querySelector(".campaign-toolbar");
+          /* Find the form/toolbar in either location: section
+           * sidebar (#section-sidebar) when the user is in the
+           * Settings tile, or the legacy inline campaign-detail
+           * panel for users still on the old layout. */
+          const scope = editGoalsBtn.closest("#section-sidebar, #campaign-detail-body") || document;
+          const form = scope.querySelector(".goals-edit-form");
+          const toolbar = scope.querySelector(".campaign-toolbar");
           if (form) {
             form.hidden = false;
             const firstInput = form.querySelector('input[data-field="goalScore"]');
@@ -2808,8 +2820,9 @@
         }
         if (cancelGoalsBtn) {
           e.preventDefault();
-          const form = campaignDetailBody.querySelector(".goals-edit-form");
-          const toolbar = campaignDetailBody.querySelector(".campaign-toolbar");
+          const scope = cancelGoalsBtn.closest("#section-sidebar, #campaign-detail-body") || document;
+          const form = scope.querySelector(".goals-edit-form");
+          const toolbar = scope.querySelector(".campaign-toolbar");
           if (form) form.hidden = true;
           if (toolbar) toolbar.classList.remove("editing-goals");
           return;
@@ -2817,7 +2830,7 @@
       });
 
       /* Submit handler for the inline goals editor. */
-      campaignDetailBody.addEventListener("submit", async (e) => {
+      document.addEventListener("submit", async (e) => {
         const form = e.target.closest && e.target.closest(".goals-edit-form");
         if (!form) return;
         e.preventDefault();
@@ -4118,6 +4131,106 @@ const bestCampaignPost = (summary.posts || [])
     });
   }
 
+  /* Campaign-hub tile click delegation.
+   *
+   * Each tile renders with data-campaign-section="<id>" + data-
+   * campaign-id="<id>". Tapping it opens the section's content
+   * inside the generic #section-sidebar via Sidebar.open().
+   *
+   * Section content comes from UI.renderCampaignSection(sectionId,
+   * campaign, agg, deep). The agg + deep payloads are pulled from
+   * state.campaignSummaries which holds whatever the most recent
+   * openCampaign() resolved.
+   *
+   * Targeting is special-cased: the section renderer emits an
+   * empty hosting div, then we call UI.renderTargeting against
+   * that div post-mount so the existing pagination state machine
+   * (state.recommend.targeting.inline) picks up uniformly.
+   */
+  function wireCampaignHub() {
+    document.addEventListener("click", (e) => {
+      const tile = e.target.closest && e.target.closest("[data-campaign-section]");
+      if (!tile) return;
+      e.preventDefault();
+      const sectionId = tile.dataset.campaignSection;
+      const campaignId = tile.dataset.campaignId || state.openCampaignId;
+      openCampaignSectionFromTile(sectionId, campaignId);
+    });
+  }
+
+  function openCampaignSectionFromTile(sectionId, campaignId) {
+    if (!campaignId || typeof Campaigns === "undefined") return;
+    const campaign = Campaigns.get(campaignId);
+    if (!campaign) { Util.toast("Campaign not found.", "error"); return; }
+    const summary = state.campaignSummaries[campaign.id] || { posts: [], missing: [], subs: [], totalScore: 0, totalComments: 0 };
+    const deep = summary.deep || (summary.posts && summary.posts.length ? computeCampaignDeep(campaign, summary) : null);
+
+    const titles = {
+      posts:     "Posts in this campaign",
+      addposts:  "Add posts",
+      targeting: "Targeting recommendations",
+      analysis:  "Deep analysis",
+      settings:  "Settings & goals",
+    };
+    const subtitle = `"${campaign.name}" · ${summary.posts ? summary.posts.length : 0} resolved`;
+
+    const html = (typeof UI !== "undefined" && UI.renderCampaignSection)
+      ? UI.renderCampaignSection(sectionId, campaign, summary, deep)
+      : "";
+
+    if (typeof Sidebar === "undefined") {
+      Util.toast("Sidebar not loaded.", "error");
+      return;
+    }
+    Sidebar.open({
+      id: "section-sidebar",
+      title: titles[sectionId] || "Section",
+      subtitle,
+      content: html,
+      onMount: (bodyEl) => {
+        /* Targeting needs an explicit render call against the
+         * empty hosting div so it picks up paging state and the
+         * latest deep.targets array. */
+        if (sectionId === "targeting") {
+          const slot = bodyEl.querySelector("[data-renders-targeting]");
+          if (slot && deep && deep.targets) {
+            state.lastRenderedTargeting.inline = { campaign, targets: deep.targets, container: slot, opts: { heading: false } };
+            UI.renderTargeting(campaign, deep.targets, slot, {
+              heading: false,
+              surfaceKey: "inline",
+              paging: state.recommend.targeting.inline,
+            });
+          }
+        }
+        /* Move keyboard focus to the first interactive element so
+         * a user paging via keyboard lands inside the sidebar
+         * content instead of the close button. */
+        const firstFocusable = bodyEl.querySelector("button, input, textarea, select, a[href]");
+        if (firstFocusable) try { firstFocusable.focus({ preventScroll: true }); } catch (_) {}
+      },
+    });
+  }
+
+  /* Floating back-to-top button. Visible after the user scrolls
+   * past one viewport-height; tapping smoothly scrolls to top.
+   * Hidden via CSS while a sidebar is open (the sidebar's own
+   * scroll is independent of the page scroll). */
+  function wireBackToTop() {
+    const btn = document.getElementById("back-to-top");
+    if (!btn) return;
+    const SHOW_AT = window.innerHeight || 800;
+    function update() {
+      const past = (window.scrollY || window.pageYOffset || 0) > SHOW_AT;
+      btn.classList.toggle("visible", past);
+    }
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    update();
+    btn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
   /* Pagination handlers for the recommendation surfaces.
    *
    * Renderers emit page / size buttons with attributes like
@@ -4223,6 +4336,8 @@ const bestCampaignPost = (summary.posts || [])
     safeRun("wireVolunteer", wireVolunteer);
     safeRun("wireComposer", wireComposer);
     safeRun("wireRecommendPagination", wireRecommendPagination);
+    safeRun("wireCampaignHub", wireCampaignHub);
+    safeRun("wireBackToTop", wireBackToTop);
         safeRun("checkStorageAvailability", checkStorageAvailability);
   }
 
@@ -4242,7 +4357,12 @@ const bestCampaignPost = (summary.posts || [])
 
   function composerRefs() {
     return {
-      modal:     document.getElementById("composer-modal"),
+      /* Renamed from "composer-modal" -> "composer-sidebar" when the
+       * composer migrated from a centered modal to a right-anchored
+       * sidebar overlay. The DOM id was renamed in lockstep so the
+       * IDs in CSS / aria-labelledby / Sidebar.open() all point at
+       * the same element. */
+      modal:     document.getElementById("composer-sidebar"),
       title:     document.getElementById("composer-title"),
       titleC:    document.getElementById("composer-title-counter"),
       body:      document.getElementById("composer-body"),
@@ -4268,8 +4388,8 @@ const bestCampaignPost = (summary.posts || [])
       targetsAddBtn: document.getElementById("composer-targets-add-btn"),
       fromRecommended: document.getElementById("composer-targets-from-recommended"),
       fromActive:  document.getElementById("composer-targets-from-active"),
-      modeBtns:  document.querySelectorAll("#composer-modal [data-composer-mode]"),
-      paneBtns:  document.querySelectorAll("#composer-modal [data-composer-pane]"),
+      modeBtns:  document.querySelectorAll("#composer-sidebar [data-composer-mode]"),
+      paneBtns:  document.querySelectorAll("#composer-sidebar [data-composer-pane]"),
       clearBtn:  document.getElementById("composer-clear-draft"),
       savedMeta: document.getElementById("composer-saved-meta"),
       context:   document.getElementById("composer-context"),
@@ -4353,20 +4473,45 @@ const bestCampaignPost = (summary.posts || [])
       b.setAttribute("aria-selected", on ? "true" : "false");
     });
 
-    /* Campaign-name context badge */
+    /* Campaign-name context badge — feeds the .sidebar-subtitle
+     * line in the composer's sidebar header. */
     if (refs.context) {
       const c = (typeof Campaigns !== "undefined" && Campaigns.get) ? Campaigns.get(campaignId) : null;
-      refs.context.textContent = c ? `for "${c.name}"` : "";
+      const text = c ? `for "${c.name}"` : "";
+      refs.context.textContent = text;
+      refs.context.hidden = !text;
     }
 
-    refs.modal.hidden = false;
+    /* Show via the Sidebar module so it gets the standard backdrop +
+     * ESC + body-class treatment the other section sidebars use.
+     * The composer's sidebar id (#composer-sidebar) is registered
+     * with Sidebar; opening it just reveals the existing DOM (which
+     * holds composerState wired into the input listeners). */
+    if (typeof Sidebar !== "undefined") {
+      Sidebar.open({
+        id: "composer-sidebar",
+        onClose: () => {
+          /* The pane-toggle classes live on <body> (see CSS in the
+           * @media (max-width: 880px) block); clear them when the
+           * sidebar closes so a stale one doesn't bleed into the
+           * next opener. */
+          document.body.classList.remove("composer-pane-source", "composer-pane-preview");
+        },
+      });
+    } else {
+      refs.modal.hidden = false;
+    }
     refreshComposer();
     setTimeout(() => refs.title.focus(), 50);
   }
 
   function closeComposer() {
-    const refs = composerRefs();
-    if (refs.modal) refs.modal.hidden = true;
+    if (typeof Sidebar !== "undefined" && Sidebar.activeId() === "composer-sidebar") {
+      Sidebar.close();
+    } else {
+      const refs = composerRefs();
+      if (refs.modal) refs.modal.hidden = true;
+    }
     document.body.classList.remove("composer-pane-source", "composer-pane-preview");
   }
 
@@ -4560,19 +4705,22 @@ const bestCampaignPost = (summary.posts || [])
     const refs = composerRefs();
     if (!refs.modal) return;
 
-    /* Close affordances */
+    /* Close + open affordances. The Sidebar module already binds
+     * data-sidebar-close + ESC + backdrop click document-wide;
+     * closeComposer() runs as the onClose hook. We just need to
+     * own the OPEN delegation here. */
     document.addEventListener("click", (e) => {
-      const close = e.target.closest && e.target.closest('[data-action="close-composer-modal"]');
-      if (close) closeComposer();
+      /* Legacy data-action="close-composer-modal" is still emitted
+       * by some templated content — treat it the same as the new
+       * data-sidebar-close. */
+      const legacyClose = e.target.closest && e.target.closest('[data-action="close-composer-modal"]');
+      if (legacyClose) { e.preventDefault(); closeComposer(); }
       const open = e.target.closest && e.target.closest('[data-action="open-composer"]');
       if (open) {
         e.preventDefault();
         const cid = open.dataset.campaignId || state.openCampaignId;
         openComposer(cid);
       }
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && refs.modal && !refs.modal.hidden) closeComposer();
     });
 
     /* Title + body inputs */

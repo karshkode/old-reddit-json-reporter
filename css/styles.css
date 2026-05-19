@@ -4653,3 +4653,258 @@ body.modal-open { overflow: hidden; }
     font-size: 12px;
   }
 }
+
+/* ====================================================================
+ * Sidebar overlay system (PR: sidebar-overlay-campaign-hub)
+ *
+ * Replaces the centered-modal pattern for complex sections:
+ *   - The composer (was .modal.composer-modal)
+ *   - Campaign-detail subsections (Posts / Targeting / Deep / etc.)
+ *
+ * Mobile: full viewport — slides up from bottom. Desktop: docked to
+ * the right edge, takes ~520px (default) or ~720px (wide). The
+ * dashboard underneath stays visible with the backdrop dimming it.
+ *
+ * The .sidebar-open body class lets other components (sticky banners,
+ * floating buttons) hide themselves when a sidebar is occupying the
+ * focus.
+ * ==================================================================== */
+.sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(720px, 100vw);
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  animation: sidebar-slide-in 0.20s cubic-bezier(0.4, 0, 0.2, 1);
+  overscroll-behavior: contain;
+}
+.sidebar[hidden] { display: none; }
+
+@keyframes sidebar-slide-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { animation: none; }
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 199;
+  cursor: pointer;
+  animation: sidebar-fade-in 0.18s ease-out;
+}
+@keyframes sidebar-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* iPhone safe area on top edge — when the sidebar takes the full
+   * viewport on mobile, the header sits below the notch. */
+  padding-top: max(14px, env(safe-area-inset-top));
+}
+.sidebar-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+.sidebar-subtitle {
+  font-size: 12px;
+  color: var(--text-mute);
+  margin-top: 2px;
+}
+.sidebar-header .sidebar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sidebar-close {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.sidebar-close:hover { border-color: var(--accent); color: var(--accent); }
+.sidebar-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sidebar-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+/* Wide variant — used by the composer where the split-pane editor
+ * needs more horizontal real estate on desktop. Mobile is unchanged
+ * (still full-screen via the @media block below). */
+.sidebar.sidebar-wide {
+  width: min(960px, 100vw);
+}
+
+/* Narrow variant — used by single-column lists like the campaign
+ * Posts / Targeting sections where wide whitespace looks empty. */
+.sidebar.sidebar-narrow {
+  width: min(560px, 100vw);
+}
+
+/* Mobile: full viewport, slides up from bottom for thumb reach. */
+@media (max-width: 720px) {
+  .sidebar,
+  .sidebar.sidebar-wide,
+  .sidebar.sidebar-narrow {
+    width: 100vw;
+    border-left: 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.55);
+    animation: sidebar-slide-up 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes sidebar-slide-up {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar { animation: none; }
+  }
+}
+
+/* When a sidebar is open, prevent the underlying page from scrolling.
+ * Without this, iOS Safari rubber-bands behind the sidebar. */
+body.sidebar-open {
+  overflow: hidden;
+  /* Keep the body's scroll position visually pinned even though
+   * overflow is hidden — Safari forgets it without position:fixed. */
+}
+@media (max-width: 720px) {
+  /* Mobile: also hide any sticky/fixed dashboard chrome (proxy
+   * banner, action banner) so they don't peek through the sidebar. */
+  body.sidebar-open #action-banner,
+  body.sidebar-open #proxy-down-banner,
+  body.sidebar-open .topbar { visibility: hidden; }
+}
+
+/* ====================================================================
+ * Campaign hub — tile grid replaces the long inline-everything panel.
+ * Each tile opens its section in a sidebar overlay so the user
+ * doesn't scroll through a wall of cards.
+ * ==================================================================== */
+.campaign-hub {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.hub-tile {
+  appearance: none;
+  text-align: left;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 14px 14px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  font-family: inherit;
+}
+.hub-tile:hover {
+  border-color: var(--accent);
+  background: var(--bg-elev);
+  transform: translateY(-1px);
+}
+.hub-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.hub-tile-icon { font-size: 22px; line-height: 1; }
+.hub-tile-title { font-weight: 600; font-size: 14px; }
+.hub-tile-meta { font-size: 12px; color: var(--text-mute); margin-top: auto; }
+.hub-tile.is-primary {
+  background: linear-gradient(135deg, rgba(255, 87, 34, 0.12), rgba(255, 87, 34, 0.04));
+  border-color: rgba(255, 87, 34, 0.45);
+}
+.hub-tile.is-primary:hover { border-color: var(--accent); }
+.hub-tile.is-warn {
+  border-color: rgba(255, 159, 67, 0.40);
+  background: rgba(255, 159, 67, 0.06);
+}
+
+/* Compact KPI strip at the top of the campaign-detail card — the hub
+ * sits below it. Scaled smaller than the full Overview KPIs since
+ * the same numbers are repeated in the Overview section. */
+.campaign-hub-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.campaign-hub-kpi { display: flex; flex-direction: column; }
+.campaign-hub-kpi-label { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.5px; }
+.campaign-hub-kpi-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
+.campaign-hub-kpi-sub   { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* ====================================================================
+ * Floating "back to top" button. Appears after the user scrolls
+ * past the first viewport-height. Tucked away in the bottom-right
+ * with thumb-friendly sizing. Hidden when a sidebar is open
+ * (the sidebar's own scroll is independent). */
+.back-to-top {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.back-to-top.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.back-to-top:hover { transform: translateY(-2px); }
+.back-to-top:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+body.sidebar-open .back-to-top { display: none; }

@@ -1481,9 +1481,129 @@
       </div>`;
     }
 
-    const deepHtml = deep ? renderCampaignDeepAnalysis(deep) : "";
+    /* ---------------- Campaign hub layout ----------------
+     *
+     * Replaces the prior "every section inline in a long scroll"
+     * panel with a compact landing:
+     *   - Compact KPI strip (3 numbers)
+     *   - Goal progress bars (if any)
+     *   - Unresolved-IDs note (still surfaced inline because it's
+     *     a critical state warning, not a section)
+     *   - Tile grid — each tile opens its section in a sidebar
+     *
+     * Tiles handled by the Sidebar overlay system + UI.renderCampaignSection.
+     * Click delegation is wired in app.js openCampaignSectionFromTile.
+     */
+    const cid = Util.escapeHtml(campaign.id);
+    const tilePosts = `
+      <button type="button" class="hub-tile" data-campaign-section="posts" data-campaign-id="${cid}">
+        <span class="hub-tile-icon">📝</span>
+        <div class="hub-tile-title">Posts</div>
+        <div class="hub-tile-meta">${Util.fmtNum(agg.posts.length)} resolved · ${campaign.postIds.length} tracked${agg.missing && agg.missing.length ? ` · <strong>${agg.missing.length} unresolved</strong>` : ""}</div>
+      </button>`;
+    const tileAddPosts = `
+      <button type="button" class="hub-tile is-primary" data-campaign-section="addposts" data-campaign-id="${cid}">
+        <span class="hub-tile-icon">＋</span>
+        <div class="hub-tile-title">Add posts</div>
+        <div class="hub-tile-meta">paste reddit URLs, share links, or IDs</div>
+      </button>`;
+    const tileCompose = `
+      <button type="button" class="hub-tile is-primary" data-action="open-composer" data-campaign-id="${cid}">
+        <span class="hub-tile-icon">✍️</span>
+        <div class="hub-tile-title">Compose &amp; cross-post</div>
+        <div class="hub-tile-meta">write once · bulk submit URLs · rich-text paste for mobile</div>
+      </button>`;
+    const targetCount = (deep && deep.targets && deep.targets.length) || 0;
+    const tileTargeting = `
+      <button type="button" class="hub-tile" data-campaign-section="targeting" data-campaign-id="${cid}">
+        <span class="hub-tile-icon">🎯</span>
+        <div class="hub-tile-title">Targeting</div>
+        <div class="hub-tile-meta">${targetCount ? Util.fmtNum(targetCount) + " ranked subs" : "load posts to compute"}</div>
+      </button>`;
+    const tileAnalysis = `
+      <button type="button" class="hub-tile" data-campaign-section="analysis" data-campaign-id="${cid}">
+        <span class="hub-tile-icon">🧠</span>
+        <div class="hub-tile-title">Deep analysis</div>
+        <div class="hub-tile-meta">themes · sentiment · per-sub breakdown · narrative</div>
+      </button>`;
+    const tileSettings = `
+      <button type="button" class="hub-tile" data-campaign-section="settings" data-campaign-id="${cid}">
+        <span class="hub-tile-icon">⚙️</span>
+        <div class="hub-tile-title">Settings</div>
+        <div class="hub-tile-meta">goals · copy digest${campaign.goalScore || campaign.goalComments ? "" : " · <strong>no goals set</strong>"}</div>
+      </button>`;
 
     body.innerHTML = `
+      <!-- Compact KPI snapshot above the tile grid. The full KPIs
+           grid lives in the Posts section sidebar. -->
+      <div class="campaign-hub-kpis">
+        <div class="campaign-hub-kpi">
+          <div class="campaign-hub-kpi-label">Posts</div>
+          <div class="campaign-hub-kpi-value">${Util.fmtNum(agg.posts.length)}</div>
+          <div class="campaign-hub-kpi-sub">${campaign.postIds.length} tracked</div>
+        </div>
+        <div class="campaign-hub-kpi">
+          <div class="campaign-hub-kpi-label">Upvotes</div>
+          <div class="campaign-hub-kpi-value">${Util.fmtNum(agg.totalScore)}</div>
+          <div class="campaign-hub-kpi-sub">${campaign.goalScore ? Math.round((agg.totalScore / campaign.goalScore) * 100) + "% of goal" : "no goal"}</div>
+        </div>
+        <div class="campaign-hub-kpi">
+          <div class="campaign-hub-kpi-label">Comments</div>
+          <div class="campaign-hub-kpi-value">${Util.fmtNum(agg.totalComments)}</div>
+          <div class="campaign-hub-kpi-sub">${campaign.goalComments ? Math.round((agg.totalComments / campaign.goalComments) * 100) + "% of goal" : "no goal"}</div>
+        </div>
+        <div class="campaign-hub-kpi">
+          <div class="campaign-hub-kpi-label">Subreddits</div>
+          <div class="campaign-hub-kpi-value">${agg.subs.length}</div>
+          <div class="campaign-hub-kpi-sub" title="${Util.escapeHtml(subList)}">${Util.escapeHtml(subList.slice(0, 60))}${subList.length > 60 ? "…" : ""}</div>
+        </div>
+      </div>
+
+      ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
+      ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
+      ${missingNote}
+
+      <div class="campaign-hub">
+        ${tileAddPosts}
+        ${tileCompose}
+        ${tilePosts}
+        ${tileTargeting}
+        ${tileAnalysis}
+        ${tileSettings}
+      </div>
+    `;
+  };
+
+  /* Render a single campaign-detail section as HTML. Called by
+   * Sidebar.open when the user taps a hub tile. The section is
+   * rendered once per open into the sidebar's body; closing the
+   * sidebar wipes the body. Re-opens trigger a fresh render so
+   * stats/KPIs reflect any post additions/removals since the
+   * tile was last viewed.
+   *
+   * Live event bindings on the rendered HTML are document-level
+   * (see app.js) so the buttons / forms inside the sidebar
+   * trigger the same handlers as the legacy inline panel did.
+   */
+  UI.renderCampaignSection = function (sectionId, campaign, agg, deep) {
+    if (!campaign) return '<div class="empty">No campaign loaded.</div>';
+    if (sectionId === "posts")     return renderCampaignPostsSection(campaign, agg);
+    if (sectionId === "addposts")  return renderCampaignAddPostsSection(campaign);
+    if (sectionId === "targeting") return renderCampaignTargetingSection(campaign, deep);
+    if (sectionId === "analysis")  return deep ? renderCampaignDeepAnalysis(deep) : '<div class="empty">No deep analysis yet — load campaign posts and tap Refresh on the Campaigns tab first.</div>';
+    if (sectionId === "settings")  return renderCampaignSettingsSection(campaign);
+    return '<div class="empty">Unknown section.</div>';
+  };
+
+  /* ---- Section renderers (extracted from the prior inline body) ---- */
+
+  function renderCampaignPostsSection(campaign, agg) {
+    const subList = (agg.subs || []).map((s) => `r/${Util.escapeHtml(s)}`).join(", ") || "—";
+    const goalScorePct = campaign.goalScore ? Math.min(1, agg.totalScore / campaign.goalScore) : null;
+    const goalCommentsPct = campaign.goalComments ? Math.min(1, agg.totalComments / campaign.goalComments) : null;
+
+    /* Full KPI grid (5 stats vs the 4 on the hub) */
+    const kpiGrid = `
       <div class="kpis">
         <div class="kpi"><div class="label">Posts tracked</div><div class="value">${campaign.postIds.length}</div><div class="sub">${agg.posts.length} resolved</div></div>
         <div class="kpi"><div class="label">Total upvotes</div><div class="value">${Util.fmtNum(agg.totalScore)}</div><div class="sub">${campaign.goalScore ? "goal " + Util.fmtNum(campaign.goalScore) : "no goal set"}</div></div>
@@ -1493,16 +1613,68 @@
       </div>
       ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
-      ${missingNote}
+    `;
 
+    const postsList = agg.posts.length ? `
+      <div class="campaign-posts" style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+        ${agg.posts.map((p) => `
+          <div class="campaign-post-row">
+            <a href="${Util.escapeHtml(p.permalink)}" target="_blank" rel="noopener" class="campaign-post-link">
+              <div class="cpr-title">${Util.escapeHtml((p.title || "").slice(0, 140))}</div>
+              <div class="cpr-meta">r/${Util.escapeHtml(p.subreddit)} · <code>${Util.escapeHtml(p.id)}</code> · ${Util.escapeHtml(Util.relTime(p.created_utc))}</div>
+            </a>
+            <div class="cpr-stats">
+              <strong class="cpr-score">▲ ${Util.fmtNum(p.score)}</strong>
+              <span>💬 ${Util.fmtNum(p.num_comments)}</span>
+              ${p.upvote_ratio != null ? `<span>${Util.fmtPct(p.upvote_ratio)}</span>` : ""}
+            </div>
+            <button class="cpr-remove" type="button" data-action="remove-post" data-id="${Util.escapeHtml(p.id)}" title="Remove from campaign" aria-label="Remove from campaign">×</button>
+          </div>
+        `).join("")}
+      </div>
+    ` : '<div class="empty" style="margin-top:12px">No posts found yet — fetch failed or IDs are invalid.</div>';
+
+    return kpiGrid + postsList;
+  }
+
+  function renderCampaignAddPostsSection(campaign) {
+    return `
+      <div class="add-posts-form" data-campaign-id="${Util.escapeHtml(campaign.id)}">
+        <div class="add-posts-head">
+          <strong>Add more posts</strong>
+          <span class="hint">paste reddit URLs, share links, or bare IDs — extracts on Add</span>
+        </div>
+        <textarea data-role="add-posts-textarea" rows="3" placeholder="https://www.reddit.com/r/X/comments/abc1234/title/&#10;https://www.reddit.com/r/Y/s/AbCdEf1234"></textarea>
+        <div class="add-posts-row">
+          <div class="paste-preview" data-role="add-posts-preview" hidden></div>
+          <button class="btn small ghost" type="button" data-action="add-posts-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
+          <button class="btn small primary" type="button" data-action="add-posts">Add posts</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:14px">Tip: paste multiple URLs or IDs at once, separated by spaces or newlines. Share-link tokens (<code>/s/&lt;…&gt;</code>) are auto-resolved.</div>
+    `;
+  }
+
+  function renderCampaignTargetingSection(campaign, deep) {
+    if (!deep || !deep.targets || !deep.targets.length) {
+      return '<div class="empty">No targeting recommendations yet — load posts in the dashboard so the engine has data to compare against.</div>';
+    }
+    /* Hosting div for UI.renderTargeting to write into. The actual
+     * render call happens in app.js after the sidebar mounts so it
+     * picks up the live state.recommend.targeting.inline paging
+     * state. Tag with data-renders-targeting so the mount handler
+     * can find this slot. */
+    return `<div data-renders-targeting data-campaign-id="${Util.escapeHtml(campaign.id)}"></div>`;
+  }
+
+  function renderCampaignSettingsSection(campaign) {
+    const cid = Util.escapeHtml(campaign.id);
+    return `
       <div class="campaign-toolbar">
         <button type="button" class="btn small ghost" data-action="copy-campaign-digest" title="Copy a Signal/Slack-friendly summary of this campaign to the clipboard">📋 Copy digest</button>
-        <button type="button" class="btn small ghost" data-action="edit-campaign-goals" title="Edit upvote / comment goals for this campaign">🎯 Edit goals</button>
+        <button type="button" class="btn small ghost" data-action="edit-campaign-goals" title="Edit upvote / comment goals">🎯 Edit goals</button>
       </div>
-
-      <!-- Inline goals editor — hidden until the user taps the Edit
-           button. Wired in app.js. Saves via Campaigns.update. -->
-      <form class="goals-edit-form" data-campaign-id="${Util.escapeHtml(campaign.id)}" hidden>
+      <form class="goals-edit-form" data-campaign-id="${cid}" hidden>
         <div class="goals-edit-row">
           <label>
             <span class="group-label">Goal upvotes</span>
@@ -1520,37 +1692,11 @@
           <button type="submit" class="btn small primary" data-action="save-campaign-goals">Save</button>
         </div>
       </form>
-
-      <div class="add-posts-form" data-campaign-id="${Util.escapeHtml(campaign.id)}">
-        <div class="add-posts-head">
-          <strong>Add more posts</strong>
-          <span class="hint">paste reddit URLs, share links, or bare IDs — extracts on Add</span>
-        </div>
-        <textarea data-role="add-posts-textarea" rows="2" placeholder="https://www.reddit.com/r/X/comments/abc1234/title/&#10;https://www.reddit.com/r/Y/s/AbCdEf1234"></textarea>
-        <div class="add-posts-row">
-          <div class="paste-preview" data-role="add-posts-preview" hidden></div>
-          <button class="btn small ghost" type="button" data-action="add-posts-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
-          <button class="btn small primary" type="button" data-action="add-posts">Add posts</button>
-        </div>
+      <div class="hint" style="margin-top:14px">
+        Goals drive the % progress bars on the campaign hub. Leave blank if you're tracking the campaign without specific upvote/comment targets.
       </div>
-
-      <!-- Compose & cross-post entry. Opens the markdown composer
-           modal pre-loaded with this campaign's recommended targets
-           (from the targeting recommender below). The composer
-           bulk-emits Reddit /submit URLs so the SAME body lands on
-           every checked sub — a real crosspost, not just a share
-           link. -->
-      <div class="compose-entry-row">
-        <button type="button" class="btn small primary" data-action="open-composer" data-campaign-id="${Util.escapeHtml(campaign.id)}">
-          Compose &amp; cross-post
-        </button>
-        <span class="hint">Write once, submit URLs prefill across every target sub. Mark posted to auto-track.</span>
-      </div>
-
-      ${deepHtml}
-      ${postsList}
     `;
-  };
+  }
 
   function renderCampaignDeepAnalysis(deep) {
     if (!deep) return "";
