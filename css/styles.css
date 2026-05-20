@@ -553,6 +553,41 @@ tbody td {
 }
 tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
 tbody td.title { max-width: 460px; }
+tbody td a.title-text {
+  /* Resets the default underlined-blue link appearance so the
+   * title looks like the table text it always has — but the
+   * user gets cursor:pointer + an inline ↗ icon + a hover
+   * accent-color treatment to telegraph that it's clickable
+   * to open Reddit in a new tab. */
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+tbody td a.title-text:hover,
+tbody td a.title-text:focus-visible {
+  color: var(--accent-2);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+tbody td a.title-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.title-link-icon {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-mute);
+  vertical-align: baseline;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+tbody td a.title-text:hover .title-link-icon {
+  color: var(--accent);
+  transform: translate(1px, -1px);
+}
+
 tbody td .title-text {
   display: block;
   white-space: nowrap;
