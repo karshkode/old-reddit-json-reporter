@@ -152,8 +152,20 @@
        * / comments analysis), preserving the prior row-click
        * affordance. The exclusion list in the row's click
        * handler below keeps the two from firing simultaneously. */
+      /* "When" cell shows BOTH the relative age ("2h ago") and the
+       * actual local clock time ("14:23"). Helps the user spot
+       * whether a sub's apparent "best post hour" is actually
+       * just where the front-page rotation puts older posts —
+       * staring at a column of "2h ago · 02:14" / "5h ago · 23:01"
+       * makes the timing pattern (or lack of one) immediately
+       * legible. Hover for the full date. */
+      const whenAge = Util.escapeHtml(Util.relTime(p.created_utc));
+      const whenClock = Util.escapeHtml(Util.fmtClockTime(p.created_utc));
       tr.innerHTML = `
-        <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">${Util.escapeHtml(Util.relTime(p.created_utc))}</td>
+        <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">
+          <div class="when-age">${whenAge}</div>
+          ${whenClock ? `<div class="when-clock">${whenClock}</div>` : ""}
+        </td>
         <td data-label="Sub"><span class="tag">r/${Util.escapeHtml(p.subreddit)}</span></td>
         <td data-label="Title" class="title">
           ${thumbHtml}
@@ -1051,9 +1063,22 @@
             <div><span class="label">Avg comments</span><strong>${Util.fmtNum(p.avgComments)}</strong></div>
             <div><span class="label">UV ratio</span><strong>${p.avgUpvoteRatio == null ? "—" : Util.fmtPct(p.avgUpvoteRatio)}</strong></div>
             <div><span class="label">Velocity</span><strong>${p.velocityPerHour < 1 ? p.velocityPerHour.toFixed(2) : Math.round(p.velocityPerHour)}/hr</strong></div>
-            <div><span class="label">Best hour</span><strong>${p.bestHour >= 0 ? String(p.bestHour).padStart(2, "0") + ":00" : "—"}</strong></div>
+            <div title="Hour with highest AVERAGE SCORE for posts submitted at that hour (in your local timezone). Note: biased toward hours where posts have had more time to accrue score in any /hot snapshot — compare with the velocity-peak below to spot bias.">
+              <span class="label">Peak hour <span class="info-icon" aria-hidden="true">ⓘ</span></span>
+              <strong>${p.bestHour >= 0 ? String(p.bestHour).padStart(2, "0") + ":00" : "—"}</strong>
+            </div>
+            <div title="Hour with highest SCORE-PER-HOUR-OF-AGE — divides each post's score by its age (floored at 30min) so older posts don't automatically dominate. If this disagrees with the raw 'Peak hour' above, the peak signal is likely a survivorship artifact.">
+              <span class="label">Velocity peak <span class="info-icon" aria-hidden="true">ⓘ</span></span>
+              <strong>${p.bestHourByVelocity >= 0 ? String(p.bestHourByVelocity).padStart(2, "0") + ":00" : "—"}</strong>
+            </div>
             <div><span class="label">Best day</span><strong>${Analysis.DAY_NAMES[p.bestDow].slice(0, 3)}</strong></div>
           </div>
+          ${(p.bestHour >= 0 && p.bestHourByVelocity >= 0 && Math.abs(p.bestHour - p.bestHourByVelocity) >= 4) ? `
+            <div class="profile-line profile-bias-warn" title="Raw 'Peak hour' is computed from average score; older posts skew it because they've had more hours to accumulate score. Velocity divides by post age so it penalizes that. A >4-hour gap between the two often means the raw peak is just where the front-page rotation parked older posts.">
+              <span class="profile-label">⚠️ Timing bias</span>
+              <span class="meta">Raw peak (<strong>${String(p.bestHour).padStart(2, "0")}:00</strong>) and velocity peak (<strong>${String(p.bestHourByVelocity).padStart(2, "0")}:00</strong>) disagree by ${Math.abs(p.bestHour - p.bestHourByVelocity)}h — the raw peak may be a survivorship artifact. Trust the velocity peak.</span>
+            </div>
+          ` : ""}
           <div class="profile-line profile-skew" title="Karma skew = P90 / P50. Higher = breakout-driven; near 1 = broadly engaged.">
             <span class="profile-label">Engagement shape</span>
             <span class="meta">${Util.escapeHtml(skewLabel)} <span class="profile-skew-num">(skew ${p.karmaSkew >= 100 ? "100+" : p.karmaSkew.toFixed(1)})</span></span>
@@ -1779,7 +1804,14 @@
               <div><span class="label">Median score</span><strong>${Util.fmtNum(profile.medianScore)}</strong></div>
               <div><span class="label">Avg comments</span><strong>${Util.fmtNum(profile.avgComments)}</strong></div>
               <div><span class="label">UV ratio</span><strong>${profile.avgUpvoteRatio == null ? "—" : Util.fmtPct(profile.avgUpvoteRatio)}</strong></div>
-              <div><span class="label">Best hour</span><strong>${profile.bestHour >= 0 ? String(profile.bestHour).padStart(2, "0") + ":00" : "—"}</strong></div>
+              <div title="Hour with highest avg score (biased toward older posts in any /hot snapshot — compare with velocity peak).">
+                <span class="label">Peak hour <span class="info-icon" aria-hidden="true">ⓘ</span></span>
+                <strong>${profile.bestHour >= 0 ? String(profile.bestHour).padStart(2, "0") + ":00" : "—"}</strong>
+              </div>
+              <div title="Hour with highest score-per-hour-of-age — less biased than raw avg score because it normalizes by post age.">
+                <span class="label">Velocity peak <span class="info-icon" aria-hidden="true">ⓘ</span></span>
+                <strong>${profile.bestHourByVelocity >= 0 ? String(profile.bestHourByVelocity).padStart(2, "0") + ":00" : "—"}</strong>
+              </div>
               <div><span class="label">Best day</span><strong>${Analysis.DAY_NAMES[profile.bestDow].slice(0, 3)}</strong></div>
             </div>
             ${themesHtml ? `<div class="profile-line"><span class="profile-label">Themes</span><div class="keyword-cloud">${themesHtml}</div></div>` : ""}

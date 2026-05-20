@@ -4943,3 +4943,38 @@ body.sidebar-open {
 .back-to-top:hover { transform: translateY(-2px); }
 .back-to-top:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 body.sidebar-open .back-to-top { display: none; }
+
+/* "When" cell in the Posts table: relative age over actual clock
+ * time. The pair makes timing patterns visible at a glance. */
+.when-age {
+  font-size: 12px;
+  line-height: 1.2;
+}
+.when-clock {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  line-height: 1.2;
+}
+
+/* Survivorship-bias warning that surfaces when raw "Peak hour" and
+ * velocity-corrected peak disagree by >= 4 hours. Visual treatment
+ * matches the existing .profile-quiet hint but with warn color. */
+.profile-bias-warn {
+  background: rgba(255, 159, 67, 0.08);
+  border-left: 3px solid rgba(255, 159, 67, 0.55);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+  font-size: 12px;
+}
+.profile-bias-warn .profile-label {
+  color: var(--warn);
+}
+.info-icon {
+  font-size: 11px;
+  color: var(--text-mute);
+  cursor: help;
+  margin-left: 2px;
+}

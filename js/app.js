@@ -1088,7 +1088,14 @@
     }
 
     if (profile.bestHour >= 0) {
-      parts.push(`<p>Posts in this campaign cluster around <strong>${String(profile.bestHour).padStart(2, "0")}:00 ${Util.escapeHtml(Util.getTzLabel())}</strong> (best avg score, in your local timezone). Consider matching timing on future cross-posts.</p>`);
+      const tz = Util.escapeHtml(Util.getTzLabel());
+      const rawPeak = String(profile.bestHour).padStart(2, "0") + ":00";
+      const velPeak = profile.bestHourByVelocity >= 0 ? String(profile.bestHourByVelocity).padStart(2, "0") + ":00" : null;
+      const disagree = velPeak && Math.abs(profile.bestHour - profile.bestHourByVelocity) >= 4;
+      const tail = disagree
+        ? ` — but the velocity-corrected peak is <strong>${velPeak}</strong>. The 4+ hour gap suggests the raw peak is a snapshot artifact (older posts at ${rawPeak} had more time to accrue score); trust the velocity peak when planning new posts.`
+        : (velPeak ? ` (velocity-corrected peak agrees: ${velPeak}).` : ".");
+      parts.push(`<p>Posts in this campaign cluster around <strong>${rawPeak} ${tz}</strong>${tail} Consider matching timing on future cross-posts.</p>`);
     }
 
     if (comparison && comparison.insights && comparison.insights.length) {
@@ -3794,7 +3801,14 @@ const bestCampaignPost = (summary.posts || [])
       lines.push(`🏷️ Themes: ${themes}`);
     }
     if (deep && deep.profile && deep.profile.bestHour >= 0) {
-      lines.push(`⏰ Best hour: ${String(deep.profile.bestHour).padStart(2, "0")}:00 ${Util.getTzLabel()}`);
+      const raw = String(deep.profile.bestHour).padStart(2, "0") + ":00";
+      const vel = deep.profile.bestHourByVelocity >= 0 ? String(deep.profile.bestHourByVelocity).padStart(2, "0") + ":00" : null;
+      const tz = Util.getTzLabel();
+      if (vel && Math.abs(deep.profile.bestHour - deep.profile.bestHourByVelocity) >= 4) {
+        lines.push(`⏰ Best hour: ${raw} ${tz} (raw) · ${vel} ${tz} (velocity-corrected — trust this one)`);
+      } else {
+        lines.push(`⏰ Best hour: ${raw} ${tz}${vel ? ` (velocity peak: ${vel})` : ""}`);
+      }
     }
     return lines.join("\n");
   }

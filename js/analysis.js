@@ -263,6 +263,16 @@
     const byDow = new Array(7).fill(0);
     const sumScoreByHour = new Array(24).fill(0);
     const cntByHour = new Array(24).fill(0);
+    /* Velocity (score / hours-of-age) bucketed by submission hour.
+     * Used to compute a less-biased "best hour" — the raw
+     * `avgScoreByHour` favors hours where posts have had the most
+     * time to accrue score, which biases toward earlier-submitted
+     * posts in any /hot snapshot. Velocity normalizes by post age
+     * so a 24h-old post with 1000 score (~42/h) and a 6h-old post
+     * with 250 score (~42/h) are treated as equally successful. */
+    const sumVelocityByHour = new Array(24).fill(0);
+    const cntVelocityByHour = new Array(24).fill(0);
+    const nowSec = Date.now() / 1000;
     const flairs = {};
     const authors = {};
 
@@ -285,12 +295,21 @@
         byDow[d.getDay()]++;
         sumScoreByHour[h] += s;
         cntByHour[h]++;
+        /* Velocity: score per hour of post age. Floor age at 30
+         * minutes so brand-new posts don't have absurdly inflated
+         * rates from the small denominator (a 5-minute-old post
+         * with 60 score would otherwise read as 720/h, dwarfing
+         * mature posts). */
+        const ageHours = Math.max(0.5, (nowSec - p.created_utc) / 3600);
+        sumVelocityByHour[h] += s / ageHours;
+        cntVelocityByHour[h]++;
       }
       if (p.flair) flairs[p.flair] = (flairs[p.flair] || 0) + 1;
       if (p.author) authors[p.author] = (authors[p.author] || 0) + 1;
     }
 
     const avgScoreByHour = sumScoreByHour.map((sum, i) => (cntByHour[i] ? sum / cntByHour[i] : 0));
+    const avgVelocityByHour = sumVelocityByHour.map((sum, i) => (cntVelocityByHour[i] ? sum / cntVelocityByHour[i] : 0));
 
     return {
       count: posts.length,
@@ -304,7 +323,7 @@
       avgComments: Util.average(comments),
       avgUpvoteRatio: ratios.length ? Util.average(ratios) : null,
       topPost, lowPost,
-      bySubreddit, byHour, byDow, avgScoreByHour,
+      bySubreddit, byHour, byDow, avgScoreByHour, avgVelocityByHour,
       flairs, authors,
     };
   };
@@ -326,6 +345,32 @@
       if (agg.byHour[h] > 0 && agg.avgScoreByHour[h] > bestHourVal) {
         bestHourVal = agg.avgScoreByHour[h];
         bestHour = h;
+      }
+    }
+    /* Velocity-corrected best hour. Uses score-per-hour-of-age
+     * instead of raw averages so the result isn't dominated by
+     * the older posts in the snapshot. Pair this with the raw
+     * `bestHour` in the UI so the user can see whether the two
+     * agree (genuine peak) or disagree (the raw signal is just
+     * a survivorship artifact).
+     *
+     * Skip hours with < 2 samples — single-post hours are too
+     * noisy to call a "peak". */
+    let bestHourByVelocity = -1, bvVal = -Infinity;
+    for (let h = 0; h < 24; h++) {
+      if (agg.byHour[h] >= 2 && agg.avgVelocityByHour[h] > bvVal) {
+        bvVal = agg.avgVelocityByHour[h];
+        bestHourByVelocity = h;
+      }
+    }
+    /* Fall back to >= 1 if EVERY hour only has one sample (small
+     * loaded windows), so the field still has a value. */
+    if (bestHourByVelocity === -1) {
+      for (let h = 0; h < 24; h++) {
+        if (agg.byHour[h] >= 1 && agg.avgVelocityByHour[h] > bvVal) {
+          bvVal = agg.avgVelocityByHour[h];
+          bestHourByVelocity = h;
+        }
       }
     }
     let bestDow = 0, bestDowVal = -1;
@@ -402,9 +447,11 @@
       sentiment,
       keywords, bigrams, themes,
       bestHour, bestDow,
+      bestHourByVelocity,
       byHour: agg.byHour,
       byDow: agg.byDow,
       avgScoreByHour: agg.avgScoreByHour,
+      avgVelocityByHour: agg.avgVelocityByHour,
       style, reception,
       ratio,
       /* New health metrics (PR 2) */
