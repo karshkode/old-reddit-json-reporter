@@ -56,6 +56,20 @@
     return Math.round(diff / (86400 * 365)) + "y ago";
   };
 
+  /* Local-time clock string — "14:23" — for the Posts table's "When"
+   * column. Pairs with relTime so the user sees both "2h ago" AND
+   * the actual hour-of-day, which matters when assessing whether a
+   * sub's "best hour" recommendation is genuine or just an artifact
+   * of which posts happened to survive the front-page rotation long
+   * enough to be in the snapshot. */
+  Util.fmtClockTime = function (epochSeconds) {
+    if (!epochSeconds) return "";
+    const d = new Date(epochSeconds * 1000);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return hh + ":" + mi;
+  };
+
   Util.escapeHtml = function (s) {
     if (s == null) return "";
     return String(s)
