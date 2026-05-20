@@ -2061,11 +2061,53 @@ footer {
   z-index: 19;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-top: 2px solid var(--accent);
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   padding: 8px 16px;
   margin: 0 max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
+}
+/* Phase-specific visual weight — louder when the user has unsaved
+ * filter changes (pending) or a fetch in progress (loading) so they
+ * don't miss the prompt; quieter once data is loaded so the banner
+ * doesn't visually compete with the chart bars / cards underneath
+ * as the user scrolls. The previous one-size-fits-all 2px orange
+ * top border + orange-tinted shadow made the banner indistinguishable
+ * from chart axis lines on the Trends tab. */
+.action-banner.phase-pending,
+.action-banner.phase-loading {
+  border-top: 2px solid var(--accent);
   box-shadow: 0 4px 18px rgba(255, 87, 34, 0.10);
+}
+.action-banner.phase-loaded {
+  /* Subtle: standard 1px border, no orange shadow. Refresh stays
+   * accessible (sticky + visible) but doesn't dominate. The
+   * blurred translucent backdrop lets the chart underneath bleed
+   * through enough that a user scrolling past it doesn't lose
+   * track of the data they were reading. */
+  background: rgba(19, 23, 34, 0.86);
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+}
+@media (prefers-color-scheme: light) {
+  .action-banner.phase-loaded {
+    background: rgba(255, 255, 255, 0.86);
+  }
+}
+/* Compact the Refresh button in loaded phase so it doesn't read
+ * as a primary CTA when the data is already there. Stays clickable,
+ * just quieter. */
+.action-banner.phase-loaded .action-btn {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border-color: var(--border-strong);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+}
+.action-banner.phase-loaded .action-btn:hover {
+  background: var(--bg-elev);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* "Reddit is blocking the public proxies" banner. Sits below the
@@ -4387,6 +4429,44 @@ body.modal-open { overflow: hidden; }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+/* On narrow viewports the per-target row's four columns
+ * (checkbox · sub name · meta · actions) collapse into two rows:
+ *
+ *   row 1: [☑]  r/SubName     [counter / badges]
+ *   row 2: [Open submit] [📋 Body] [×]
+ *
+ * Without this, the action buttons squeezed the meta column to
+ * nothing and the URL counter '4425/8000' wrapped mid-fraction
+ * ('4425' on one line, '8000' below). The 'Open submit' primary
+ * button also dominated the row visually because it was wider
+ * than the tag-style sub-name + checkbox combined. */
+@media (max-width: 720px) {
+  .composer-target-row {
+    grid-template-columns: max-content 1fr;
+    row-gap: 6px;
+  }
+  /* Meta wraps under sub-name across both columns. */
+  .composer-target-row .composer-target-meta {
+    grid-column: 1 / -1;
+    padding-left: 24px;
+    font-size: 11px;
+  }
+  /* Actions take the full row below. */
+  .composer-target-row .composer-target-actions {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* Push the Open submit button to take a comfortable share of
+   * the actions row but not dominate. */
+  .composer-target-row .composer-target-actions .btn.primary {
+    flex: 0 1 auto;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
 .composer-target-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
@@ -4427,6 +4507,10 @@ body.modal-open { overflow: hidden; }
   font-variant-numeric: tabular-nums;
   font-size: 10px;
   color: var(--text-mute);
+  /* Without this, narrow viewports wrapped '4425/8000' across two
+   * lines mid-slash, looking like the meta column was deliberately
+   * stacking 4425 and 8000 vertically. */
+  white-space: nowrap;
 }
 .composer-target-row .url-counter.warn { color: var(--warn); }
 .composer-target-row .url-counter.bad  { color: var(--bad); font-weight: 700; }
@@ -4460,7 +4544,10 @@ body.modal-open { overflow: hidden; }
   justify-content: flex-end;
 }
 
-/* Mark-posted inline form */
+/* Mark-posted inline form. On narrow screens the input + button
+ * could overflow the parent row's right edge — the button got
+ * truncated to "Mark po…". `min-width: 0` on the form lets it
+ * shrink below the input's flex-basis when needed. */
 .composer-mark-posted-form {
   display: flex;
   gap: 6px;
@@ -4468,9 +4555,13 @@ body.modal-open { overflow: hidden; }
   flex-wrap: wrap;
   margin-top: 6px;
   grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .composer-mark-posted-form input {
-  flex: 1 1 200px;
+  flex: 1 1 160px;
+  min-width: 0;
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
   color: var(--text);
@@ -4478,6 +4569,15 @@ body.modal-open { overflow: hidden; }
   padding: 6px 8px;
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+.composer-mark-posted-form button {
+  flex: 0 0 auto;
+}
+@media (max-width: 720px) {
+  /* Stack input + button on narrow screens so the button never
+   * gets squeezed off-edge. */
+  .composer-mark-posted-form input { flex: 1 1 100%; }
+  .composer-mark-posted-form button { flex: 1 1 100%; }
 }
 .composer-target-row.posted .composer-target-actions::before {
   content: "✓ posted";
