@@ -69,10 +69,10 @@
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
     ];
     row.innerHTML = kpis.map((k) => `
-      <div class="kpi">
-        <div class="label">${Util.escapeHtml(k.label)}</div>
-        <div class="value">${k.value}</div>
-        <div class="sub">${k.sub}</div>
+      <div class="stat">
+        <div class="stat-label">${Util.escapeHtml(k.label)}</div>
+        <div class="stat-value">${k.value}</div>
+        <div class="stat-sub">${k.sub}</div>
       </div>
     `).join("");
   };
@@ -1413,212 +1413,14 @@
     return `<div class="meter-row"><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
   }
 
-  /* ---------- Campaign list ---------- */
-
-  UI.renderCampaignList = function (campaigns, summaries, onOpen) {
-    const el = document.getElementById("campaign-list");
-    if (!el) return;
-    if (!campaigns.length) { el.innerHTML = '<div class="empty">No campaigns yet. Add one to track a list of cross-posts toward a goal.</div>'; return; }
-    el.innerHTML = "";
-    for (const c of campaigns) {
-      const summary = summaries[c.id] || {};
-      const totalScore = summary.totalScore || 0;
-      const totalComments = summary.totalComments || 0;
-      const progress = c.goalScore ? Math.min(1, totalScore / c.goalScore) : 0;
-      const card = document.createElement("div");
-      card.className = "campaign-card";
-      card.tabIndex = 0;
-      card.setAttribute("role", "button");
-      card.innerHTML = `
-        <div style="min-width:0;flex:1">
-          <div><strong>${Util.escapeHtml(c.name)}</strong></div>
-          <div class="meta">${c.postIds.length} IDs · ${Util.fmtNum(totalScore)} pts · ${Util.fmtNum(totalComments)} comments${c.goalScore ? ` · goal ${Util.fmtNum(c.goalScore)}` : ""}</div>
-        </div>
-        <div class="progress">
-          <div class="progress-bar"><span style="width:${(progress * 100).toFixed(1)}%"></span></div>
-          <div class="meta" style="text-align:right;margin-top:2px">${c.goalScore ? Math.round(progress * 100) + "%" : "—"}</div>
-        </div>
-      `;
-      card.addEventListener("click", () => onOpen(c));
-      card.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(c); }
-      });
-      el.appendChild(card);
-    }
-  };
-
-  /* ---------- Campaign detail (extended with deep analysis) ---------- */
-
-  UI.renderCampaignDetail = function (campaign, agg, deep) {
-    const card = document.getElementById("campaign-detail");
-    const title = document.getElementById("campaign-detail-title");
-    const body = document.getElementById("campaign-detail-body");
-    if (!card) return;
-    /* Only scroll the detail card into view on the FIRST render after it
-     * was hidden — i.e. when the user is genuinely opening a campaign.
-     * Re-renders triggered by add/remove post or background refreshes
-     * should leave the user's current scroll position alone. */
-    const wasHidden = !!card.hidden;
-    card.hidden = false;
-    if (title) title.textContent = campaign.name;
-    if (wasHidden) card.scrollIntoView({ behavior: "smooth", block: "start" });
-
-    const goalScorePct = campaign.goalScore ? Math.min(1, agg.totalScore / campaign.goalScore) : null;
-    const goalCommentsPct = campaign.goalComments ? Math.min(1, agg.totalComments / campaign.goalComments) : null;
-    const subList = agg.subs.map((s) => `r/${Util.escapeHtml(s)}`).join(", ") || "—";
-
-    const postsList = agg.posts.length ? `
-      <div class="campaign-posts" style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
-        ${agg.posts.map((p) => `
-          <div class="campaign-post-row">
-            <a href="${Util.escapeHtml(p.permalink)}" target="_blank" rel="noopener" class="campaign-post-link">
-              <div class="cpr-title">${Util.escapeHtml((p.title || "").slice(0, 140))}</div>
-              <div class="cpr-meta">r/${Util.escapeHtml(p.subreddit)} · <code>${Util.escapeHtml(p.id)}</code> · ${Util.escapeHtml(Util.relTime(p.created_utc))}</div>
-            </a>
-            <div class="cpr-stats">
-              <strong class="cpr-score">▲ ${Util.fmtNum(p.score)}</strong>
-              <span>💬 ${Util.fmtNum(p.num_comments)}</span>
-              ${p.upvote_ratio != null ? `<span>${Util.fmtPct(p.upvote_ratio)}</span>` : ""}
-            </div>
-            <button class="cpr-remove" type="button" data-action="remove-post" data-id="${Util.escapeHtml(p.id)}" title="Remove from campaign" aria-label="Remove from campaign">×</button>
-          </div>
-        `).join("")}
-      </div>
-    ` : '<div class="empty" style="margin-top:12px">No posts found yet — fetch failed or IDs are invalid.</div>';
-
-    /* Missing-IDs note. When ALL IDs failed AND we got a transport-level
-     * error from Reddit.fetchPostsByIds, surface that error so the
-     * user knows it's the proxies (or network) — not their IDs.
-     *
-     * Each unresolved ID is rendered as a removable chip with its own
-     * × button — without this, a permanently-broken post (e.g. one
-     * Reddit deleted, or one whose proxy chain is permanently 429ing)
-     * is impossible to delete from the campaign because there's no
-     * resolved Post object to attach the existing per-row remove
-     * button to. The unresolved-list path used to render the IDs as
-     * plain `<code>` text and the user was stuck. */
-    let missingNote = "";
-    if (agg.missing && agg.missing.length) {
-      const allMissing = agg.posts.length === 0;
-      const reason = allMissing && agg.networkError
-        ? `<div class="meta" style="color:var(--bad);margin-top:6px;font-size:12px">
-             <strong>Couldn't reach Reddit:</strong> ${Util.escapeHtml(agg.networkError)}.
-             <span class="hint">Try the orange Refresh button. If it persists, switch <strong>Data source</strong> in the topbar — the public proxies break sometimes.</span>
-           </div>`
-        : "";
-      const label = allMissing && agg.networkError ? "Unresolved IDs" : "Could not resolve";
-      const chips = agg.missing.map((id) => {
-        const safe = Util.escapeHtml(id);
-        return `
-          <span class="unresolved-chip" data-id="${safe}">
-            <code>${safe}</code>
-            <button type="button"
-                    class="unresolved-chip-remove"
-                    data-action="remove-post"
-                    data-id="${safe}"
-                    title="Remove ${safe} from campaign"
-                    aria-label="Remove ${safe} from campaign">×</button>
-          </span>`;
-      }).join("");
-      missingNote = reason + `<div class="meta unresolved-list">
-        <span class="unresolved-list-label">${label}:</span>
-        <span class="unresolved-list-chips">${chips}</span>
-        <span class="hint">tap × to drop a post from the campaign</span>
-      </div>`;
-    }
-
-    /* ---------------- Campaign hub layout ----------------
-     *
-     * Replaces the prior "every section inline in a long scroll"
-     * panel with a compact landing:
-     *   - Compact KPI strip (3 numbers)
-     *   - Goal progress bars (if any)
-     *   - Unresolved-IDs note (still surfaced inline because it's
-     *     a critical state warning, not a section)
-     *   - Tile grid — each tile opens its section in a sidebar
-     *
-     * Tiles handled by the Sidebar overlay system + UI.renderCampaignSection.
-     * Click delegation is wired in app.js openCampaignSectionFromTile.
-     */
-    const cid = Util.escapeHtml(campaign.id);
-    const tilePosts = `
-      <button type="button" class="hub-tile" data-campaign-section="posts" data-campaign-id="${cid}">
-        <span class="hub-tile-icon">📝</span>
-        <div class="hub-tile-title">Posts</div>
-        <div class="hub-tile-meta">${Util.fmtNum(agg.posts.length)} resolved · ${campaign.postIds.length} tracked${agg.missing && agg.missing.length ? ` · <strong>${agg.missing.length} unresolved</strong>` : ""}</div>
-      </button>`;
-    const tileAddPosts = `
-      <button type="button" class="hub-tile is-primary" data-campaign-section="addposts" data-campaign-id="${cid}">
-        <span class="hub-tile-icon">＋</span>
-        <div class="hub-tile-title">Add posts</div>
-        <div class="hub-tile-meta">paste reddit URLs, share links, or IDs</div>
-      </button>`;
-    const tileCompose = `
-      <button type="button" class="hub-tile is-primary" data-action="open-composer" data-campaign-id="${cid}">
-        <span class="hub-tile-icon">✍️</span>
-        <div class="hub-tile-title">Compose &amp; cross-post</div>
-        <div class="hub-tile-meta">write once · bulk submit URLs · rich-text paste for mobile</div>
-      </button>`;
-    const targetCount = (deep && deep.targets && deep.targets.length) || 0;
-    const tileTargeting = `
-      <button type="button" class="hub-tile" data-campaign-section="targeting" data-campaign-id="${cid}">
-        <span class="hub-tile-icon">🎯</span>
-        <div class="hub-tile-title">Targeting</div>
-        <div class="hub-tile-meta">${targetCount ? Util.fmtNum(targetCount) + " ranked subs" : "load posts to compute"}</div>
-      </button>`;
-    const tileAnalysis = `
-      <button type="button" class="hub-tile" data-campaign-section="analysis" data-campaign-id="${cid}">
-        <span class="hub-tile-icon">🧠</span>
-        <div class="hub-tile-title">Deep analysis</div>
-        <div class="hub-tile-meta">themes · sentiment · per-sub breakdown · narrative</div>
-      </button>`;
-    const tileSettings = `
-      <button type="button" class="hub-tile" data-campaign-section="settings" data-campaign-id="${cid}">
-        <span class="hub-tile-icon">⚙️</span>
-        <div class="hub-tile-title">Settings</div>
-        <div class="hub-tile-meta">goals · copy digest${campaign.goalScore || campaign.goalComments ? "" : " · <strong>no goals set</strong>"}</div>
-      </button>`;
-
-    body.innerHTML = `
-      <!-- Compact KPI snapshot above the tile grid. The full KPIs
-           grid lives in the Posts section sidebar. -->
-      <div class="campaign-hub-kpis">
-        <div class="campaign-hub-kpi">
-          <div class="campaign-hub-kpi-label">Posts</div>
-          <div class="campaign-hub-kpi-value">${Util.fmtNum(agg.posts.length)}</div>
-          <div class="campaign-hub-kpi-sub">${campaign.postIds.length} tracked</div>
-        </div>
-        <div class="campaign-hub-kpi">
-          <div class="campaign-hub-kpi-label">Upvotes</div>
-          <div class="campaign-hub-kpi-value">${Util.fmtNum(agg.totalScore)}</div>
-          <div class="campaign-hub-kpi-sub">${campaign.goalScore ? Math.round((agg.totalScore / campaign.goalScore) * 100) + "% of goal" : "no goal"}</div>
-        </div>
-        <div class="campaign-hub-kpi">
-          <div class="campaign-hub-kpi-label">Comments</div>
-          <div class="campaign-hub-kpi-value">${Util.fmtNum(agg.totalComments)}</div>
-          <div class="campaign-hub-kpi-sub">${campaign.goalComments ? Math.round((agg.totalComments / campaign.goalComments) * 100) + "% of goal" : "no goal"}</div>
-        </div>
-        <div class="campaign-hub-kpi">
-          <div class="campaign-hub-kpi-label">Subreddits</div>
-          <div class="campaign-hub-kpi-value">${agg.subs.length}</div>
-          <div class="campaign-hub-kpi-sub" title="${Util.escapeHtml(subList)}">${Util.escapeHtml(subList.slice(0, 60))}${subList.length > 60 ? "…" : ""}</div>
-        </div>
-      </div>
-
-      ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
-      ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
-      ${missingNote}
-
-      <div class="campaign-hub">
-        ${tileAddPosts}
-        ${tileCompose}
-        ${tilePosts}
-        ${tileTargeting}
-        ${tileAnalysis}
-        ${tileSettings}
-      </div>
-    `;
-  };
+  /* ---------- Campaign sections ----------
+   * The campaign list and the old "hub" detail card used to live here.
+   * Both are gone: the list is rendered by js/views/campaign.js as a
+   * grid of tiles, and the hub — a page of navigation tiles that opened
+   * sidebars — has been replaced by the campaign workspace, which shows
+   * the sections inline. The individual section renderers below survive
+   * because the workspace composes them.
+   */
 
   /* Render a single campaign-detail section as HTML. Called by
    * Sidebar.open when the user taps a hub tile. The section is
@@ -1650,12 +1452,12 @@
 
     /* Full KPI grid (5 stats vs the 4 on the hub) */
     const kpiGrid = `
-      <div class="kpis">
-        <div class="kpi"><div class="label">Posts tracked</div><div class="value">${campaign.postIds.length}</div><div class="sub">${agg.posts.length} resolved</div></div>
-        <div class="kpi"><div class="label">Total upvotes</div><div class="value">${Util.fmtNum(agg.totalScore)}</div><div class="sub">${campaign.goalScore ? "goal " + Util.fmtNum(campaign.goalScore) : "no goal set"}</div></div>
-        <div class="kpi"><div class="label">Total comments</div><div class="value">${Util.fmtNum(agg.totalComments)}</div><div class="sub">${campaign.goalComments ? "goal " + Util.fmtNum(campaign.goalComments) : "no goal set"}</div></div>
-        <div class="kpi"><div class="label">Subreddits</div><div class="value">${agg.subs.length}</div><div class="sub" title="${Util.escapeHtml(subList)}">${Util.escapeHtml(subList)}</div></div>
-        <div class="kpi"><div class="label">Views</div><div class="value">${agg.totalViews ? Util.fmtNum(agg.totalViews) : "—"}</div><div class="sub">${agg.totalViews ? "where reported" : "Reddit hides this"}</div></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-label">Posts tracked</div><div class="stat-value">${campaign.postIds.length}</div><div class="stat-sub">${agg.posts.length} resolved</div></div>
+        <div class="stat"><div class="stat-label">Total upvotes</div><div class="stat-value">${Util.fmtNum(agg.totalScore)}</div><div class="stat-sub">${campaign.goalScore ? "goal " + Util.fmtNum(campaign.goalScore) : "no goal set"}</div></div>
+        <div class="stat"><div class="stat-label">Total comments</div><div class="stat-value">${Util.fmtNum(agg.totalComments)}</div><div class="stat-sub">${campaign.goalComments ? "goal " + Util.fmtNum(campaign.goalComments) : "no goal set"}</div></div>
+        <div class="stat"><div class="stat-label">Subreddits</div><div class="stat-value">${agg.subs.length}</div><div class="stat-sub" title="${Util.escapeHtml(subList)}">${Util.escapeHtml(subList)}</div></div>
+        <div class="stat"><div class="stat-label">Views</div><div class="stat-value">${agg.totalViews ? Util.fmtNum(agg.totalViews) : "—"}</div><div class="stat-sub">${agg.totalViews ? "where reported" : "Reddit hides this"}</div></div>
       </div>
       ${goalScorePct != null ? `<div style="margin-top:10px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Score progress (${Math.round(goalScorePct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalScorePct * 100).toFixed(1)}%"></span></div></div>` : ""}
       ${goalCommentsPct != null ? `<div style="margin-top:8px"><div class="meta" style="font-size:11px;color:var(--text-mute);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Comment progress (${Math.round(goalCommentsPct * 100)}%)</div><div class="progress-bar"><span style="width:${(goalCommentsPct * 100).toFixed(1)}%"></span></div></div>` : ""}
@@ -1845,41 +1647,9 @@
     </div>`;
   }
 
-  UI.hideCampaignDetail = function () {
-    const card = document.getElementById("campaign-detail");
-    if (card) card.hidden = true;
-  };
-
-  /* ---------- Tabs ---------- */
-
-  /* Scroll the active tab into view *horizontally* within its strip,
-   * never touching window vertical scroll. The previous implementation
-   * called tab.scrollIntoView({ block: "nearest", behavior: "smooth" })
-   * which on iOS Safari can yank the entire page scroll because the
-   * tabs strip is position:sticky — a known Safari quirk. */
-  function scrollTabHorizontalIntoView(tab) {
-    const strip = tab && tab.parentElement;
-    if (!strip) return;
-    const tr = tab.getBoundingClientRect();
-    const sr = strip.getBoundingClientRect();
-    if (tr.left < sr.left) {
-      strip.scrollLeft += tr.left - sr.left - 8;
-    } else if (tr.right > sr.right) {
-      strip.scrollLeft += tr.right - sr.right + 8;
-    }
-  }
-
-  UI.activateTab = function (name) {
-    let activeTab = null;
-    document.querySelectorAll(".tab").forEach((t) => {
-      const active = t.dataset.tab === name;
-      t.classList.toggle("active", active);
-      t.setAttribute("aria-selected", active ? "true" : "false");
-      if (active) activeTab = t;
-    });
-    if (activeTab) scrollTabHorizontalIntoView(activeTab);
-    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
-  };
+  /* Tab switching used to live here. The shell now routes through
+   * js/router.js, which owns view visibility, the topbar heading and the
+   * hash, so UI no longer needs to know about panes at all. */
 
   function truncate(s, n) {
     if (!s) return "";

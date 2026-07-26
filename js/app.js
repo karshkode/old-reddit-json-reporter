@@ -1,130 +1,21 @@
-/* App orchestrator: wires UI events to fetchers + analysis + charts. */
+/* =====================================================================
+ * APP ORCHESTRATOR
+ * ---------------------------------------------------------------------
+ * Bootstraps the modules, owns the fetch lifecycle, and wires DOM events
+ * to the analysis, chart and view layers. Application state lives in
+ * js/state.js and view rendering lives in js/views/*.js — this file is
+ * the wiring between them.
+ * ===================================================================== */
 (function () {
-  const STORAGE_KEYS = {
-    subs: "rj.subs",
-    active: "rj.active",
-    listing: "rj.listing",
-    time: "rj.time",
-    limit: "rj.limit",
-  };
+  /* Shared mutable state, defined in js/state.js. */
+  const state = window.AppState;
+  const STORAGE_KEYS = state.KEYS;
 
-  /* First-run users now see the starter-pack drawer (PR 3) instead of
-   * an opinionated default sub list. Returning users with localStorage
-   * data are unaffected — loadPersisted populates from rj.subs /
-   * rj.active. The empty default keeps DEFAULT_SUBS as a safety net
-   * for tests + corner-case state where localStorage is unavailable
-   * on iOS Safari Private Browsing. */
-  const DEFAULT_SUBS = [];
-
-  /* `_runDiscover` is populated by bind() once the campaigns/discover
-   * panel has been wired up. Other handlers (e.g. the post-row
-   * "Make campaign" flow) can call it after creating + opening a new
-   * campaign so the recommended-subreddits panel populates without an
-   * extra user click. */
+  /* `_runDiscover` is populated by bind() once the targeting panel has
+   * been wired up, so other handlers (e.g. the post-row "Make campaign"
+   * flow) can trigger discovery without faking a button click. */
   let _runDiscover = null;
 
-  const state = {
-    knownSubs: [],
-    activeSubs: new Set(),
-    listing: "hot",
-    timeWindow: "week",
-    limit: 100,
-    posts: [],
-    sortKey: "score",
-    sortDir: "desc",
-    postIdFilter: [],
-    searchQuery: "",
-    detailCache: new Map(),
-    campaignSummaries: {},
-    lastTransport: null,
-    lastErrors: [],
-    /* deep analysis caches */
-    subProfiles: {},
-    timelineMode: "lines",  /* lines | stacked | density | total */
-    timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
-    discoverStrict: true,    /* drop off-topic / generic subs in the discovery card */
-    /* Last-rendered Analysis.detectCrossPosts result, keyed by
-     * data-cp-index in the rendered cross-post rows so the
-     * "+ Make campaign" button can resolve back to its group. */
-    crossPosts: [],
-    /* Posts table pagination + sub filter (Posts tab). */
-    postsPage: 0,
-    postsPageSize: 25,
-    postsSubFilter: "",
-    /* Min-score chip filter for the Posts tab (0 = All). */
-    postsScoreMin: 0,
-    /* True whenever the user has changed something that affects the
-     * fetched dataset (subs, listing, time window, limit) since the
-     * last successful refreshData. Drives the visibility of the Go
-     * banner. Starts true on page load so the user explicitly opts
-     * into fetching instead of getting an auto-stream they didn't
-     * ask for. */
-    pendingChanges: true,
-    /* Cross-posts pagination + sub filter (Campaigns tab). */
-    crossPostsPage: 0,
-    crossPostsPageSize: 10,
-    crossPostsSubFilter: "",
-    /* Cross-posts free-text search (title / URL key). Distinct from the
-     * sub dropdown; mirrors the Posts-tab "search vs filter" split. */
-    crossPostsSearchQuery: "",
-    /* Cross-posts min-spread chip filter (0 = no minimum). The chips
-     * threshold the number of distinct subs the same content appeared
-     * in; ≥ 3 / ≥ 5 / ≥ 10 surface the most-shared groups quickly. */
-    crossPostsMinSpread: 0,
-    /* Manually-chosen sphere keys to seed Discover with, on top of
-     * Seeds.detectSpheres()'s auto-detection. Stored in localStorage
-     * under "rj.activeSpheres". */
-    activeSpheres: [],
-    targetingFor: {
-      ai: null,         // selected campaign id for the AI Insights playground
-      campaigns: null,  // selected campaign id for the Campaigns tab card
-    },
-    /* Pagination state for recommendation surfaces. The rendered
-     * list of suggested subreddits used to be capped at 8-20
-     * depending on the surface; now the engine returns the full
-     * ranked tail (up to 200) and the renderer paginates with this
-     * state. Per-surface so each card remembers its own page across
-     * tab-switches. */
-    recommend: {
-      targeting: {
-        inline:    { page: 0, pageSize: 25 },
-        ai:        { page: 0, pageSize: 25 },
-        campaigns: { page: 0, pageSize: 25 },
-      },
-      discover: {
-        new:     { page: 0, pageSize: 25 },
-        already: { page: 0, pageSize: 25 },
-      },
-    },
-    /* Stash for the last-rendered targets per surface so paginator
-     * clicks can re-render without re-running Analysis.recommend-
-     * Targets (recompute is cheap but unnecessary when only the
-     * page index / size changed). */
-    lastRenderedTargeting: { inline: null, ai: null, campaigns: null },
-    /* Same for discover — stashed so paginator clicks don't trigger
-     * a full re-run of the multi-second discovery search. */
-    lastDiscoverResult: null,
-    lastDiscoverCtx: null,
-    /* monotonic counter — every refreshData() call increments it; running
-     * fetches that observe a change discard their results so a fast user
-     * tapping Refresh repeatedly doesn't get stale data piled on top. */
-    fetchToken: 0,
-    /* skip expensive renders (themes, profiles, charts) while a batch
-     * fetch is still in progress — KPI + table render only. */
-    rendering: { light: false },
-    /* Persistent post cache metadata. Set by hydrateFromPostCache()
-     * on init and updated after every successful refreshData() so the
-     * UI can show "Cached from N min ago" / "Refreshed: +12 new
-     * since last fetch". */
-    cache: {
-      hasCache: false,
-      savedAt: 0,         // ms epoch — when the cache blob was written
-      fetchKey: "",       // params under which it was last fetched
-      cachedSubs: [],     // active subs at the time of caching
-      cachedCount: 0,     // number of posts in the cached blob (pre-filter)
-      lastRefreshAt: 0,   // ms epoch — when the user last hit Refresh in this session
-    },
-  };
 
   function isMobile() {
     return window.matchMedia && window.matchMedia("(max-width: 720px)").matches;
@@ -132,35 +23,8 @@
 
   /* ---------- Persistence ---------- */
 
-  function loadPersisted() {
-    try {
-      const subs = JSON.parse(localStorage.getItem(STORAGE_KEYS.subs) || "null");
-      state.knownSubs = Array.isArray(subs) && subs.length ? subs : DEFAULT_SUBS.slice();
-      const active = JSON.parse(localStorage.getItem(STORAGE_KEYS.active) || "null");
-      state.activeSubs = new Set(Array.isArray(active) && active.length ? active : DEFAULT_SUBS.slice());
-      state.listing = localStorage.getItem(STORAGE_KEYS.listing) || "hot";
-      state.timeWindow = localStorage.getItem(STORAGE_KEYS.time) || "week";
-      state.limit = Number(localStorage.getItem(STORAGE_KEYS.limit)) || 100;
-      try {
-        const raw = localStorage.getItem("rj.activeSpheres");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) state.activeSpheres = parsed.filter((k) => typeof k === "string");
-        }
-      } catch (_) {}
-    } catch (_) {
-      state.knownSubs = DEFAULT_SUBS.slice();
-      state.activeSubs = new Set(DEFAULT_SUBS);
-    }
-  }
-
-  function persist() {
-    localStorage.setItem(STORAGE_KEYS.subs, JSON.stringify(state.knownSubs));
-    localStorage.setItem(STORAGE_KEYS.active, JSON.stringify(Array.from(state.activeSubs)));
-    localStorage.setItem(STORAGE_KEYS.listing, state.listing);
-    localStorage.setItem(STORAGE_KEYS.time, state.timeWindow);
-    localStorage.setItem(STORAGE_KEYS.limit, String(state.limit));
-  }
+  const loadPersisted = state.load;
+  const persist = state.persist;
 
   /* Hydrate state.posts from the persistent post cache so a page
    * reload doesn't have to re-fetch from Reddit before the dashboard
@@ -270,36 +134,28 @@
     if (banner) banner.remove();
   }
 
-  /* ---------- Filter drawer ---------- */
+  /* ---------- Settings sheet ---------- */
 
-  /* Filter drawer visibility.
-   * Mobile uses an .expanded class on .controls (default hidden);
-   * desktop uses .collapsed (default shown) so a single toggle button
-   * works in both worlds without breaking either default. */
-  function setControlsExpanded(expanded) {
-    const controls = document.getElementById("controls");
-    const toggle = document.getElementById("filters-toggle");
-    if (!controls) return;
-    if (isMobile()) {
-      controls.classList.toggle("expanded", expanded);
-      controls.classList.remove("collapsed");
-    } else {
-      controls.classList.toggle("collapsed", !expanded);
-      controls.classList.remove("expanded");
-    }
-    if (toggle) {
-      toggle.classList.toggle("expanded", expanded);
-      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  /* Fetch settings, data source and cache controls used to live in a
+   * collapsible drawer wedged between the topbar and the content, which
+   * pushed the actual data down the page on every open. They are now a
+   * dialog that overlays instead. */
+  function setSettingsOpen(open) {
+    const sheet = document.getElementById("settings-sheet");
+    const backdrop = document.getElementById("settings-sheet-backdrop");
+    if (!sheet) return;
+    sheet.hidden = !open;
+    if (backdrop) backdrop.hidden = !open;
+    document.body.classList.toggle("sheet-open", open);
+    if (open) {
+      const first = sheet.querySelector("select, input, button");
+      if (first) first.focus();
     }
   }
 
-  /* Helper for closeOnSelect callers — checks the current visibility
-   * of the controls drawer regardless of which class drives it. */
-  function controlsAreVisible() {
-    const controls = document.getElementById("controls");
-    if (!controls) return false;
-    if (isMobile()) return controls.classList.contains("expanded");
-    return !controls.classList.contains("collapsed");
+  function settingsAreOpen() {
+    const sheet = document.getElementById("settings-sheet");
+    return !!(sheet && !sheet.hidden);
   }
 
   /* ---------- Filtering ---------- */
@@ -442,17 +298,22 @@
     renderPostsView();
   }
 
+  /* Full re-render after the dataset changed.
+   *
+   * This computes the derivations that more than one view needs, then
+   * hands off to the router, which renders the visible view now and
+   * marks the rest dirty. The previous build re-rendered every pane
+   * unconditionally, so a refresh redrew eight off-screen Chart.js
+   * canvases plus the themes and profile lists nobody was looking at. */
   function rerenderAll() {
     if (state.rendering.light) return rerenderLight();
 
     const posts = filteredPosts();
-    const agg = Analysis.aggregate(posts);
-    const sentiment = Analysis.aggregateSentiment(posts);
-    const themes = Analysis.themes(posts);
+
     state.subProfiles = Analysis.subredditProfiles(posts);
     /* Attach an engagement-trend slope per sub so recommendTargets can
      * fold "trending up / down / flat" into its composite score. */
-    if (state.subProfiles && Object.keys(state.subProfiles).length) {
+    if (Object.keys(state.subProfiles).length) {
       const bySub = {};
       for (const p of posts) {
         const k = (p.subreddit || "").toLowerCase();
@@ -460,58 +321,34 @@
         (bySub[k] = bySub[k] || []).push(p);
       }
       for (const [k, list] of Object.entries(bySub)) {
-        if (state.subProfiles[k]) {
-          state.subProfiles[k]._trend = Analysis.engagementTrend(list);
-        }
+        if (state.subProfiles[k]) state.subProfiles[k]._trend = Analysis.engagementTrend(list);
       }
     }
 
-    UI.renderKpis(agg);
-    renderPostsView();
-    refreshSubFilterDropdowns();
-
-    if (window.Chart) {
-      /* Each chart wrapped so one bad render (e.g. zero-data state during
-       * an in-progress fetch, or a browser without canvas support) can't
-       * take down the whole rerender path — which would otherwise prevent
-       * post-init steps like wireSyncSession from ever running. */
-      function safeChart(label, fn) {
-        try { fn(); } catch (err) { console.warn(`[charts] ${label}:`, err && err.message); }
-      }
-      safeChart("timeline", () => {
-        const timelineData = Analysis.bucketByTimePerSub(posts, { window: state.timelineWindow });
-        Charts.timeline("chart-timeline", timelineData, { mode: state.timelineMode });
-        const hintEl = document.getElementById("timeline-hint");
-        if (hintEl) {
-          const subsCount = timelineData.subs.length;
-          const modeLabel = state.timelineMode === "total" ? "All subs combined" : state.timelineMode === "stacked" ? "Stacked by sub" : state.timelineMode === "density" ? "Each sub at its own peak (%)" : "One line per sub";
-          const winLabel = state.timelineWindow === "all" ? "all loaded data" : state.timelineWindow === "auto" ? `auto window (${timelineData.windowLabel})` : `last ${state.timelineWindow}`;
-          const droppedNote = timelineData.droppedCount ? ` · ${timelineData.droppedCount} older post${timelineData.droppedCount === 1 ? "" : "s"} hidden` : "";
-          hintEl.textContent = `${modeLabel} · ${winLabel} · ${timelineData.bucketLabel} buckets${subsCount ? ` · ${subsCount} sub${subsCount === 1 ? "" : "s"}` : ""}${droppedNote}`;
-        }
-      });
-      safeChart("scatter", () => Charts.scatter("chart-scatter", posts));
-      safeChart("subCompare", () => Charts.subCompare("chart-sub-compare", agg));
-      safeChart("histogram", () => Charts.histogram("chart-hist", Analysis.scoreHistogram(posts, 12)));
-      safeChart("hourHeat", () => Charts.hourHeat("chart-hour-heat", agg));
-      safeChart("dow", () => Charts.dow("chart-dow", agg));
-      safeChart("velocity", () => Charts.velocity("chart-velocity", posts));
-      safeChart("sentiment", () => Charts.sentiment("chart-sentiment", sentiment));
-    }
-
-    UI.renderKeywords(Analysis.extractKeywords(posts, 30));
     const crossPosts = Analysis.detectCrossPosts(posts);
     /* Tag each group with its absolute index so render-after-filter/page
      * still resolves back to state.crossPosts[idx] from the click handler. */
     crossPosts.forEach((g, i) => { g._origIndex = i; });
     state.crossPosts = crossPosts;
-    renderCrossPostsView();
-    UI.renderRecommendations(Analysis.recommendations(agg, sentiment, posts));
-    UI.renderNarrative(Analysis.narrative(agg, sentiment, Array.from(state.activeSubs)));
-    UI.renderThemes(themes);
-    UI.renderSubProfiles(state.subProfiles);
 
-    /* Refresh both targeting playgrounds whenever the dataset changes. */
+    refreshSubFilterDropdowns();
+    populateCampaignSelectors();
+    updateRailCounts();
+    Router.invalidate(["dashboard", "posts", "campaigns", "campaign", "communities"]);
+  }
+
+  /* Live counts beside each nav destination, so the rail doubles as a
+   * status readout. */
+  function updateRailCounts() {
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.hidden = !value;
+      el.textContent = value > 999 ? Math.round(value / 1000) + "k" : String(value);
+    };
+    set("rail-count-campaigns", Campaigns.list().length);
+    set("rail-count-subs", state.knownSubs.length);
+    set("rail-count-posts", state.posts.length);
   }
 
   /* ---------- Action banner (manual-trigger gating) ---------- */
@@ -834,7 +671,7 @@
   /* ---------- Post detail ---------- */
 
   async function openPostDetail(post) {
-    UI.activateTab("posts");
+    Router.go("posts");
     const card = document.getElementById("post-detail");
     const body = document.getElementById("post-detail-body");
     card.hidden = false;
@@ -858,8 +695,8 @@
     const list = Campaigns.list();
     if (!list.length) {
       state.campaignSummaries = {};
-      UI.renderCampaignList([], {}, openCampaign);
-      populateTargetingSelectors();
+      Router.invalidate(["campaigns"]);
+      populateCampaignSelectors();
       return;
     }
     const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -876,8 +713,8 @@
       }
     }
     state.campaignSummaries = summaries;
-    UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
-    populateTargetingSelectors();
+    Router.invalidate(["campaigns"]);
+    populateCampaignSelectors();
 
     /* Second pass: fill in the rest from the network. Concurrency 2 keeps
      * the proxy from being overwhelmed while the subreddit batch may have
@@ -893,28 +730,34 @@
       }
     });
     state.campaignSummaries = summaries;
-    UI.renderCampaignList(Campaigns.list(), summaries, openCampaign);
-    populateTargetingSelectors();
+    Router.invalidate(["campaigns"]);
+    populateCampaignSelectors();
+    updateRailCounts();
 
     const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
     console.log(`[campaigns] refreshed ${list.length} in ${dur}ms`);
   }
 
-  async function openCampaign(campaign) {
-    const card = document.getElementById("campaign-detail");
-    const body = document.getElementById("campaign-detail-body");
-    card.hidden = false;
-    /* Render the watch-mode toggle (PR 6) into its slot. */
-    refreshWatchToggleUI(state.watchedCampaignId === campaign.id && !!watchTimer);
-    state.openCampaignId = campaign.id;
+  /* Load one campaign's data and hand it to the workspace view.
+   *
+   * Two passes: an instant local one from posts already in memory, then
+   * a network pass for anything unresolved. Both write into state and
+   * invalidate the campaign route rather than painting DOM directly, so
+   * the view owns its own markup.
+   */
+  async function loadCampaign(idOrCampaign) {
+    let campaign = typeof idOrCampaign === "string" ? Campaigns.get(idOrCampaign) : idOrCampaign;
+    if (!campaign) return;
 
-    /* Auto-repair: if the campaign was saved with raw mobile-share URLs in
-     * its postIds (older code paths did this), resolve them now and rewrite
-     * the stored campaign. Future opens will then hit the fast path. */
+    state.openCampaignId = campaign.id;
+    refreshWatchToggleUI(state.watchedCampaignId === campaign.id && !!watchTimer);
+
+    /* Auto-repair: campaigns saved by older builds could hold raw mobile
+     * share URLs in postIds. Resolve them once and rewrite the record so
+     * future opens take the fast path. */
     const shareEntries = (campaign.postIds || []).filter((s) => Util.isShareUrl(s));
     if (shareEntries.length) {
       try {
-        body.innerHTML = `<div class="empty">Repairing ${shareEntries.length} mobile-share URL${shareEntries.length === 1 ? "" : "s"} (one-time)…<div class="hint" style="margin-top:6px">Following Reddit redirects to extract canonical post IDs.</div></div>`;
         Util.setStatus(`Resolving ${shareEntries.length} share URL${shareEntries.length === 1 ? "" : "s"}…`, "");
         const { resolved, failed } = await Reddit.resolveShareUrls(shareEntries);
         const newPostIds = [];
@@ -927,49 +770,41 @@
             newPostIds.push(resolvedId);
             if (Util.isShareUrl(old)) fixed++;
           } else if (!resolvedId && Util.isShareUrl(old)) {
-            /* Keep the original share URL so the user can see what failed
-             * in the missing list and try again later. */
+            /* Keep the original so the user can see what failed. */
             newPostIds.push(old);
           }
         }
         Campaigns.update(campaign.id, { postIds: newPostIds });
         campaign = Campaigns.get(campaign.id);
         if (failed.length) {
-          Util.toast(`Repaired ${fixed} of ${shareEntries.length} share URLs (${failed.length} failed). The rest stay flagged in the missing list — tap Refresh to try again.`, "error");
-        } else {
+          Util.toast(`Repaired ${fixed} of ${shareEntries.length} share URLs (${failed.length} failed).`, "error");
+        } else if (fixed) {
           Util.toast(`Repaired ${fixed} share URL${fixed === 1 ? "" : "s"}.`, "ok");
         }
-        console.log(`[openCampaign] repaired ${fixed}/${shareEntries.length} share URLs in "${campaign.name}"`);
       } catch (err) {
-        console.warn(`[openCampaign] share-URL repair failed:`, err && err.message);
-        Util.toast(`Couldn't repair share URLs: ${(err && err.message) || err}`, "error");
+        console.warn("[campaign] share-URL repair failed:", err && err.message);
       }
     }
 
-    /* Instant first paint using whatever we already have locally. */
+    function publish(agg) {
+      agg.campaignId = campaign.id;
+      state.campaignAgg = agg;
+      state.campaignSummaries[campaign.id] = agg;
+      state.campaignDeep = computeCampaignDeep(campaign, agg);
+      Router.invalidate(["campaign", "campaigns"]);
+      updateRailCounts();
+    }
+
     let localAgg = null;
     try {
       localAgg = await Campaigns.fetchAggregated(campaign, { fromPosts: state.posts, skipNetwork: true });
-      const deepLocal = computeCampaignDeep(campaign, localAgg);
-      UI.renderCampaignDetail(campaign, localAgg, deepLocal);
-      const inlineLocal = document.getElementById("campaign-detail-targets");
-      if (inlineLocal) {
-        const targets = deepLocal ? deepLocal.targets : [];
-        state.lastRenderedTargeting.inline = { campaign, targets, container: inlineLocal, opts: { heading: false } };
-        UI.renderTargeting(campaign, targets, inlineLocal, {
-          heading: false,
-          surfaceKey: "inline",
-          paging: state.recommend.targeting.inline,
-        });
-      }
+      publish(localAgg);
     } catch (_) {
-      body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
+      /* The view is already showing skeletons. */
     }
 
-    /* Network pass: fetches anything we couldn't satisfy locally.
-     * Bounded by a 20s overall timeout so proxy hangs can't keep the
-     * user staring at a skeleton — the local-only render stays put
-     * if the timeout fires. */
+    /* Bounded so a hanging proxy cannot leave the user staring at a
+     * skeleton forever; the local render stays put if it fires. */
     try {
       const agg = await Promise.race([
         Campaigns.fetchAggregated(campaign, { fromPosts: state.posts }),
@@ -978,50 +813,27 @@
           20000
         )),
       ]);
-      state.campaignSummaries[campaign.id] = agg;
-
-      const deep = computeCampaignDeep(campaign, agg);
-      UI.renderCampaignDetail(campaign, agg, deep);
-      UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
-
-      const inlineEl = document.getElementById("campaign-detail-targets");
-      if (inlineEl) {
-        const targets = deep ? deep.targets : [];
-        state.lastRenderedTargeting.inline = { campaign, targets, container: inlineEl, opts: { heading: false } };
-        UI.renderTargeting(campaign, targets, inlineEl, {
-          heading: false,
-          surfaceKey: "inline",
-          paging: state.recommend.targeting.inline,
-        });
-      }
-
-      console.log(`[openCampaign] ${campaign.name}: local=${agg.resolvedFromLocal} network=${agg.resolvedFromNetwork} missing=${agg.missing.length}`);
+      publish(agg);
+      console.log(`[campaign] ${campaign.name}: local=${agg.resolvedFromLocal} network=${agg.resolvedFromNetwork} missing=${agg.missing.length}`);
     } catch (err) {
       const msg = (err && err.message) || String(err);
-      console.warn(`[openCampaign] ${campaign.name} network refresh failed:`, msg);
-      /* Keep the local-only render if we have it. Otherwise show retry. */
+      console.warn(`[campaign] ${campaign.name} network refresh failed:`, msg);
       if (localAgg && localAgg.posts.length) {
-        Util.toast(`Couldn't refresh "${campaign.name}" from Reddit (${msg.slice(0, 60)}). Showing locally-resolved posts.`, "error");
+        Util.toast(`Couldn't refresh "${campaign.name}" from Reddit. Showing locally-resolved posts.`, "error");
       } else {
-        body.innerHTML = `
-          <div class="empty">
-            <div>Couldn't fetch campaign data: <strong>${Util.escapeHtml(msg)}</strong></div>
-            <div class="hint" style="margin-top:6px">All public CORS proxies failed for this batch. Try switching <strong>Data source</strong> in the topbar, or wait a moment for the rate limit to clear.</div>
-            <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-              <button class="btn primary small" id="campaign-retry-btn">Retry</button>
-              <button class="btn small" id="campaign-retry-clear-btn">Clear cache &amp; retry</button>
-            </div>
-          </div>
-        `;
-        const retry = document.getElementById("campaign-retry-btn");
-        if (retry) retry.addEventListener("click", () => openCampaign(campaign));
-        const retryClear = document.getElementById("campaign-retry-clear-btn");
-        if (retryClear) retryClear.addEventListener("click", () => {
-          Reddit.clearCache();
-          openCampaign(campaign);
-        });
+        const agg = localAgg || { posts: [], subs: [], missing: campaign.postIds || [], totalScore: 0, totalComments: 0 };
+        agg.networkError = msg;
+        publish(agg);
       }
     }
+  }
+
+  /* Kept as the entry point used by list rows and the post-row
+   * "Make campaign" flow: navigate, and let the route load the data. */
+  function openCampaign(campaign) {
+    const id = typeof campaign === "string" ? campaign : (campaign && campaign.id);
+    if (!id) return;
+    Router.go("campaign", { id: id });
   }
 
   /* ---------- Deep analysis for a campaign ---------- */
@@ -1105,34 +917,50 @@
     return parts.join("\n");
   }
 
-  /* ---------- Targeting selectors ---------- */
+  /* ---------- Campaign-derived controls ---------- */
 
-  function populateTargetingSelectors() {
+  /* Every control whose options are the campaign list, refreshed from
+   * one place. wireCascadeCard, wireVolunteer and wireABCompare each
+   * used to carry their own copy of this, run once at boot — so a
+   * campaign created afterwards never showed up in any of them. */
+  function populateCampaignSelectors() {
     const campaigns = Campaigns.list();
-    for (const id of ["discover-campaign"]) {
+    const esc = Util.escapeHtml;
+    const subsOf = (id) => {
+      const s = state.campaignSummaries[id];
+      return (s && s.subs) || [];
+    };
+
+    const setOptions = (id, html) => {
       const el = document.getElementById(id);
-      if (!el) continue;
+      if (!el) return;
       const previous = el.value;
-      el.innerHTML = "";
-      if (!campaigns.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "(no campaigns saved — create one on the Campaigns tab)";
-        el.appendChild(opt);
-        continue;
+      el.innerHTML = html;
+      /* Only restore if the option survived the rebuild, otherwise the
+       * select silently blanks out. */
+      if (previous && Array.prototype.some.call(el.options, (o) => o.value === previous)) {
+        el.value = previous;
       }
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "— pick a campaign —";
-      el.appendChild(placeholder);
-      for (const c of campaigns) {
-        const opt = document.createElement("option");
-        opt.value = c.id;
-        opt.textContent = c.name;
-        el.appendChild(opt);
-      }
-      if (previous && campaigns.some((c) => c.id === previous)) el.value = previous;
-    }
+    };
+
+    setOptions("discover-campaign", campaigns.length
+      ? '<option value="">— pick a campaign —</option>' +
+        campaigns.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")
+      : '<option value="">(no campaigns saved — create one on the Campaigns tab)</option>');
+
+    /* Cascade and volunteer coverage both work off "a set of subs", so
+     * they offer the active dashboard subs alongside each campaign. */
+    const sourceOptions = `<option value="__active">Active subs (${state.activeSubs.size})</option>` +
+      campaigns.map((c) => `<option value="campaign:${esc(c.id)}">${esc(c.name)} (${subsOf(c.id).length} subs)</option>`).join("");
+    setOptions("cascade-source", sourceOptions);
+    setOptions("vol-source", sourceOptions);
+
+    const pickOptions = '<option value="">— pick —</option>' +
+      campaigns.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+    setOptions("ab-campaign-a", pickOptions);
+    setOptions("ab-campaign-b", pickOptions);
+
+    paintCalendar();
   }
 
   function refreshTargeting(which) {
@@ -1672,9 +1500,7 @@
 
   function bind() {
     const transportSelect = document.getElementById("transport-select");
-    const transportSelectMobile = document.getElementById("transport-select-mobile");
     populateTransportSelect(transportSelect);
-    populateTransportSelect(transportSelectMobile);
 
     /* Custom-proxy URL inputs. Visible when:
      *   - the user picks "Custom (your CORS proxy)" from Data source, OR
@@ -1683,24 +1509,21 @@
      * The input is paired with localStorage via Reddit.{get,set}CustomProxyUrl.
      * Cross-device sharing rides through the existing Sync payload. */
     const customInput = document.getElementById("custom-proxy-input");
-    const customInputMobile = document.getElementById("custom-proxy-input-mobile");
 
     function syncCustomInputVisibility() {
       const t = Reddit.getTransport();
       const haveUrl = !!Reddit.getCustomProxyUrl();
       const visible = t === "custom" || haveUrl;
-      [customInput, customInputMobile].forEach((el) => {
-        if (!el) return;
-        el.hidden = !visible;
-        el.value = Reddit.getCustomProxyUrl();
-      });
+      if (customInput) {
+        customInput.hidden = !visible;
+        customInput.value = Reddit.getCustomProxyUrl();
+      }
     }
 
     function onCustomProxyChange(e) {
       const v = String(e.target.value || "").trim();
       Reddit.setCustomProxyUrl(v);
       if (customInput && customInput !== e.target) customInput.value = v;
-      if (customInputMobile && customInputMobile !== e.target) customInputMobile.value = v;
       Reddit.clearCache();
       if (typeof Reddit.resetCircuitBreaker === "function") Reddit.resetCircuitBreaker();
       Util.toast(v ? "Custom proxy saved" : "Custom proxy cleared", "ok");
@@ -1778,14 +1601,23 @@
       maybeShowProxyDownBanner(statsByTransport);
     };
 
-    const filtersToggle = document.getElementById("filters-toggle");
-    if (filtersToggle) {
-      filtersToggle.addEventListener("click", () => {
-        /* Use controlsAreVisible() so toggling works on both viewports
-         * — mobile uses .expanded, desktop uses .collapsed. */
-        setControlsExpanded(!controlsAreVisible());
-      });
+    /* Settings sheet — one dialog for fetch settings, data source,
+     * appearance and cache controls. */
+    for (const id of ["settings-toggle", "settings-toggle-mobile"]) {
+      const btn = document.getElementById(id);
+      if (btn) btn.addEventListener("click", () => setSettingsOpen(!settingsAreOpen()));
     }
+    const settingsClose = document.getElementById("settings-close");
+    if (settingsClose) settingsClose.addEventListener("click", () => setSettingsOpen(false));
+    const settingsBackdrop = document.getElementById("settings-sheet-backdrop");
+    if (settingsBackdrop) settingsBackdrop.addEventListener("click", () => setSettingsOpen(false));
+
+    /* Navigation drawer on mobile. */
+    const railToggle = document.getElementById("rail-toggle");
+    if (railToggle) railToggle.addEventListener("click", () => setRailOpen(true));
+    Router.onChange(() => setRailOpen(false));
+
+    wireTheme();
 
     /* Brand button — same affordance as a logo home link. Activates
      * the Overview tab and scrolls the page to the top so the user
@@ -1800,7 +1632,7 @@
      * my dashboard now". */
     const brandHome = document.getElementById("brand-home");
     if (brandHome) brandHome.addEventListener("click", () => {
-      try { UI.activateTab("overview"); } catch (_) {}
+      try { Router.go("dashboard"); } catch (_) {}
       try { clearShareHashFromUrl(); } catch (_) {}
       try { dismissSessionImportBanner(); } catch (_) {}
       try { window.scrollTo({ top: 0, behavior: "smooth" }); }
@@ -1866,11 +1698,6 @@
        * Discoverable via the title attribute on the button. */
       if (e.shiftKey) fullReset(); else softClearCache();
     });
-    const clearBtnMobile = document.getElementById("clear-cache-btn-mobile");
-    if (clearBtnMobile) clearBtnMobile.addEventListener("click", (e) => {
-      if (e.shiftKey) fullReset(); else softClearCache();
-    });
-
     /* Full reset button (separate, explicit). Lets users on touch
      * devices (no shift key) wipe everything cleanly, and surfaces
      * the destructive action visually so first-time users discover
@@ -1882,14 +1709,6 @@
         fullReset();
       }
     });
-    const fullResetBtnMobile = document.getElementById("full-reset-btn-mobile");
-    if (fullResetBtnMobile) fullResetBtnMobile.addEventListener("click", () => {
-      if (!state.posts.length) { fullReset(); return; }
-      if (confirm("Full reset will discard all cached posts (" + state.posts.length + " in view) and re-fetch from scratch. Continue?")) {
-        fullReset();
-      }
-    });
-
     /* Filter changes (listing / time / limit) no longer auto-trigger
      * a fetch. They mark the dataset stale and reveal the Go banner;
      * the user opts into refetching with one explicit click. */
@@ -1983,10 +1802,6 @@
       const tabSearch = document.getElementById("posts-title-search");
       if (tabSearch && tabSearch.value !== e.target.value) tabSearch.value = e.target.value;
       debouncedFilter();
-    });
-
-    document.querySelectorAll(".tab").forEach((tab) => {
-      tab.addEventListener("click", () => UI.activateTab(tab.dataset.tab));
     });
 
     /* Posts-over-time mode toggle (Per sub / Stacked / Density / Total) */
@@ -2336,8 +2151,8 @@
         const ppEl = document.getElementById("campaign-post-ids-preview");
         if (ppEl) { ppEl.hidden = true; ppEl.innerHTML = ""; }
 
-        UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
-        populateTargetingSelectors();
+        Router.invalidate(["campaigns"]);
+        populateCampaignSelectors();
 
         refreshAllCampaignSummaries().catch((err) => {
           console.warn("refreshAllCampaignSummaries failed:", err);
@@ -2374,21 +2189,28 @@
       });
     }
 
-    document.getElementById("campaign-close").addEventListener("click", UI.hideCampaignDetail);
-    document.getElementById("campaign-refresh").addEventListener("click", () => {
+    const campaignRefreshBtn = document.getElementById("campaign-refresh");
+    if (campaignRefreshBtn) campaignRefreshBtn.addEventListener("click", () => {
       const id = state.openCampaignId;
       if (!id) return;
       Reddit.clearCache();
-      const c = Campaigns.get(id);
-      if (c) openCampaign(c);
+      loadCampaign(id);
     });
-    document.getElementById("campaign-delete").addEventListener("click", () => {
+    const campaignDeleteBtn = document.getElementById("campaign-delete");
+    if (campaignDeleteBtn) campaignDeleteBtn.addEventListener("click", () => {
       const id = state.openCampaignId;
       if (!id) return;
-      if (!confirm("Delete this campaign? Stored locally only.")) return;
+      const c = Campaigns.get(id);
+      if (!confirm(`Delete "${c ? c.name : "this campaign"}"? Stored locally only.`)) return;
       Campaigns.remove(id);
-      UI.hideCampaignDetail();
+      state.openCampaignId = null;
+      state.campaignAgg = null;
       refreshAllCampaignSummaries();
+      Router.go("campaigns");
+    });
+    const campaignComposeBtn = document.getElementById("campaign-compose");
+    if (campaignComposeBtn) campaignComposeBtn.addEventListener("click", () => {
+      if (state.openCampaignId) openComposer(state.openCampaignId);
     });
 
     /* Cross-posts card delegated handlers:
@@ -2513,9 +2335,7 @@
             origBtn.disabled = true;
             origBtn.textContent = "Created ✓";
           }
-          UI.activateTab("campaigns");
-          UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
-          populateTargetingSelectors();
+          populateCampaignSelectors();
           refreshAllCampaignSummaries().catch((err) => console.warn("[crosspost->campaign] summary refresh failed:", err && err.message));
           openCampaign(c);
           console.log(`[crosspost->campaign] "${name}" goals=(${goalScore}, ${goalComments}) ids=${postIds.length} subs=${group.subs.length}`);
@@ -2624,11 +2444,10 @@
           UI.dismissPostMakeCampaignForm(tr);
         }
 
-        UI.activateTab("campaigns");
-        UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
-        populateTargetingSelectors();
+        populateCampaignSelectors();
         refreshAllCampaignSummaries().catch((err) => console.warn("[post->campaign] summary refresh failed:", err && err.message));
-        await openCampaign(c);
+        openCampaign(c);
+        await loadCampaign(c.id);
 
         /* Auto-trigger Discover. The discover-campaign select must be
          * set to this campaign first; if either piece isn't available
@@ -2854,9 +2673,7 @@
           Util.toast(`Goals updated for "${camp.name}".`, "ok");
           /* Re-open the campaign so the detail re-renders with the
            * new goals and progress bars recalculate. */
-          const fresh = Campaigns.get(id);
-          if (fresh) await openCampaign(fresh);
-          UI.renderCampaignList(Campaigns.list(), state.campaignSummaries, openCampaign);
+          await loadCampaign(id);
         } catch (err) {
           console.error("[goals-edit] failed:", err);
           Util.toast(`Couldn't save goals: ${(err && err.message) || err}`, "error");
@@ -2866,9 +2683,9 @@
 
     /* Watch toggle button (PR 6). Lives in #watch-toggle-slot at the
      * top of the campaign detail card. Click toggles auto-refresh. */
-    const detailCard = document.getElementById("campaign-detail");
-    if (detailCard) {
-      detailCard.addEventListener("click", (e) => {
+    const workspaceEl = document.getElementById("view-campaign");
+    if (workspaceEl) {
+      workspaceEl.addEventListener("click", (e) => {
         const btn = e.target.closest && e.target.closest('[data-action="toggle-watch"]');
         if (!btn) return;
         e.preventDefault();
@@ -3001,22 +2818,11 @@
       const target = btn.closest(".campaign-post-row, .unresolved-chip");
       if (target) target.style.display = "none";
       /* Then re-render fully to update KPIs / progress bars / deep analysis. */
-      openCampaign(result.campaign).catch(() => {});
+      loadCampaign(result.campaign.id).catch(() => {});
       refreshAllCampaignSummaries().catch(() => {});
     }
 
 
-    /* Close filters drawer when user finishes a filter action on mobile */
-    /* Auto-hide the filter drawer after the user picks a listing /
-     * window / limit value on EITHER viewport. Mobile already had this;
-     * desktop now matches. Skipped if the drawer is already hidden so
-     * the toggle button can stay in its current visual state. */
-    const closeOnSelect = (el) => {
-      if (!el) return;
-      el.addEventListener("change", () => {
-        if (controlsAreVisible()) setControlsExpanded(false);
-      });
-    };
     /* Posts tab — title search input (mirrors the global search input). */
     const postsTitleSearch = document.getElementById("posts-title-search");
     if (postsTitleSearch) {
@@ -3063,33 +2869,20 @@
       });
     });
 
-    /* In-tab jump-nav: pill links above each tab panel that smooth-scroll
-     * to a section's [data-anchor="…"] landmark. Eliminates scroll-
-     * hunting when a tab has many cards. */
-    document.querySelectorAll(".subnav a[data-jump]").forEach((link) => {
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        const key = link.dataset.jump;
-        if (!key) return;
-        const target = document.querySelector(`[data-anchor="${key}"]`) || document.getElementById(key);
-        if (!target) return;
-        /* If the section is collapsed, expand it first so the jump
-         * lands on something visible. */
-        if (target.classList.contains("collapsed")) {
-          target.classList.remove("collapsed");
-          const header = target.querySelector(".card-header");
-          if (header) header.setAttribute("aria-expanded", "true");
-        }
-        try { target.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) { target.scrollIntoView(); }
-        /* Visually flash the target so the user knows where they
-         * landed (especially helpful when the section is empty or
-         * still loading). */
-        target.classList.add("just-jumped");
-        setTimeout(() => target.classList.remove("just-jumped"), 900);
-      });
+    /* Section rail: pill links that smooth-scroll to a section inside
+     * the current view. */
+    Dom.delegate(document, "click", ".section-rail a[data-jump]", (e, link) => {
+      e.preventDefault();
+      const key = link.dataset.jump;
+      const target = document.getElementById(key) || document.querySelector(`[data-anchor="${key}"]`);
+      if (!target) return;
+      for (const sib of link.parentElement.children) sib.classList.toggle("active", sib === link);
+      try { target.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) { target.scrollIntoView(); }
+      target.classList.add("just-jumped");
+      setTimeout(() => target.classList.remove("just-jumped"), 900);
     });
 
-    /* Cross-posts (Campaigns tab) — search + sub filter + min-spread
+    /* Cross-posts — search + sub filter + min-spread
      * chips + per-page. The list of cross-post groups can grow into
      * the hundreds on a busy dashboard, so all four controls feed
      * into renderCrossPostsView() (which calls filteredCrossPosts())
@@ -3132,10 +2925,6 @@
         renderCrossPostsView();
       });
     });
-
-    closeOnSelect(document.getElementById("listing-select"));
-    closeOnSelect(document.getElementById("time-select"));
-    closeOnSelect(document.getElementById("limit-select"));
 
     /* Sphere picker dropdowns + chip removal. Populate options from
      * Seeds.* labels, persist user picks, render chips. */
@@ -3719,57 +3508,16 @@ const bestCampaignPost = (summary.posts || [])
     setTimeout(update, 1000);
   }
 
-  /* ---------- Starter packs (PR 3) ---------- */
+  /* ---------- First-run nudge ---------- */
 
-  /* Curated one-click bundles for first-run users. Pulls from the
-   * existing Seeds catalog — no duplication, all label / sub-list
-   * data lives in one place. Shown only when knownSubs is empty
-   * AFTER loadPersisted, so returning users never see this drawer. */
-  const STARTER_PACK_KEYS = [
-    "progressive", "movement", "healthcare", "labor", "voting",
-    "climate", "reproductive", "lgbtq", "racialjustice",
-  ];
-
-  function showStarterPacksIfEmpty() {
-    const drawer = document.getElementById("starter-packs");
-    if (!drawer) return;
-    if (state.knownSubs && state.knownSubs.length > 0) { drawer.hidden = true; return; }
-    if (typeof Seeds === "undefined") return;
-    const grid = document.getElementById("starter-packs-grid");
-    if (!grid) return;
-    const tiles = STARTER_PACK_KEYS
-      .filter((key) => (Seeds.ISSUE_SPHERES && Seeds.ISSUE_SPHERES[key] || []).length)
-      .map((key) => {
-        const subs = Seeds.ISSUE_SPHERES[key];
-        const label = (Seeds.ISSUE_LABELS && Seeds.ISSUE_LABELS[key]) || key;
-        const sample = subs.slice(0, 3).map((s) => "r/" + s).join(" · ");
-        return `<button class="starter-pack" type="button" data-pack="${Util.escapeHtml(key)}">
-          <strong>${Util.escapeHtml(label)}</strong>
-          <span class="meta">${subs.length} subs · ${Util.escapeHtml(sample)}…</span>
-        </button>`;
-      });
-    grid.innerHTML = tiles.join("");
-    drawer.hidden = false;
-
-    drawer.addEventListener("click", (e) => {
-      const skip = e.target.closest && e.target.closest("#starter-packs-skip");
-      if (skip) { drawer.hidden = true; return; }
-      const tile = e.target.closest && e.target.closest("[data-pack]");
-      if (!tile) return;
-      const key = tile.dataset.pack;
-      const subs = (Seeds.ISSUE_SPHERES && Seeds.ISSUE_SPHERES[key]) || [];
-      if (!subs.length) return;
-      for (const s of subs) {
-        const norm = Util.normalizeSubName(s);
-        if (!state.knownSubs.includes(norm)) state.knownSubs.push(norm);
-        state.activeSubs.add(norm);
-      }
-      persist();
-      renderChips();
-      drawer.hidden = true;
-      markPending(`Loaded ${(Seeds.ISSUE_LABELS && Seeds.ISSUE_LABELS[key]) || key} pack`);
-      Util.toast(`Added ${subs.length} subs from the ${(Seeds.ISSUE_LABELS && Seeds.ISSUE_LABELS[key]) || key} pack — tap Go to fetch.`, "ok");
-    });
+  /* The old build had a one-shot starter-pack drawer that appeared only
+   * when knownSubs was empty and never came back. The curated bundles it
+   * offered now live permanently in the Communities view, so a first-run
+   * user just gets pointed there. */
+  function nudgeFirstRun() {
+    if (state.knownSubs && state.knownSubs.length) return;
+    Router.go("communities", {}, { replace: true });
+    if (window.CommunitiesView) CommunitiesView.goToTab("catalog");
   }
 
   /* ---------- Markdown digest export (PR 3) ---------- */
@@ -3944,17 +3692,6 @@ const bestCampaignPost = (summary.posts || [])
     const btn = document.getElementById("cascade-build");
     const out = document.getElementById("cascade-results");
     if (!card || !sel || !btn || !out) return;
-    function populate() {
-      const campaigns = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
-      const optActive = `<option value="__active">Active subs (${state.activeSubs.size})</option>`;
-      const optCampaigns = campaigns.map((c) => {
-        const summary = state.campaignSummaries[c.id];
-        const subs = summary ? (summary.subs || []) : [];
-        return `<option value="campaign:${c.id}">${Util.escapeHtml(c.name)} (${subs.length} subs)</option>`;
-      }).join("");
-      sel.innerHTML = optActive + optCampaigns;
-    }
-    populate();
     btn.addEventListener("click", () => {
       const v = sel.value;
       let subs = [];
@@ -4035,14 +3772,6 @@ const bestCampaignPost = (summary.posts || [])
     const btn = document.getElementById("ab-compare");
     const out = document.getElementById("ab-results");
     if (!card || !selA || !selB || !btn || !out) return;
-    function populate() {
-      const list = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
-      const opts = list.map((c) => `<option value="${Util.escapeHtml(c.id)}">${Util.escapeHtml(c.name)}</option>`).join("");
-      const placeholder = '<option value="">— pick —</option>';
-      selA.innerHTML = placeholder + opts;
-      selB.innerHTML = placeholder + opts;
-    }
-    populate();
     btn.addEventListener("click", () => {
       const aId = selA.value, bId = selB.value;
       if (!aId || !bId) { Util.toast("Pick two campaigns to compare.", "error"); return; }
@@ -4056,18 +3785,23 @@ const bestCampaignPost = (summary.posts || [])
 
   /* ---------- Calendar (PR 6) ---------- */
 
-  function renderCalendar() {
+  function paintCalendar() {
     const body = document.getElementById("calendar-body");
     if (!body) return;
     const list = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
     UI.renderCampaignCalendar(body, list, state.campaignSummaries || {});
+  }
+
+  function wireCalendar() {
+    const body = document.getElementById("calendar-body");
+    if (!body) return;
     body.addEventListener("click", (e) => {
       const row = e.target.closest && e.target.closest(".cal-row[data-campaign-id]");
       if (!row) return;
-      const id = row.dataset.campaignId;
-      const c = Campaigns.get(id);
+      const c = Campaigns.get(row.dataset.campaignId);
       if (c) openCampaign(c);
     });
+    paintCalendar();
   }
 
   /* ---------- Volunteer coordination (PR 6) ---------- */
@@ -4094,17 +3828,6 @@ const bestCampaignPost = (summary.posts || [])
     const btn = document.getElementById("vol-load");
     const body = document.getElementById("vol-body");
     if (!sel || !btn || !body) return;
-    function populate() {
-      const list = (typeof Campaigns !== "undefined" && Campaigns.list) ? Campaigns.list() : [];
-      const optActive = `<option value="__active">Active subs (${state.activeSubs.size})</option>`;
-      const optCampaigns = list.map((c) => {
-        const summary = state.campaignSummaries[c.id];
-        const subs = summary ? (summary.subs || []) : [];
-        return `<option value="campaign:${c.id}">${Util.escapeHtml(c.name)} (${subs.length} subs)</option>`;
-      }).join("");
-      sel.innerHTML = optActive + optCampaigns;
-    }
-    populate();
     function render() {
       const v = sel.value;
       let subs = [];
@@ -4161,74 +3884,12 @@ const bestCampaignPost = (summary.posts || [])
    * that div post-mount so the existing pagination state machine
    * (state.recommend.targeting.inline) picks up uniformly.
    */
-  function wireCampaignHub() {
-    document.addEventListener("click", (e) => {
-      const tile = e.target.closest && e.target.closest("[data-campaign-section]");
-      if (!tile) return;
-      e.preventDefault();
-      const sectionId = tile.dataset.campaignSection;
-      const campaignId = tile.dataset.campaignId || state.openCampaignId;
-      openCampaignSectionFromTile(sectionId, campaignId);
-    });
-  }
+  /* The campaign "hub" — a grid of tiles that opened each section in a
+   * sidebar — has been replaced by the campaign workspace, where the
+   * sections are inline and switch without an overlay. UI.renderCampaignSection
+   * survives and is composed directly by js/views/campaign.js.
+   */
 
-  function openCampaignSectionFromTile(sectionId, campaignId) {
-    if (!campaignId || typeof Campaigns === "undefined") return;
-    const campaign = Campaigns.get(campaignId);
-    if (!campaign) { Util.toast("Campaign not found.", "error"); return; }
-    const summary = state.campaignSummaries[campaign.id] || { posts: [], missing: [], subs: [], totalScore: 0, totalComments: 0 };
-    const deep = summary.deep || (summary.posts && summary.posts.length ? computeCampaignDeep(campaign, summary) : null);
-
-    const titles = {
-      posts:     "Posts in this campaign",
-      addposts:  "Add posts",
-      targeting: "Targeting recommendations",
-      analysis:  "Deep analysis",
-      settings:  "Settings & goals",
-    };
-    const subtitle = `"${campaign.name}" · ${summary.posts ? summary.posts.length : 0} resolved`;
-
-    const html = (typeof UI !== "undefined" && UI.renderCampaignSection)
-      ? UI.renderCampaignSection(sectionId, campaign, summary, deep)
-      : "";
-
-    if (typeof Sidebar === "undefined") {
-      Util.toast("Sidebar not loaded.", "error");
-      return;
-    }
-    Sidebar.open({
-      id: "section-sidebar",
-      title: titles[sectionId] || "Section",
-      subtitle,
-      content: html,
-      onMount: (bodyEl) => {
-        /* Targeting needs an explicit render call against the
-         * empty hosting div so it picks up paging state and the
-         * latest deep.targets array. */
-        if (sectionId === "targeting") {
-          const slot = bodyEl.querySelector("[data-renders-targeting]");
-          if (slot && deep && deep.targets) {
-            state.lastRenderedTargeting.inline = { campaign, targets: deep.targets, container: slot, opts: { heading: false } };
-            UI.renderTargeting(campaign, deep.targets, slot, {
-              heading: false,
-              surfaceKey: "inline",
-              paging: state.recommend.targeting.inline,
-            });
-          }
-        }
-        /* Move keyboard focus to the first interactive element so
-         * a user paging via keyboard lands inside the sidebar
-         * content instead of the close button. */
-        const firstFocusable = bodyEl.querySelector("button, input, textarea, select, a[href]");
-        if (firstFocusable) try { firstFocusable.focus({ preventScroll: true }); } catch (_) {}
-      },
-    });
-  }
-
-  /* Floating back-to-top button. Visible after the user scrolls
-   * past one viewport-height; tapping smoothly scrolls to top.
-   * Hidden via CSS while a sidebar is open (the sidebar's own
-   * scroll is independent of the page scroll). */
   function wireBackToTop() {
     const btn = document.getElementById("back-to-top");
     if (!btn) return;
@@ -4311,19 +3972,78 @@ const bestCampaignPost = (summary.posts || [])
     });
   }
 
+  /* ---------- Theme + navigation drawer ---------- */
+
+  function wireTheme() {
+    const btn = document.getElementById("theme-toggle");
+    const icon = document.getElementById("theme-toggle-icon");
+    const label = document.getElementById("theme-toggle-label");
+
+    function paint() {
+      const mode = Theme.get();
+      if (icon) icon.textContent = Theme.icon(mode);
+      if (label) label.textContent = Theme.label(mode);
+      for (const b of document.querySelectorAll("#theme-picker [data-theme-set]")) {
+        const on = b.dataset.themeSet === mode;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+      }
+    }
+
+    if (btn) btn.addEventListener("click", () => { Theme.cycle(); paint(); });
+    for (const b of document.querySelectorAll("#theme-picker [data-theme-set]")) {
+      b.addEventListener("click", () => { Theme.set(b.dataset.themeSet); paint(); });
+    }
+
+    /* Chart.js reads its colours from CSS variables at construction
+     * time, so existing canvases keep the old palette until they are
+     * rebuilt. Re-render the visible view on every theme change. */
+    Theme.onChange(() => {
+      paint();
+      Router.invalidate();
+    });
+    paint();
+  }
+
+  function setRailOpen(open) {
+    const rail = document.getElementById("rail");
+    if (!rail) return;
+    rail.classList.toggle("open", open);
+    let scrim = document.getElementById("rail-scrim");
+    if (open && !scrim) {
+      scrim = document.createElement("div");
+      scrim.id = "rail-scrim";
+      scrim.className = "rail-scrim";
+      scrim.addEventListener("click", () => setRailOpen(false));
+      document.body.appendChild(scrim);
+    } else if (!open && scrim) {
+      scrim.remove();
+    }
+  }
+
+  /* ---------- Boot ---------- */
+
   function init() {
     safeRun("loadPersisted", loadPersisted);
+    safeRun("registerRoutes", () => Router.wireNav());
     safeRun("bind", bind);
     safeRun("wireTopbarHeightVar", wireTopbarHeightVar);
+    safeRun("subIndex", () => {
+      /* Warm the local subreddit index so the catalog can show real
+       * member counts and similarity search has something to compare
+       * against before the first network call. */
+      SubIndex.load().then(() => {
+        Discovery.invalidateSpheres();
+        if (Router.current() === "communities") CommunitiesView.render();
+      }).catch(() => {});
+    });
     safeRun("wireSyncSession", wireSyncSession);
     safeRun("renderChips", renderChips);
-    /* Hydrate from the persistent post cache BEFORE the first
-     * rerender so the user immediately sees their previous data
-     * instead of an empty-state on every reload. Async because
-     * gzip decoding is async. The action banner phase is set in
-     * showInitialActionBanner below, which now branches on
-     * whether hydration produced a cached view. */
+    safeRun("router", () => Router.start());
     safeRun("hydratePostCache", () => {
+      /* Hydrate from the persistent post cache before the first render
+       * so a reload shows the previous data instead of an empty state.
+       * Async because the gzip decode is. */
       hydrateFromPostCache().then((ok) => {
         if (ok) {
           rerenderAll();
@@ -4333,27 +4053,47 @@ const bestCampaignPost = (summary.posts || [])
     });
     safeRun("rerenderAll", rerenderAll);
     safeRun("wireMediaPreview", wireMediaPreview);
-    safeRun("showStarterPacksIfEmpty", showStarterPacksIfEmpty);
+    safeRun("nudgeFirstRun", nudgeFirstRun);
     safeRun("showInitialActionBanner", () => {
-      /* If hydrate succeeded synchronously already (extremely fast
-       * path), it set the cache banner — don't overwrite it here.
-       * In the async path the cache banner is set inside the .then
-       * above. */
       if (state.cache.hasCache && state.posts.length) return;
       Util.setActionPhase("pending", describePendingFetch());
     });
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
     safeRun("wirePredictCard", wirePredictCard);
     safeRun("wireCascadeCard", wireCascadeCard);
-    safeRun("renderCalendar", renderCalendar);
+    safeRun("wireCalendar", wireCalendar);
     safeRun("wireABCompare", wireABCompare);
     safeRun("wireVolunteer", wireVolunteer);
     safeRun("wireComposer", wireComposer);
     safeRun("wireRecommendPagination", wireRecommendPagination);
-    safeRun("wireCampaignHub", wireCampaignHub);
     safeRun("wireBackToTop", wireBackToTop);
-        safeRun("checkStorageAvailability", checkStorageAvailability);
+    safeRun("checkStorageAvailability", checkStorageAvailability);
+    safeRun("demoMode", () => { if (window.Demo) Demo.maybeActivate(); });
   }
+
+  /* Public surface for the view modules. Keeping this explicit — rather
+   * than letting views reach into app internals — makes it obvious what
+   * the boundary is. */
+  window.App = {
+    state: state,
+    filteredPosts: filteredPosts,
+    renderPostsView: renderPostsView,
+    renderCrossPostsView: renderCrossPostsView,
+    renderChips: renderChips,
+    rerenderAll: rerenderAll,
+    rerenderLight: rerenderLight,
+    markPending: markPending,
+    refreshData: refreshData,
+    loadCampaign: loadCampaign,
+    openCampaign: openCampaign,
+    refreshCampaignSummaries: refreshAllCampaignSummaries,
+    openComposer: function (id) { return openComposer(id); },
+    openPostDetail: openPostDetail,
+    runDiscovery: function () { return _runDiscover && _runDiscover(); },
+    buildCampaignDigest: buildCampaignDigest,
+    updateRailCounts: updateRailCounts,
+    setSettingsOpen: setSettingsOpen,
+  };
 
   /* ============================================================
    * Markdown composer + crossposter
