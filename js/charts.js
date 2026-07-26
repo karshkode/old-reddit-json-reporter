@@ -108,8 +108,9 @@
 
     let datasets;
     if (mode === "total") {
+      const subs = data.subs || [];
       datasets = [{
-        label: "Posts (all subs)",
+        label: subs.length === 1 ? "Posts in r/" + subs[0] : "Posts (all subs)",
         data: data.total,
         borderColor: t.accent, backgroundColor: hexA(t.accent, 0.20),
         fill: true, tension: 0.25, pointRadius: 1, pointHoverRadius: 4,
@@ -388,6 +389,136 @@
       instances[k].destroy();
       delete instances[k];
     }
+  };
+
+  /* ==================================================================
+   * DYNAMIC CANVASES
+   * ------------------------------------------------------------------
+   * The static dashboard canvases are addressed by a fixed id, which is
+   * fine because they are never removed from the DOM. Per-subreddit
+   * campaign panels are different: their canvases are created and
+   * destroyed as the user opens campaigns, so a chart instance whose
+   * canvas has been detached would leak until the page reloads.
+   *
+   * destroyIn() drops every instance whose canvas is no longer attached
+   * to the document, or lives inside the container being replaced.
+   * Callers should invoke it immediately before re-rendering a
+   * container full of canvases.
+   * ================================================================== */
+
+  Charts.destroyIn = function (container) {
+    const host = typeof container === "string" ? document.getElementById(container) : container;
+    for (const id of Object.keys(instances)) {
+      const inst = instances[id];
+      const canvas = inst && inst.canvas;
+      const detached = !canvas || !document.body.contains(canvas);
+      const inside = host && canvas && host.contains(canvas);
+      if (detached || inside) {
+        try { inst.destroy(); } catch (_) {}
+        delete instances[id];
+      }
+    }
+  };
+
+  /* Render a chart into an arbitrary canvas element (or a container we
+   * should create one inside). Returns the canvas id so callers can
+   * address it later. `spec` is { kind, data, opts } where kind names
+   * one of the Charts.* renderers. */
+  let seq = 0;
+  Charts.mount = function (target, spec) {
+    const host = typeof target === "string" ? document.getElementById(target) : target;
+    if (!host || !spec || !spec.kind) return null;
+    let canvas = host.tagName === "CANVAS" ? host : host.querySelector("canvas");
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      host.appendChild(canvas);
+    }
+    if (!canvas.id) canvas.id = "chart-dyn-" + (++seq);
+    const fn = Charts[spec.kind];
+    if (typeof fn !== "function") {
+      console.warn("[charts] unknown kind:", spec.kind);
+      return null;
+    }
+    try {
+      fn(canvas.id, spec.data, spec.opts);
+    } catch (err) {
+      console.warn(`[charts] mount ${spec.kind}:`, err && err.message);
+      return null;
+    }
+    return canvas.id;
+  };
+
+  /* A compact sparkline for inline use — no axes, no legend, just the
+   * shape of a series. Used on the per-subreddit campaign cards where a
+   * full chart would drown out the numbers beside it. */
+  Charts.spark = function (id, series, opts) {
+    opts = opts || {};
+    const t = theme();
+    const color = opts.color || t.accent;
+    const values = (series || []).map((v) => Number(v) || 0);
+    return render(id, {
+      type: "line",
+      data: {
+        labels: values.map((_, i) => i),
+        datasets: [{
+          data: values,
+          borderColor: color,
+          backgroundColor: hexA(color, 0.18),
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.35,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
+        animation: false,
+      },
+    });
+  };
+
+  /* Horizontal bar comparison, used for "which subreddit carried this
+   * campaign". Chart.js calls this indexAxis: 'y'. */
+  Charts.hbar = function (id, data, opts) {
+    opts = opts || {};
+    const t = theme();
+    const labels = (data && data.labels) || [];
+    const values = (data && data.values) || [];
+    const secondary = data && data.secondary;
+    const datasets = [{
+      label: opts.label || "Upvotes",
+      data: values,
+      backgroundColor: hexA(t.accent, 0.75),
+      borderRadius: 4,
+      borderSkipped: false,
+    }];
+    if (secondary) {
+      datasets.push({
+        label: opts.secondaryLabel || "Comments",
+        data: secondary,
+        backgroundColor: hexA(t.info, 0.7),
+        borderRadius: 4,
+        borderSkipped: false,
+      });
+    }
+    const base = commonOpts();
+    return render(id, {
+      type: "bar",
+      data: { labels: labels, datasets: datasets },
+      options: Object.assign(base, {
+        indexAxis: "y",
+        plugins: Object.assign(base.plugins, {
+          legend: { display: !!secondary, labels: { color: t.dim, font: { size: 11 } } },
+        }),
+        scales: {
+          x: { beginAtZero: true, ticks: { color: t.mute, font: { size: 10 } }, grid: { color: t.grid, drawBorder: false } },
+          y: { ticks: { color: t.dim, font: { size: 11 } }, grid: { display: false } },
+        },
+      }),
+    });
   };
 
   window.Charts = Charts;
