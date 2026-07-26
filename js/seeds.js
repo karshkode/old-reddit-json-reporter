@@ -310,6 +310,69 @@
       .map(([k]) => k);
   };
 
+  /* ---------- Starter bundles ----------
+   * Cross-sphere combinations that make a sensible first load. The old
+   * build only offered these once, on the very first run, through a
+   * drawer that disappeared as soon as a single sub existed. They are
+   * now permanent fixtures of the Communities view, because "load me a
+   * sensible set of progressive subs" is a recurring need, not a
+   * one-time onboarding step. */
+  Seeds.BUNDLES = [
+    {
+      key: "progressive-core",
+      label: "Progressive core",
+      description: "The backbone of the progressive sphere on Reddit — party-adjacent politics, democratic socialism and left commentary.",
+      spheres: ["progressive", "voting"],
+    },
+    {
+      key: "movement",
+      label: "Movement & direct action",
+      description: "Protest organising, general-strike planning and the anti-authoritarian networks that coordinate turnout.",
+      spheres: ["movement", "labor"],
+    },
+    {
+      key: "economic-justice",
+      label: "Economic justice",
+      description: "Work, wages, housing and healthcare — where material-conditions organising happens.",
+      spheres: ["labor", "housing", "healthcare"],
+    },
+    {
+      key: "civil-rights",
+      label: "Civil rights",
+      description: "Racial justice, reproductive rights, immigration and LGBTQ organising.",
+      spheres: ["racial_justice", "reproductive", "immigration", "lgbtq"],
+    },
+    {
+      key: "climate",
+      label: "Climate",
+      description: "Climate policy, Green New Deal advocacy and the sustainability communities around them.",
+      spheres: ["climate"],
+    },
+    {
+      key: "everything",
+      label: "Everything (issues)",
+      description: "Every issue sphere in the catalog. A wide net — expect to trim it afterwards.",
+      spheres: null, /* resolved to all issue keys at call time */
+    },
+  ];
+
+  Seeds.bundleSubs = function (bundleKey) {
+    const bundle = Seeds.BUNDLES.find((b) => b.key === bundleKey);
+    if (!bundle) return [];
+    const spheres = bundle.spheres || Object.keys(Seeds.ISSUE_SPHERES);
+    return Seeds.expand(spheres.filter((k) => Seeds.ISSUE_SPHERES[k] || Seeds.DEMOGRAPHIC_SPHERES[k]));
+  };
+
+  /* Every sub in the catalog, deduped. Used to warm the local index so
+   * similarity search has something to work with offline. */
+  Seeds.allSubs = function () {
+    const out = new Set();
+    for (const map of [Seeds.ISSUE_SPHERES, Seeds.DEMOGRAPHIC_SPHERES, Seeds.STATE_SPHERES]) {
+      for (const list of Object.values(map)) for (const s of list) out.add(s);
+    }
+    return Array.from(out);
+  };
+
   /* All available sphere keys (for UI selection). */
   Seeds.allSphereKeys = function () {
     return [
