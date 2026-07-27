@@ -9,10 +9,18 @@
  *   public CORS proxies (codetabs, allorigins, corsproxy.io, etc.) all
  *   forward through datacenter IPs and are now blocked too.
  *
- *   Cloudflare Workers run on Cloudflare's edge network. Reddit
- *   historically allows traffic from those IPs, so a personal worker
- *   gives you a stable proxy your dashboard can hit without hitting
- *   Reddit's anti-bot wall.
+ *   Cloudflare Workers used to be the way around that, because Reddit
+ *   allowed traffic from Cloudflare's edge. AS OF 2026-07 THAT IS NO
+ *   LONGER TRUE: a worker built from this file returns Reddit's 403
+ *   block page for every content endpoint, and no User-Agent value
+ *   changes that — the decision is made on the IP, before the request
+ *   reaches an application server. The one reddit.com endpoint that
+ *   still answers is POST /api/v1/access_token, i.e. Reddit expects you
+ *   to register an app and use OAuth.
+ *
+ *   See SETUP.md for the measurements and for the two ways forward:
+ *   the dashboard's built-in Reddit archive source (no worker, no
+ *   account), or OAuth with a registered app.
  *
  * WHAT THIS WORKER DOES
  *
@@ -246,7 +254,7 @@ export default {
         upstreamStatus: 200,
         upstreamContentType: contentType,
         upstreamSnippet: sniff,
-        hint: "Reddit may have temporarily blocked your worker's IP. Retry in 30-60s. If it persists, edit USER_AGENT in the worker to a more unique string.",
+        hint: "Reddit blocks unauthenticated reads from datacenter IPs, which includes Cloudflare Workers. This is not transient and changing USER_AGENT does not help. Switch the dashboard to Settings -> Data source -> Reddit archive, or register a Reddit app and use OAuth. See cloudflare-worker/SETUP.md.",
       });
     }
 

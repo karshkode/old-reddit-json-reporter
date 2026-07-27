@@ -1,13 +1,50 @@
 # Cloudflare Worker setup — your own Reddit proxy
 
-Reddit blocks every datacenter IP for unauthenticated JSON fetches. The
-public CORS proxies the dashboard used to rely on (codetabs, allorigins,
-corsproxy.io) all sit on datacenter IPs and have been blocked.
+> ## ⚠️ Read this first: a proxy alone no longer works
+>
+> Reddit now refuses **every** unauthenticated request from a datacenter
+> IP, and Cloudflare Workers egress from datacenter IPs like everything
+> else. A worker built from this file will deploy fine, answer `?ping`,
+> and then return Reddit's `403 Blocked` HTML page for every article it
+> tries to fetch.
+>
+> Measured against a live worker on 2026-07-27:
+>
+> | Target | Result |
+> |---|---|
+> | `www.reddit.com/r/…/hot.json` | 403, HTML block page |
+> | `old.reddit.com`, `api.reddit.com`, `gateway.reddit.com` | 403, HTML block page |
+> | `oauth.reddit.com` without a token | 403, HTML block page |
+> | `.rss` feeds, `i.redd.it` | 403 |
+> | `www.reddit.com/api/v1/access_token` | **401 JSON** |
+>
+> The last row is the whole story. The token endpoint returns a real
+> JSON error, so the request reached Reddit's auth service; everything
+> else is refused at the CDN before any application code runs. The
+> block keys on the address, not the headers — three different
+> User-Agent strings produced byte-identical block pages. **Changing
+> `USER_AGENT` cannot fix this.**
+>
+> That leaves two options:
+>
+> 1. **Use the Reddit archive instead** — no worker, no account, nothing
+>    to deploy. Open the dashboard, go to **Settings → Data source** and
+>    pick **Reddit archive (no proxy needed)**. It reads a public archive
+>    that sends CORS headers, so your browser talks to it directly. This
+>    is the default and it works today. Trade-off: scores take about a
+>    day to settle, so *Hot* and *Top* show only posts whose numbers are
+>    final, and *New* marks the ones that aren't.
+> 2. **Register a Reddit app and use OAuth** — the only way to get live
+>    scores. Free at <https://www.reddit.com/prefs/apps>; the worker in
+>    this folder does not implement OAuth yet.
+>
+> The rest of this document describes deploying the plain proxy. It is
+> still accurate as *instructions*, and worth keeping for the day Reddit
+> relaxes the block or if you are on a network that can still reach
+> Reddit — but expect 403s today.
 
-Cloudflare Workers run on Cloudflare's edge, which Reddit historically
-allows. Deploying your own worker takes about **3 minutes** and gives
-you a stable proxy the dashboard can hit. **No credit card. 100,000
-free requests per day.**
+Deploying your own worker takes about **3 minutes**. **No credit card.
+100,000 free requests per day.**
 
 > **Already running v1 / v2.0?** v1 had a cache-poisoning bug where
 > Cloudflare cached Reddit's 429 / 403 errors for 60 seconds. v2.0
@@ -203,24 +240,32 @@ If you're hitting 429s often:
 
 ### "403 Blocked due to a network policy" still in the response
 
-Cloudflare Workers usually bypass this, but Reddit occasionally tightens
-their block lists. Things to try in order:
+This is now the expected outcome, not an anomaly. See the warning at the
+top of this file: Reddit blocks the whole datacenter IP range your
+worker runs in, and it decides that before looking at your request.
 
-1. **Edit the `USER_AGENT`** in the worker to something more unique (e.g.
-   include your Reddit username) and redeploy.
-2. **Wait an hour and retry.** Reddit's blocks sometimes lift on their own.
-3. **Try the `oauth.reddit.com` host instead of `www.reddit.com`** — it's
-   on the allowlist and sometimes returns when `www` doesn't. The
-   dashboard sends to `www.reddit.com` by default; you can hard-code a
-   rewrite in the worker:
+Things that **do not** help, all measured rather than assumed:
 
-   ```js
-   if (targetUrl.hostname === "www.reddit.com") {
-     targetUrl.hostname = "oauth.reddit.com";
-   }
-   ```
+- **Editing `USER_AGENT`.** Three different strings — an API-style
+  `web:app:v1 (by /u/name)`, a full desktop Chrome string, and no
+  User-Agent at all — returned the same block page.
+- **Switching to `old.reddit.com`, `api.reddit.com` or
+  `gateway.reddit.com`.** All 403.
+- **Switching to `oauth.reddit.com` without a token.** Also 403. Earlier
+  versions of this document suggested it; that advice was wrong and has
+  been removed.
+- **Falling back to the `.rss` feeds.** Also 403.
+- **Waiting.** This is a standing policy, not a transient rate limit.
 
-   (This works for read-only listing endpoints without authentication.)
+What actually works:
+
+- **Switch the dashboard to the Reddit archive** (Settings → Data
+  source). No worker involved.
+- **Register a Reddit app** at <https://www.reddit.com/prefs/apps> and
+  use OAuth. `POST /api/v1/access_token` is reachable from Cloudflare —
+  it is the one Reddit endpoint that is — so a worker that exchanges
+  client credentials for a bearer token and calls `oauth.reddit.com`
+  with it is the supported path to live data.
 
 ### Hit the 100k requests/day limit
 
