@@ -138,7 +138,18 @@
    * keep it as a manual option but never auto-pick it.
    */
   const TRANSPORTS = [
-    { name: "auto", label: "Auto (try custom proxy + public proxies)" },
+    { name: "auto", label: "Auto (try archive + custom proxy + public proxies)" },
+    /* Not a proxy at all: a different data source, called straight from
+     * the browser because it sends CORS headers. It answers when every
+     * proxy is blocked, which since Reddit's datacenter-IP ban is most
+     * of the time. `fetchDirect` replaces build()+parse() wholesale
+     * because the archive speaks its own API and the adapter has to
+     * translate both the request and the response. */
+    {
+      name: "archive",
+      label: "Reddit archive (no proxy needed)",
+      fetchDirect: (redditUrl, signal) => Archive.fetchRedditUrl(redditUrl, { signal: signal }),
+    },
     { name: "custom", label: "Custom (your CORS proxy)", build: customBuild },
     { name: "codetabs", label: "codetabs.com proxy", build: (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u) },
     { name: "allorigins", label: "allorigins.win proxy", build: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u) },
@@ -148,12 +159,18 @@
   ];
   Reddit.TRANSPORTS = TRANSPORTS;
 
-  /* Auto-rotation order. The custom proxy (if configured) is tried
-   * FIRST — it's the user's own infrastructure, statistically the
-   * most reliable. Public proxies follow as fallbacks. `isomorphic`
-   * (cors.isomorphic-git.org) is left out because its deployment is
-   * effectively dead. */
-  const AUTO_ORDER_BASE = ["codetabs", "allorigins", "corsproxy"];
+  /* Auto-rotation order. The archive leads because it is the only
+   * source that currently answers at all: Reddit 403s every datacenter
+   * IP, which is what all the proxies below are. They stay in the chain
+   * because a proxy that does get through returns live scores, which the
+   * archive cannot, so it is worth spending a few seconds finding out.
+   * `isomorphic` (cors.isomorphic-git.org) is left out because its
+   * deployment is effectively dead. */
+  const AUTO_ORDER_BASE = ["archive", "codetabs", "allorigins", "corsproxy"];
+
+  function isUsable(t) {
+    return !!(t && (t.build || t.fetchDirect));
+  }
 
   let preferredTransport = "auto";
   try { preferredTransport = localStorage.getItem(STORAGE_KEY) || "auto"; } catch (_) {}
@@ -232,15 +249,15 @@
           order.splice(getCustomProxyUrl() ? 1 : 0, 0, t);
         }
       }
-      return order.map(getTransportByName).filter((t) => t && t.build);
+      return order.map(getTransportByName).filter(isUsable);
     }
     const t = getTransportByName(preferredTransport);
     /* If the user picked "custom" but hasn't configured a URL yet, fall
      * back to auto — better than throwing on every fetch. */
     if (preferredTransport === "custom" && !getCustomProxyUrl()) {
-      return AUTO_ORDER_BASE.map(getTransportByName).filter((t) => t && t.build);
+      return AUTO_ORDER_BASE.map(getTransportByName).filter(isUsable);
     }
-    return t && t.build ? [t] : AUTO_ORDER_BASE.map(getTransportByName).filter((t) => t && t.build);
+    return isUsable(t) ? [t] : AUTO_ORDER_BASE.map(getTransportByName).filter(isUsable);
   }
 
   function looksLikeBlockedHtml(text) {
@@ -283,6 +300,31 @@
   }
 
   async function tryTransport(transport, redditUrl, attempt) {
+    /* Direct-fetch transports (the archive) own the whole exchange:
+     * they translate the request, call their own API and hand back
+     * Reddit-shaped JSON, so none of the proxy response-sniffing below
+     * applies to them. */
+    if (transport.fetchDirect) {
+      const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+      const tid = controller ? setTimeout(() => controller.abort(), 8000) : null;
+      try {
+        const data = await transport.fetchDirect(redditUrl, controller && controller.signal);
+        return { data, transport: transport.name };
+      } catch (e) {
+        /* "This source cannot answer this question" is a routing fact,
+         * not an outage. Tag it so the caller can skip the retry pass
+         * and so it does not pollute the transport health stats. */
+        if (window.Archive && Archive.isUnsupported(e)) {
+          const err = throwTransportError(transport, e.message, attempt);
+          err.archiveUnsupported = true;
+          throw err;
+        }
+        throw throwTransportError(transport, normalizeFetchKind(e), attempt);
+      } finally {
+        if (tid) clearTimeout(tid);
+      }
+    }
+
     const target = transport.build(redditUrl);
     /* customBuild returns null when the user picked Custom but
      * hasn't pasted a URL yet. Fail fast with a helpful message
@@ -510,7 +552,11 @@
             const tName = (err && err.transport) || (t && t.name) || "?";
             const kind = (err && err.kind) || (err && err.message) || String(err);
             lastByTransport.set(tName, kind);
-            recordTransportOutcome(tName, false, kind);
+            /* A source declining to answer a question it structurally
+             * cannot answer is not a health signal — counting it would
+             * make the archive look broken every time discovery asks
+             * for a site-wide search. */
+            if (!err || !err.archiveUnsupported) recordTransportOutcome(tName, false, kind);
           }
         }
         await Util.sleep(250 * Math.pow(2, attempt));
@@ -761,6 +807,13 @@
       locked:         isLocked,
       removed:        isRemoved,
       removed_reason: removedReason,
+      /* Live Reddit reports the score as of right now; the archive
+       * reports whatever it last saw, which for a post submitted in the
+       * past couple of days is still the placeholder it was created
+       * with. The adapter stamps which one this is so charts and KPIs
+       * can say "provisional" instead of quietly averaging in a 1. */
+      score_confirmed: d.__scoreConfirmed !== false,
+      score_asof: d.__scoreAsOf || null,
       flair: d.link_flair_text,
       flair_css: d.link_flair_css_class,
       total_awards: d.total_awards_received,
@@ -877,8 +930,18 @@
    * descriptions match the keyword. The set of distinct subreddit names
    * returned by these post results often reveals niche communities the
    * /subreddits/search endpoint never surfaces. */
+  /* Returns [] rather than throwing when the active data source has no
+   * site-wide search (the archive requires a subreddit or author
+   * scope). Discovery treats an empty result as a skipped phase, which
+   * is the truth: it still has subreddit search and the curated catalog
+   * to work with. */
+  Reddit.searchPostsSupported = function () {
+    return transportsToTry().some((t) => t && t.build);
+  };
+
   Reddit.searchPosts = async function (query, opts) {
     opts = opts || {};
+    if (!Reddit.searchPostsSupported()) return [];
     const json = await fetchJson(`/search.json`, {
       q: query,
       limit: Math.min(opts.limit || 50, 100),
@@ -975,7 +1038,11 @@
    * ============================================================ */
 
   Reddit.resolveShareUrl = async function (shareUrl) {
-    const transports = transportsToTry();
+    /* Share links resolve by following a redirect and scraping the
+     * canonical URL out of the HTML, so this needs a transport that
+     * fetches an arbitrary page. The archive serves structured records,
+     * not pages, and has nothing to offer here. */
+    const transports = transportsToTry().filter((t) => t && t.build);
     /* Mirrors fetchJson's per-transport tracking so the user sees the
      * full chain of failures instead of just whichever proxy was last
      * in line. */

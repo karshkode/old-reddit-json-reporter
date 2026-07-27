@@ -78,6 +78,10 @@
     if (typeof view.render === "function") {
       try { view.render(params); } catch (err) { console.warn(`[router] render ${name}:`, err && err.message); }
     }
+    /* Subtitles usually summarise the data ("230 posts across 3 subs"),
+     * so they go stale the moment a fetch lands. Repaint on every render,
+     * not just on navigation. */
+    setTopbar(view, params);
     dirty.delete(name);
   }
 
