@@ -1,174 +1,111 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="system">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
   <title>Reddit Campaign Reporter</title>
-  <meta name="description" content="A static dashboard that scrubs old Reddit /json feeds for trend analysis, AI insights and cross-post campaign tracking." />
+  <meta name="description" content="A static dashboard that reads Reddit's public /json feeds for trend analysis, subreddit discovery and cross-post campaign tracking." />
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
   <link rel="preconnect" href="https://api.allorigins.win" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260519d" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4500'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./css/tokens.css?v=20260726" />
+  <link rel="stylesheet" href="./css/base.css?v=20260726" />
+  <link rel="stylesheet" href="./css/shell.css?v=20260726" />
+  <link rel="stylesheet" href="./css/views.css?v=20260726" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260726" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
+  <!-- Runs before first paint so the palette never flashes. -->
+  <script src="./js/theme.js?v=20260726"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
-  <header class="topbar">
-    <!-- Brand is a button so it works as a "home" affordance: tapping
-         it returns to the Overview tab and scrolls to the top of the
-         page, matching the convention every other web app follows. -->
-    <button id="brand-home" class="brand" type="button" aria-label="Go to Overview" title="Go to Overview">
-      <div class="logo" aria-hidden="true">R</div>
-      <div class="brand-text">
-        <h1>Reddit Campaign Reporter</h1>
-        <p class="tagline">old.reddit <code>/json</code> · trends · discovery · campaigns</p>
-      </div>
+
+<div class="app">
+
+  <!-- ================================================================
+       NAVIGATION RAIL (desktop) / slide-over drawer (mobile)
+       ================================================================ -->
+  <aside class="rail" id="rail" aria-label="Primary navigation">
+    <button class="rail-brand" id="brand-home" type="button" data-view="dashboard" title="Go to the dashboard">
+      <span class="rail-logo" aria-hidden="true">R</span>
+      <span class="rail-brand-text">
+        <strong>Campaign Reporter</strong>
+        <span>Reddit trends &amp; outreach</span>
+      </span>
     </button>
-    <div class="topbar-actions">
-      <button id="filters-toggle" class="btn ghost" aria-controls="controls" aria-expanded="true" title="Show / hide filters (auto-hides after you pick one)">
-        <span class="icon" aria-hidden="true">⚙</span><span class="btn-label">Filters</span>
-      </button>
-      <button id="session-toggle" class="btn ghost" type="button" title="Sync session across devices: copy share link, download / paste JSON, import">
-        <span class="icon" aria-hidden="true">⇄</span><span class="btn-label">Session</span>
-      </button>
-      <!-- Refresh button removed — its job is now done by the single
-           Go/Refresh button inside the action banner below the topbar.
-           See <div id="action-banner"> further down. -->
-      <label class="topbar-select hide-mobile" title="Reddit doesn't send CORS headers for *.json so the browser cannot fetch directly. Requests are routed through a public proxy; switch if one stops working.">
-        <span>Data source</span>
-        <select id="transport-select"></select>
-      </label>
-      <!-- Custom-proxy URL input. Hidden until the user picks Custom
-           or auto-detection promotes it. Persists to localStorage
-           and rides cross-device through the existing Sync payload. -->
-      <input id="custom-proxy-input"
-             class="topbar-custom-proxy hide-mobile"
-             type="url"
-             placeholder="https://reddit-proxy.you.workers.dev"
-             autocomplete="off"
-             spellcheck="false"
-             title="Your Cloudflare Worker URL — see cloudflare-worker/SETUP.md in the repo for the 3-minute setup."
-             hidden />
-      <button id="clear-cache-btn" class="btn ghost hide-mobile"
-              title="Soft cache clear: wipe the in-page request cache so the next Refresh hits network. Shift-click for a full reset that also discards on-disk cached posts.">Clear cache</button>
-      <button id="full-reset-btn" class="btn ghost hide-mobile danger-soft"
-              title="Full reset: discard ALL cached posts and re-fetch from scratch. Use when the cache is stale or you want a clean slate.">Full reset</button>
-      <a class="btn ghost hide-mobile" href="https://github.com/karshkode/old-reddit-json-reporter" id="repo-link" target="_blank" rel="noopener">Source</a>
-    </div>
-  </header>
 
-  <section class="controls" id="controls" aria-label="Filters">
-    <!-- Subreddits column (left side, takes the full height it needs) -->
-    <div class="control-group cg-subs">
-      <label class="group-label">Subreddits</label>
-      <div id="subreddit-chips" class="chips"></div>
-      <form id="add-sub-form" class="inline-form">
-        <input id="add-sub-input" type="text" placeholder="add subreddit (paste a /r/x url too)" autocomplete="off" inputmode="text" />
-        <button class="btn small" type="submit">Add</button>
-      </form>
-    </div>
+    <nav class="rail-nav" aria-label="Views">
+      <button class="rail-link" type="button" data-view="dashboard">
+        <span class="rail-link-icon" aria-hidden="true">◧</span>
+        <span class="rail-link-label">Dashboard</span>
+      </button>
+      <button class="rail-link" type="button" data-view="campaigns">
+        <span class="rail-link-icon" aria-hidden="true">◆</span>
+        <span class="rail-link-label">Campaigns</span>
+        <span class="rail-link-count" id="rail-count-campaigns" hidden>0</span>
+      </button>
+      <button class="rail-link" type="button" data-view="communities">
+        <span class="rail-link-icon" aria-hidden="true">⌗</span>
+        <span class="rail-link-label">Communities</span>
+        <span class="rail-link-count" id="rail-count-subs" hidden>0</span>
+      </button>
+      <button class="rail-link" type="button" data-view="posts">
+        <span class="rail-link-icon" aria-hidden="true">≡</span>
+        <span class="rail-link-label">Posts</span>
+        <span class="rail-link-count" id="rail-count-posts" hidden>0</span>
+      </button>
+    </nav>
 
-    <!-- Listing / Top window / Limit on a single row, each labeled above -->
-    <div class="control-group cg-listing">
-      <label class="group-label">Fetch settings</label>
-      <div class="cg-row">
-        <label class="cg-field">
-          <span class="cg-field-label">Listing</span>
-          <select id="listing-select">
-            <option value="new">New</option>
-            <option value="hot" selected>Hot</option>
-            <option value="top">Top</option>
-            <option value="rising">Rising</option>
-          </select>
-        </label>
-        <label class="cg-field">
-          <span class="cg-field-label">Top window</span>
-          <select id="time-select">
-            <option value="day">Day</option>
-            <option value="week" selected>Week</option>
-            <option value="month">Month</option>
-            <option value="year">Year</option>
-            <option value="all">All</option>
-          </select>
-        </label>
-        <label class="cg-field">
-          <span class="cg-field-label">Limit</span>
-          <select id="limit-select">
-            <option>25</option>
-            <option selected>100</option>
-            <option>250</option>
-            <option>500</option>
-          </select>
-        </label>
+    <div class="rail-spacer"></div>
+
+    <div class="rail-section-label">Session</div>
+    <nav class="rail-nav" aria-label="Tools">
+      <button class="rail-link" type="button" id="session-toggle">
+        <span class="rail-link-icon" aria-hidden="true">⇄</span>
+        <span class="rail-link-label">Sync &amp; share</span>
+      </button>
+      <button class="rail-link" type="button" id="settings-toggle">
+        <span class="rail-link-icon" aria-hidden="true">⚙</span>
+        <span class="rail-link-label">Settings</span>
+      </button>
+      <a class="rail-link" href="https://github.com/karshkode/old-reddit-json-reporter" id="repo-link" target="_blank" rel="noopener">
+        <span class="rail-link-icon" aria-hidden="true">↗</span>
+        <span class="rail-link-label">Source</span>
+      </a>
+    </nav>
+
+    <div class="rail-foot">
+      <button class="btn ghost small" type="button" id="theme-toggle" title="Switch theme">
+        <span class="icon" id="theme-toggle-icon" aria-hidden="true">◐</span>
+        <span id="theme-toggle-label">System</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ================================================================
+       MAIN COLUMN
+       ================================================================ -->
+  <div class="app-main">
+
+    <header class="topbar">
+      <button class="btn ghost icon-only only-mobile" id="rail-toggle" type="button" aria-label="Open navigation" aria-controls="rail">☰</button>
+
+      <div class="topbar-title">
+        <h1 id="topbar-title-text">Dashboard</h1>
+        <p id="topbar-title-sub" hidden></p>
       </div>
-    </div>
 
-    <!-- Find posts: filter by ID + free-text search, stacked vertically -->
-    <div class="control-group cg-find">
-      <label class="group-label">Find posts</label>
-      <label class="cg-field">
-        <span class="cg-field-label">Filter by post ID</span>
-        <input id="post-id-filter" type="text" placeholder="paste post URLs or IDs" autocomplete="off" inputmode="text" />
-      </label>
-      <label class="cg-field">
-        <span class="cg-field-label">Search</span>
-        <input id="search-input" type="search" placeholder="title, author, flair…" autocomplete="off" />
-      </label>
-      <div id="post-id-filter-preview" class="paste-preview tiny" hidden></div>
-    </div>
+      <div class="topbar-search">
+        <input id="search-input" type="search" placeholder="Search posts by title, author or flair…" autocomplete="off" aria-label="Search loaded posts" />
+      </div>
 
-    <!-- Mobile-only data-source dropdown (the topbar select hides on mobile) -->
-    <div class="control-group only-mobile cg-data-source-mobile">
-      <label for="transport-select-mobile" class="group-label">Data source</label>
-      <select id="transport-select-mobile"></select>
-      <input id="custom-proxy-input-mobile"
-             class="custom-proxy-input"
-             type="url"
-             placeholder="https://reddit-proxy.you.workers.dev"
-             autocomplete="off"
-             spellcheck="false"
-             hidden />
-      <button id="clear-cache-btn-mobile" class="btn small ghost" type="button">Clear cache</button>
-      <button id="full-reset-btn-mobile" class="btn small ghost danger-soft" type="button"
-              title="Discard ALL cached posts and re-fetch from scratch.">Full reset</button>
-    </div>
+      <div class="topbar-actions">
+        <button class="btn ghost icon-only only-mobile" type="button" id="settings-toggle-mobile" aria-label="Settings">⚙</button>
+      </div>
+    </header>
 
-  </section>
-
-  <!-- Starter-pack drawer: visible only on first-run when there are
-       NO known subs. One click loads a curated bundle from the
-       Seeds catalog. Rendered+wired by app.js. -->
-  <div id="starter-packs" class="starter-packs" hidden>
-    <div class="starter-packs-inner">
-      <strong class="starter-packs-title">Quick start — pick a sphere to load:</strong>
-      <div class="starter-packs-grid" id="starter-packs-grid"></div>
-      <button type="button" class="btn small ghost" id="starter-packs-skip">Skip — I'll add subs manually</button>
-    </div>
-  </div>
-
-  <!-- Image / video preview modal: click a thumbnail in the posts
-       table to peek without leaving the dashboard. Closes on
-       backdrop click or Escape. -->
-  <div id="media-preview" class="media-preview" hidden role="dialog" aria-modal="true" aria-label="Media preview">
-    <button class="media-preview-close" type="button" aria-label="Close preview" data-action="close-media-preview">×</button>
-    <div class="media-preview-frame" id="media-preview-frame"></div>
-  </div>
-
-  <!-- Unified ACTION BANNER.
-       One sticky bar that combines what used to be three elements:
-         - the topbar's Refresh button
-         - a separate "Go banner" prompt with Ready when you are text
-         - a separate streaming progress banner
-       The status text + the optional thin progress fill share the
-       left side; ONE mode-switching button hugs the right edge:
-         pending  -> "Go ▶"
-         loading  -> "Loading…"  (disabled, progress fill animates)
-         loaded   -> "Refresh ↻"
-       -->
-  <div id="action-banner" class="action-banner" hidden aria-live="polite">
-    <div class="action-banner-row">
+    <!-- Fetch lifecycle: pending -> Go, loading -> progress, loaded -> Refresh -->
+    <div id="action-banner" class="action-banner" hidden aria-live="polite">
       <div class="action-banner-status">
         <div class="action-banner-text" id="action-banner-text"></div>
         <div class="action-progress-track" id="action-progress-track" hidden>
@@ -180,298 +117,236 @@
         <span class="action-btn-label">Go</span>
       </button>
     </div>
-  </div>
 
-  <!-- Auto-shown when the dashboard detects that ALL public CORS
-       proxies are failing AND the user hasn't configured a custom one
-       (typically a Cloudflare Worker). Reddit periodically tightens
-       their datacenter-IP block list and breaks the public proxies en
-       masse; instead of leaving the user staring at red errors we
-       point them at the SETUP.md walkthrough. -->
-  <div id="proxy-down-banner" class="proxy-down-banner" hidden role="alert" aria-live="assertive">
-    <div class="proxy-down-banner-row">
-      <div class="proxy-down-banner-text">
+    <!-- Shown when every public CORS proxy is failing and no custom
+         worker is configured. Reddit periodically blocks datacenter IPs
+         en masse, which breaks all of them at once. -->
+    <div id="proxy-down-banner" class="alert-banner" hidden role="alert" aria-live="assertive">
+      <div class="alert-banner-text">
         <strong>Reddit is blocking the public proxies.</strong>
-        Deploy your own free Cloudflare Worker (~3 minutes, no credit card)
-        and paste the URL into <em>Data source → Custom</em> above.
+        Deploy your own free Cloudflare Worker (about three minutes, no credit card) and paste the URL into <em>Settings → Data source → Custom</em>.
       </div>
-      <div class="proxy-down-banner-actions">
-        <a id="proxy-down-banner-guide"
-           class="btn primary"
+      <div class="alert-banner-actions">
+        <a id="proxy-down-banner-guide" class="btn primary small"
            href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md"
-           target="_blank" rel="noopener">3-min setup guide ↗</a>
-        <button id="proxy-down-banner-dismiss" class="btn ghost" type="button" aria-label="Dismiss">Dismiss</button>
+           target="_blank" rel="noopener">Setup guide ↗</a>
+        <button id="proxy-down-banner-dismiss" class="btn ghost small" type="button">Dismiss</button>
       </div>
     </div>
-  </div>
 
-  <main>
-    <section class="kpis" id="kpi-row" aria-label="Headline metrics"></section>
-
-    <nav class="tabs" role="tablist" aria-label="Sections">
-      <button class="tab active" data-tab="overview" role="tab">Overview</button>
-      <button class="tab" data-tab="trends" role="tab">Trends</button>
-      <button class="tab" data-tab="posts" role="tab">Posts</button>
-      <button class="tab" data-tab="campaigns" role="tab">Campaigns</button>
-    </nav>
-
-    <section id="tab-overview" class="tab-panel active" role="tabpanel">
-      <!-- In-tab jump nav: sticky pill row that lets the user teleport
-           to any section of this tab without scroll-hunting. The links
-           are anchor jumps to id="ov-…" landmarks below. -->
-      <nav class="subnav" aria-label="Overview sections">
-        <a href="#ov-narrative" data-jump="ov-narrative">Summary</a>
-        <a href="#ov-timeline" data-jump="ov-timeline">When</a>
-        <a href="#ov-charts" data-jump="ov-charts">Charts</a>
-        <a href="#ov-keywords" data-jump="ov-keywords">Words</a>
-        <a href="#ov-takeaways" data-jump="ov-takeaways">Takeaways</a>
-      </nav>
-
-      <div class="card narrative-card" id="ov-narrative">
-        <header class="card-header">
-          <h2>What this data is telling you</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="A short plain-English summary of what&#x27;s happening across your loaded subs. Generated locally from your data — no remote AI.">?</button>
-          <span class="hint">Plain-English summary · tap to expand</span>
-        </header>
-        <div id="ai-summary" class="prose"></div>
+    <!-- Always-visible data scope: which subs are loaded, and the knobs
+         that decide what the next fetch pulls. -->
+    <div class="scopebar">
+      <span class="scopebar-label">Subreddits</span>
+      <div id="subreddit-chips" class="scopebar-chips chips"></div>
+      <div class="scopebar-actions">
+        <button class="btn small ghost" type="button" id="scope-add-sub" title="Search subreddits, browse the catalog and bulk-load a sphere">＋ Add</button>
+        <span class="scopebar-summary hide-mobile" id="scope-summary"></span>
       </div>
+    </div>
 
-      <div class="grid two">
-        <div class="card span-2" id="timeline-card" data-anchor="ov-timeline">
-          <header class="card-header">
-            <h2>When posts go up</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Submission volume over time. Use the window buttons (1d / 3d / 7d / 30d / 90d / All) to zoom — &#x27;1d&#x27; gives hourly buckets. &#x27;Per sub&#x27; shows one line per subreddit; &#x27;Stacked&#x27; shows combined volume; &#x27;Density&#x27; normalises each sub to its own peak so cadence shapes overlay without volume bias.">?</button>
-            <span class="hint" id="timeline-hint">Tap a window to zoom — 1d gives hourly buckets</span>
-          </header>
-          <div class="chart-controls">
-            <div class="chart-mode" role="tablist" aria-label="Posts-over-time mode">
-              <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
-              <button type="button" data-mode="stacked" role="tab">Stacked</button>
-              <button type="button" data-mode="density" role="tab" title="Each sub normalised to its own peak — compare cadence shapes without volume-bias.">Density</button>
-              <button type="button" data-mode="total" role="tab">Total</button>
-            </div>
-            <div class="chart-mode chart-window" role="tablist" aria-label="Time window">
-              <button type="button" data-window="1d" role="tab" title="Last 24 hours · hourly buckets">1d</button>
-              <button type="button" data-window="3d" role="tab" title="Last 3 days · 2-hour buckets">3d</button>
-              <button type="button" data-window="7d" class="active" role="tab" title="Last 7 days · 6-hour buckets">7d</button>
-              <button type="button" data-window="30d" role="tab" title="Last 30 days">30d</button>
-              <button type="button" data-window="90d" role="tab">90d</button>
-              <button type="button" data-window="all" role="tab" title="All loaded data — wide buckets">All</button>
+    <main class="view-host" id="view-host">
+
+      <!-- ============================================================
+           DASHBOARD — audience overview across every loaded subreddit
+           ============================================================ -->
+      <section id="view-dashboard" class="view" role="region" aria-label="Dashboard">
+        <nav class="section-rail" aria-label="Dashboard sections">
+          <a href="#dash-summary" data-jump="dash-summary">Summary</a>
+          <a href="#dash-timeline" data-jump="dash-timeline">Timing</a>
+          <a href="#dash-charts" data-jump="dash-charts">Charts</a>
+          <a href="#dash-themes" data-jump="dash-themes">Themes</a>
+          <a href="#dash-communities" data-jump="dash-communities">Communities</a>
+          <a href="#dash-crossposts" data-jump="dash-crossposts">Cross-posts</a>
+        </nav>
+
+        <div id="dashboard-empty" hidden></div>
+
+        <div id="dashboard-content">
+          <section class="stat-grid" id="kpi-row" aria-label="Headline metrics"></section>
+
+          <div class="view-section" id="dash-summary">
+            <div class="card narrative-card">
+              <header class="card-header">
+                <div>
+                  <h2>What this data is telling you</h2>
+                  <span class="hint">Plain-English summary, generated locally from your data</span>
+                </div>
+              </header>
+              <div id="ai-summary" class="prose"></div>
             </div>
           </div>
-          <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
-        </div>
-        <div class="card" data-anchor="ov-charts" data-collapsible data-collapsed-on-mobile>
-          <header class="card-header"><h2>Score vs comments</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Each dot is one post. Higher dots = more upvotes; rightward dots = more discussion. Posts in the top-right corner are the breakouts in your loaded data.">?</button><span class="hint">Each dot is a post — top-right = best</span></header>
-          <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
-        </div>
-        <div class="card" data-collapsible data-collapsed-on-mobile>
-          <header class="card-header"><h2>Each subreddit, side by side</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Total upvotes (orange) and comments (blue) per subreddit. Quickly tells you which sub is driving the headline numbers.">?</button><span class="hint">Total upvotes &amp; comments per sub</span></header>
-          <div class="chart-wrap"><canvas id="chart-sub-compare"></canvas></div>
-        </div>
-        <div class="card" data-collapsible data-collapsed-on-mobile>
-          <header class="card-header"><h2>How well posts did</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Distribution of upvote scores. Most posts cluster on the left (low scores), a few stars spike on the right. The shape tells you whether your data is dominated by a few hits or broadly active.">?</button><span class="hint">Most posts cluster on the left; the few stars sit on the right</span></header>
-          <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
-        </div>
 
-        <div class="card" data-collapsible data-collapsed-on-mobile>
-          <header class="card-header"><h2>Are titles upbeat or critical?</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Counts upbeat words vs critical words across post titles. The lexicon is tuned for civic / activist vocabulary — words like &#x27;strike&#x27;, &#x27;organize&#x27;, &#x27;rally&#x27; read as positive.">?</button><span class="hint">Counted from positive vs negative words</span></header>
-          <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
-        </div>
-        <div class="card" data-anchor="ov-keywords" data-collapsible data-collapsed-on-mobile>
-          <header class="card-header"><h2>Words coming up most</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="The most-used words across post titles. Common filler words (&#x27;the&#x27;, &#x27;and&#x27;, months, weekdays, generic verbs) are filtered out so what&#x27;s left is genuinely topical.">?</button><span class="hint">Common filler words filtered out</span></header>
-          <div id="keywords" class="keyword-cloud"></div>
-        </div>
-        <div class="card span-2" id="ov-takeaways" data-anchor="ov-takeaways" data-collapsible>
-          <header class="card-header"><h2>Quick takeaways</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Plain-English suggestions automatically derived from your data — best posting times, audience reception, score-to-comment ratios, top performers.">?</button><span class="hint">Plain-English suggestions from your data · tap to expand</span></header>
-          <ul id="recommendations" class="reco-list"></ul>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-trends" class="tab-panel" role="tabpanel">
-      <nav class="subnav" aria-label="Trends sections">
-        <a href="#tr-hours" data-jump="tr-hours">Hours</a>
-        <a href="#tr-days" data-jump="tr-days">Days</a>
-        <a href="#tr-recent" data-jump="tr-recent">Recent</a>
-        <a href="#tr-themes" data-jump="tr-themes">Themes</a>
-        <a href="#tr-profiles" data-jump="tr-profiles">Profiles</a>
-      </nav>
-
-      <div class="grid two">
-        <div class="card" data-anchor="tr-hours">
-          <header class="card-header"><h2>When posts do best</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Average upvotes by hour of day in your local timezone. The bars peak when your audience is most receptive — schedule new posts around the highest bars.">?</button><span class="hint">Average upvotes per hour · your local time</span></header>
-          <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
-        </div>
-        <div class="card" data-anchor="tr-days">
-          <header class="card-header"><h2>Busiest days of the week</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="How many posts get made each weekday across the loaded data. Useful for picking when to launch a campaign.">?</button><span class="hint">Number of posts per weekday</span></header>
-          <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
-        </div>
-        <div class="card span-2" data-anchor="tr-recent" data-collapsible data-collapsed-on-mobile>
-          <header class="card-header"><h2>How recent posts are doing</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Score and comments on the most recent posts. Watch this for trending content and campaign-worthy moments.">?</button><span class="hint">Score &amp; comments on the latest posts</span></header>
-          <div class="chart-wrap tall"><canvas id="chart-velocity"></canvas></div>
-        </div>
-
-        <div class="card span-2" data-anchor="tr-themes" data-collapsible data-collapsed-default>
-          <header class="card-header"><h2>Topics that keep coming up</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Recurring themes detected across post titles, with sentiment and engagement per theme. Phrase themes (like &#x27;general strike&#x27;) are surfaced separately from single-word themes.">?</button><span class="hint">Tap to expand</span></header>
-          <div id="themes" class="theme-list"></div>
-        </div>
-
-        <div class="card span-2" data-anchor="tr-profiles" data-collapsible data-collapsed-default>
-          <header class="card-header"><h2>What each subreddit looks like</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="An audience fingerprint per loaded sub — engagement style (shareable / discussion / mixed), reception (warm / healthy / mixed / contentious), best posting hour, top themes, and key vocabulary.">?</button><span class="hint">Tap to expand · audience &amp; posting style</span></header>
-          <div id="sub-profiles" class="profile-list"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-posts" class="tab-panel" role="tabpanel">
-      <div class="card" data-anchor="po-table">
-        <header class="card-header">
-          <h2>Posts (<span id="posts-count">0</span>)</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Every loaded post sorted by your chosen column. Tap a row to open the post detail with comments, sentiment, and a title-quality breakdown.">?</button>
-          <span class="hint">Tap a row for details &amp; comments</span>
-        </header>
-
-        <!-- Posts controls split into two semantic rows:
-             ROW 1 = SEARCH (free-text title/author/flair input)
-             ROW 2 = FILTERS (constraint chips + dropdowns)
-             Page-size + sort live on the filter row so they don't
-             clutter the search line. -->
-        <div class="posts-controls">
-          <div class="pc-search">
-            <label class="group-label" for="posts-title-search">Search</label>
-            <input id="posts-title-search" type="search" placeholder="title, author, flair…" autocomplete="off" aria-label="Search posts by title, author, or flair" />
-          </div>
-
-          <div class="pc-filters">
-            <div class="pc-filter">
-              <label class="group-label" for="posts-sub-filter">Sub</label>
-              <select id="posts-sub-filter" aria-label="Filter posts by subreddit">
-                <option value="">All</option>
-              </select>
+          <div class="view-section" id="dash-timeline">
+            <div class="card" id="timeline-card">
+              <header class="card-header">
+                <div>
+                  <h2>When posts go up</h2>
+                  <span class="hint" id="timeline-hint">Pick a window to zoom — 1d gives hourly buckets</span>
+                </div>
+                <div class="card-actions">
+                  <div class="segmented chart-mode" role="tablist" aria-label="Posts-over-time mode">
+                    <button type="button" data-mode="lines" class="active" role="tab">Per sub</button>
+                    <button type="button" data-mode="stacked" role="tab">Stacked</button>
+                    <button type="button" data-mode="density" role="tab" title="Each sub normalised to its own peak, so cadence shapes overlay without volume bias">Density</button>
+                    <button type="button" data-mode="total" role="tab">Total</button>
+                  </div>
+                  <div class="segmented chart-mode chart-window" role="tablist" aria-label="Time window">
+                    <button type="button" data-window="1d" role="tab">1d</button>
+                    <button type="button" data-window="3d" role="tab">3d</button>
+                    <button type="button" data-window="7d" class="active" role="tab">7d</button>
+                    <button type="button" data-window="30d" role="tab">30d</button>
+                    <button type="button" data-window="90d" role="tab">90d</button>
+                    <button type="button" data-window="all" role="tab">All</button>
+                  </div>
+                </div>
+              </header>
+              <div class="chart-wrap tall"><canvas id="chart-timeline"></canvas></div>
             </div>
 
-            <!-- Score-range filter chips. These are FILTERS (toggle one
-                 at a time, click again to clear) — distinct from the
-                 free-text search above. Hide low-score noise quickly
-                 without typing. -->
-            <div class="pc-filter">
-              <span class="group-label">Min score</span>
-              <div class="chip-group" role="radiogroup" aria-label="Minimum score">
-                <button type="button" class="chip active" data-score-min="0" role="radio" aria-checked="true">All</button>
-                <button type="button" class="chip" data-score-min="100" role="radio" aria-checked="false">≥100</button>
-                <button type="button" class="chip" data-score-min="1000" role="radio" aria-checked="false">≥1k</button>
-                <button type="button" class="chip" data-score-min="10000" role="radio" aria-checked="false">≥10k</button>
+            <div class="grid two" style="margin-top:var(--s-4)">
+              <div class="card">
+                <header class="card-header"><div><h2>Best hours to post</h2><span class="hint">Average upvotes per hour, in your local time</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>Busiest days</h2><span class="hint">Posts published per weekday</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
               </div>
             </div>
+          </div>
 
-            <div class="pc-filter">
-              <label class="group-label" for="posts-page-size">Per page</label>
-              <select id="posts-page-size" aria-label="Posts per page">
-                <option value="10">10</option>
-                <option value="25" selected>25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="all">All</option>
-              </select>
+          <div class="view-section" id="dash-charts">
+            <div class="grid two">
+              <div class="card">
+                <header class="card-header"><div><h2>Score vs comments</h2><span class="hint">Each dot is a post — top-right is a breakout</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>Each subreddit, side by side</h2><span class="hint">Total upvotes and comments per sub</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-sub-compare"></canvas></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>How well posts did</h2><span class="hint">Score distribution across the loaded set</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>Are titles upbeat or critical?</h2><span class="hint">Lexicon scored, tuned for civic vocabulary</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
+              </div>
+              <div class="card span-2">
+                <header class="card-header"><div><h2>How recent posts are doing</h2><span class="hint">Score and comment velocity on the latest posts</span></div></header>
+                <div class="chart-wrap tall"><canvas id="chart-velocity"></canvas></div>
+              </div>
             </div>
+          </div>
 
-            <div class="pc-filter only-mobile">
-              <label class="group-label" for="mobile-sort">Sort by</label>
-              <select id="mobile-sort" class="only-mobile">
-                <option value="score:desc">Top score</option>
-                <option value="num_comments:desc">Most comments</option>
-                <option value="created_utc:desc">Newest</option>
-                <option value="created_utc:asc">Oldest</option>
-                <option value="upvote_ratio:desc">Highest UV%</option>
-                <option value="title:asc">Title A→Z</option>
-              </select>
+          <div class="view-section" id="dash-themes">
+            <div class="grid two">
+              <div class="card">
+                <header class="card-header"><div><h2>Words coming up most</h2><span class="hint">Filler words filtered out</span></div></header>
+                <div id="keywords" class="keyword-cloud"></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>Quick takeaways</h2><span class="hint">Suggestions derived from your data</span></div></header>
+                <ul id="recommendations" class="reco-list"></ul>
+              </div>
+              <div class="card span-2">
+                <header class="card-header"><div><h2>Topics that keep coming up</h2><span class="hint">Recurring themes with sentiment and engagement</span></div></header>
+                <div id="themes" class="theme-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="view-section" id="dash-communities">
+            <div class="card">
+              <header class="card-header"><div><h2>What each subreddit looks like</h2><span class="hint">Audience fingerprint per loaded sub</span></div></header>
+              <div id="sub-profiles" class="profile-list"></div>
+            </div>
+          </div>
+
+          <div class="view-section" id="dash-crossposts">
+            <div class="card" id="crossposts-card">
+              <header class="card-header">
+                <div>
+                  <h2>The same post in multiple subreddits</h2>
+                  <span class="hint">Ranked by spread first, then upvotes</span>
+                </div>
+              </header>
+
+              <div class="posts-controls crossposts-controls">
+                <div class="pc-search">
+                  <label class="group-label" for="crossposts-search">Search</label>
+                  <input id="crossposts-search" type="search" placeholder="title or URL keyword…" autocomplete="off" />
+                </div>
+                <div class="pc-filters">
+                  <div class="pc-filter">
+                    <label class="group-label" for="crossposts-sub-filter">Sub</label>
+                    <select id="crossposts-sub-filter"><option value="">All</option></select>
+                  </div>
+                  <div class="pc-filter">
+                    <span class="group-label">Min spread</span>
+                    <div class="chip-group" role="radiogroup" aria-label="Minimum number of subs">
+                      <button type="button" class="chip active" data-min-spread="0" role="radio" aria-checked="true">All</button>
+                      <button type="button" class="chip" data-min-spread="3" role="radio" aria-checked="false">≥3</button>
+                      <button type="button" class="chip" data-min-spread="5" role="radio" aria-checked="false">≥5</button>
+                      <button type="button" class="chip" data-min-spread="10" role="radio" aria-checked="false">≥10</button>
+                    </div>
+                  </div>
+                  <div class="pc-filter">
+                    <label class="group-label" for="crossposts-page-size">Per page</label>
+                    <select id="crossposts-page-size">
+                      <option value="10" selected>10</option>
+                      <option value="25">25</option>
+                      <option value="50">50</option>
+                      <option value="all">All</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div id="crossposts-meta" class="meta crossposts-meta" hidden></div>
+              <div id="crossposts" class="crosspost-list"></div>
+              <div id="crossposts-pagination" class="pagination" hidden></div>
             </div>
           </div>
         </div>
-        <div class="table-wrap">
-          <table id="posts-table">
-            <thead>
-              <tr>
-                <th data-sort="created_utc" class="sortable">When</th>
-                <th data-sort="subreddit" class="sortable">Sub</th>
-                <th data-sort="title" class="sortable">Title</th>
-                <th data-sort="author" class="sortable">Author</th>
-                <th data-sort="score" class="sortable num">Score</th>
-                <th data-sort="upvote_ratio" class="sortable num">UV %</th>
-                <th data-sort="num_comments" class="sortable num">Comments</th>
-                <th data-sort="id" class="sortable">ID</th>
-                <th class="action-col" aria-label="Make campaign from this post"></th>
-              </tr>
-            </thead>
-            <tbody id="posts-tbody"></tbody>
-          </table>
-        </div>
-        <div id="posts-pagination" class="pagination" hidden></div>
-      </div>
+      </section>
 
-      <div class="card" id="post-detail" hidden>
-        <header class="card-header">
-          <h2>Post detail</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Full breakdown of one post — top comments, sentiment, awards, upvote ratio, view count if available, and a title-quality score with per-factor reasons.">?</button>
-          <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
-        </header>
-        <div id="post-detail-body"></div>
-      </div>
-    </section>
-
-    <section id="tab-campaigns" class="tab-panel" role="tabpanel">
-      <nav class="subnav" aria-label="Campaign sections">
-        <a href="#discover-card" data-jump="discover-card">Find subs</a>
-        <a href="#campaigns-row" data-jump="campaigns-row">Your campaigns</a>
-        <a href="#campaign-detail" data-jump="campaign-detail">Detail</a>
-        <a href="#crossposts-card" data-jump="crossposts-card">Cross-posts</a>
-      </nav>
-
-      <!-- HERO: Discovery is the primary action on this tab -->
-      <div class="card hero-card" id="discover-card" data-anchor="discover-card">
-        <header class="card-header">
+      <!-- ============================================================
+           CAMPAIGNS — list, creation, and cross-campaign tools
+           ============================================================ -->
+      <section id="view-campaigns" class="view" role="region" aria-label="Campaigns">
+        <div class="view-head">
           <div>
-            <h2>Find new subreddits for a campaign</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Pick a saved campaign and we&#x27;ll look up Reddit subs whose audience matches its themes. Combines a curated catalog of progressive-sphere subs (healthcare, voting, labor, climate, state spheres, etc.) with live Reddit search and post-mining.">?</button>
-            <span class="hint">Pick a campaign — we look up subs whose audience matches</span>
+            <h2>Campaigns</h2>
+            <p>A campaign is a set of cross-posts tracked toward a goal. Open one to see its per-subreddit trend analysis, find new communities to target, and compose the next post.</p>
           </div>
-        </header>
-        <div class="targeting-picker">
-          <label class="group-label" for="discover-campaign">Campaign</label>
-          <select id="discover-campaign"></select>
-          <div class="chart-mode discover-mode" role="tablist" aria-label="Discovery filter">
-            <button type="button" data-strict="1" class="active" role="tab" title="Catalog members + relaxed filter — recommended.">Relevant</button>
-            <button type="button" data-strict="0" role="tab" title="Show every match, including off-topic ones.">All</button>
+          <div class="card-actions">
+            <button class="btn primary" type="button" id="campaign-new-toggle">＋ New campaign</button>
           </div>
-          <button id="discover-run" class="btn primary" type="button">Find subreddits</button>
         </div>
-        <div class="sphere-picker">
-          <span class="group-label">Add target spheres</span>
-          <select id="sphere-add-issue" aria-label="Add an issue sphere">
-            <option value="" disabled selected>+ Issue</option>
-          </select>
-          <select id="sphere-add-state" aria-label="Add a state sphere">
-            <option value="" disabled selected>+ State</option>
-          </select>
-          <select id="sphere-add-audience" aria-label="Add an audience sphere">
-            <option value="" disabled selected>+ Audience</option>
-          </select>
-        </div>
-        <div id="active-spheres" class="active-spheres"></div>
-        <div id="discover-status" class="meta" style="margin-top:10px;display:none"></div>
-        <div id="discover-results" class="targeting-list" style="margin-top:14px"></div>
-      </div>
 
-      <!-- Saved + New campaigns side-by-side -->
-      <div class="grid two campaigns-row" id="campaigns-row" data-anchor="campaigns-row">
-        <div class="card">
-          <header class="card-header"><h2>Your campaigns</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Your saved campaigns. Tap one to open. They&#x27;re stored in your browser only — clearing your browser data wipes them.">?</button><span class="hint">Tap one to open</span></header>
-          <div id="campaign-list" class="campaign-list"></div>
-        </div>
-        <div class="card">
-          <header class="card-header"><h2>Start a new campaign</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="Track a list of cross-posts toward a goal. Paste full Reddit URLs (including iOS share-sheet links) — we extract the IDs automatically. Goals are optional.">?</button><span class="hint">Track a list of cross-posts toward a goal</span></header>
+        <div class="card" id="campaign-new-card" hidden>
+          <header class="card-header">
+            <div>
+              <h2>Start a new campaign</h2>
+              <span class="hint">Paste Reddit URLs, mobile share links, or bare post IDs — anything from your phone works</span>
+            </div>
+            <button class="btn ghost small" type="button" id="campaign-new-close" aria-label="Close">×</button>
+          </header>
           <form id="campaign-form" class="form-grid">
-            <label class="full">Name <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required /></label>
-            <label>Goal upvotes <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" inputmode="numeric" /></label>
-            <label>Goal comments <input id="campaign-goal-comments" type="number" min="0" placeholder="e.g. 500" inputmode="numeric" /></label>
-            <label class="full">Post IDs <span class="hint">paste full reddit URLs, share-sheet links, or bare IDs — anything pasteable from your phone works</span>
-              <textarea id="campaign-post-ids" rows="3" placeholder="https://www.reddit.com/r/Political_Revolution/comments/1abc2de/title/&#10;https://www.reddit.com/r/50501/comments/9def8gh/y/&#10;t3_xyz9999, abc1234"></textarea>
+            <label class="full">Name
+              <input id="campaign-name" type="text" placeholder="e.g. Voter Registration Push" required />
+            </label>
+            <label>Goal upvotes
+              <input id="campaign-goal-score" type="number" min="0" placeholder="e.g. 5000" inputmode="numeric" />
+            </label>
+            <label>Goal comments
+              <input id="campaign-goal-comments" type="number" min="0" placeholder="e.g. 500" inputmode="numeric" />
+            </label>
+            <label class="full">Post IDs
+              <textarea id="campaign-post-ids" rows="3" placeholder="https://www.reddit.com/r/Political_Revolution/comments/1abc2de/title/&#10;t3_xyz9999, abc1234"></textarea>
               <div id="campaign-post-ids-preview" class="paste-preview" hidden></div>
             </label>
             <div class="full row-end">
@@ -479,424 +354,648 @@
             </div>
           </form>
         </div>
-      </div>
 
-      <!-- Cascade scheduler + Predict-and-rewrite tool (PR 5).
-           Visible only when a campaign is open and there are loaded
-           posts to learn from. Wired in app.js. -->
-      <div class="card" id="cascade-card" data-collapsible data-collapsed-default hidden>
-        <header class="card-header">
-          <h2>Cross-post cascade</h2>
-          <span class="hint">Staggered posting plan — pick the sub list to cascade</span>
-        </header>
-        <div class="card-body">
-          <div class="cascade-controls">
-            <select id="cascade-source"></select>
-            <button id="cascade-build" type="button" class="btn small primary">Plan cascade</button>
-          </div>
-          <div id="cascade-results"></div>
-        </div>
-      </div>
+        <div id="campaign-list" class="campaign-grid"></div>
 
-      <div class="card" id="predict-card" data-collapsible data-collapsed-default hidden>
-        <header class="card-header">
-          <h2>Predict + rewrite</h2>
-          <span class="hint">Try a draft title across your loaded subs</span>
-        </header>
-        <div class="card-body" id="predict-body"></div>
-      </div>
-
-      <!-- Calendar / planning view (PR 6). -->
-      <div class="card" id="calendar-card" data-collapsible data-collapsed-default>
-        <header class="card-header">
-          <h2>Campaign calendar</h2>
-          <span class="hint">14-day strip showing campaign progress vs goal</span>
-        </header>
-        <div class="card-body" id="calendar-body"></div>
-      </div>
-
-      <!-- A/B comparison (PR 6). -->
-      <div class="card" id="ab-card" data-collapsible data-collapsed-default>
-        <header class="card-header">
-          <h2>Compare campaigns</h2>
-          <span class="hint">Pick two campaigns to see which themes / subs / titles are winning</span>
-        </header>
-        <div class="card-body">
-          <div class="ab-controls">
-            <select id="ab-campaign-a"></select>
-            <span class="meta">vs</span>
-            <select id="ab-campaign-b"></select>
-            <button id="ab-compare" type="button" class="btn small primary">Compare</button>
-          </div>
-          <div id="ab-results"></div>
-        </div>
-      </div>
-
-      <!-- Volunteer coordination (PR 6). -->
-      <div class="card" id="vol-card" data-collapsible data-collapsed-default>
-        <header class="card-header">
-          <h2>Volunteer coverage</h2>
-          <span class="hint">Claim a sub to post to. Share this session's URL with teammates.</span>
-        </header>
-        <div class="card-body">
-          <div class="vol-controls">
-            <select id="vol-source"></select>
-            <button id="vol-load" type="button" class="btn small primary">Load coverage map</button>
-          </div>
-          <div id="vol-body"></div>
-        </div>
-      </div>
-
-      <!-- Detail panel for an opened campaign (AI baked in via deep analysis) -->
-      <div class="card" id="campaign-detail" data-anchor="campaign-detail" hidden>
-        <div id="watch-toggle-slot" class="watch-toggle-slot"></div>
-        <header class="card-header">
-          <h2 id="campaign-detail-title">Campaign</h2>
-          <div class="row gap wrap">
-            <button id="campaign-refresh" class="btn small">Refresh</button>
-            <button id="campaign-delete" class="btn small danger">Delete</button>
-            <button id="campaign-close" class="btn ghost small">Close</button>
-          </div>
-        </header>
-        <div id="campaign-detail-body"></div>
-      </div>
-
-      <!-- Cross-post detection — campaign-relevant signal across loaded subs -->
-      <div class="card" id="crossposts-card" data-anchor="crossposts-card" data-collapsible data-collapsed-default>
-        <header class="card-header"><h2>The same post in multiple subreddits</h2><button class="card-help" type="button" aria-label="What is this card?" data-help="When the same title or URL appears in more than one sub, we group them here. Ranked by spread (number of subs) first, then total upvotes — so a post in 5 subs ranks above a single viral post even if the latter has more points. Tap &quot;+ Make campaign&quot; on any group to instantly track it as a saved campaign — the post IDs and sub list get prefilled.">?</button><span class="hint">Tap to expand · spotted across your loaded data</span></header>
-
-        <!-- Cross-posts controls mirror the Posts-tab pattern:
-             ROW 1 = SEARCH (free-text — matches title or URL key)
-             ROW 2 = FILTERS (sub dropdown · min-spread chips · per-page)
-             A long list of cross-post groups is the worst scroll-fest
-             on this tab; this lets the user narrow down by topic
-             keyword OR by spread (which sub-count is interesting). -->
-        <div class="posts-controls crossposts-controls">
-          <div class="pc-search">
-            <label class="group-label" for="crossposts-search">Search</label>
-            <input id="crossposts-search" type="search" placeholder="title or URL keyword…" autocomplete="off" aria-label="Search cross-posts by title or URL" />
-          </div>
-
-          <div class="pc-filters">
-            <div class="pc-filter">
-              <label class="group-label" for="crossposts-sub-filter">Sub</label>
-              <select id="crossposts-sub-filter" aria-label="Filter cross-posts by subreddit">
-                <option value="">All</option>
-              </select>
+        <div class="view-section" id="campaign-tools">
+          <div class="grid two">
+            <div class="card" id="calendar-card">
+              <header class="card-header"><div><h2>Campaign calendar</h2><span class="hint">14-day strip showing progress against goal</span></div></header>
+              <div id="calendar-body"></div>
             </div>
+            <div class="card" id="ab-card">
+              <header class="card-header"><div><h2>Compare two campaigns</h2><span class="hint">Which themes, subs and titles are winning</span></div></header>
+              <div class="ab-controls">
+                <select id="ab-campaign-a"></select>
+                <span class="meta">vs</span>
+                <select id="ab-campaign-b"></select>
+                <button id="ab-compare" type="button" class="btn small primary">Compare</button>
+              </div>
+              <div id="ab-results"></div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            <!-- Minimum-spread chips. A "cross-post" lives in ≥ 2 subs
-                 by definition; chips let the user filter for groups
-                 spread to 2+, 3+, 5+ subs to surface the most-shared
-                 content quickly. -->
-            <div class="pc-filter">
-              <span class="group-label">Min spread</span>
-              <div class="chip-group" role="radiogroup" aria-label="Minimum number of subs">
-                <button type="button" class="chip active" data-min-spread="0" role="radio" aria-checked="true">All</button>
-                <button type="button" class="chip" data-min-spread="3" role="radio" aria-checked="false">≥3 subs</button>
-                <button type="button" class="chip" data-min-spread="5" role="radio" aria-checked="false">≥5 subs</button>
-                <button type="button" class="chip" data-min-spread="10" role="radio" aria-checked="false">≥10 subs</button>
+      <!-- ============================================================
+           CAMPAIGN WORKSPACE — one campaign, end to end
+           ============================================================ -->
+      <section id="view-campaign" class="view" role="region" aria-label="Campaign workspace">
+        <div class="campaign-workspace-head">
+          <button class="btn ghost small" type="button" data-view="campaigns">← All campaigns</button>
+          <div class="campaign-workspace-title">
+            <h2 id="campaign-detail-title">Campaign</h2>
+            <div class="meta" id="campaign-workspace-meta"></div>
+          </div>
+          <div class="card-actions">
+            <div id="watch-toggle-slot" class="watch-toggle-slot"></div>
+            <button id="campaign-refresh" class="btn small">↻ Refresh</button>
+            <button id="campaign-compose" class="btn small primary">✍ Compose</button>
+            <button id="campaign-delete" class="btn small danger">Delete</button>
+          </div>
+        </div>
+
+        <div id="campaign-kpis" class="stat-grid"></div>
+        <div id="campaign-goals"></div>
+        <div id="campaign-alerts"></div>
+
+        <nav class="section-rail" id="campaign-section-rail" aria-label="Campaign sections">
+          <button type="button" data-campaign-tab="overview" class="active">Overview</button>
+          <button type="button" data-campaign-tab="subreddits">Subreddits</button>
+          <button type="button" data-campaign-tab="posts">Posts</button>
+          <button type="button" data-campaign-tab="targeting">Targeting</button>
+          <button type="button" data-campaign-tab="plan">Plan</button>
+          <button type="button" data-campaign-tab="settings">Settings</button>
+        </nav>
+
+        <div class="campaign-section active" id="camp-sec-overview"></div>
+
+        <div class="campaign-section" id="camp-sec-subreddits">
+          <div class="card">
+            <header class="card-header">
+              <div>
+                <h2>Per-subreddit trend analysis</h2>
+                <span class="hint">Every community this campaign touched, charted on its own posts</span>
+              </div>
+              <div class="card-actions">
+                <div class="segmented" id="campaign-sub-window" role="tablist" aria-label="Chart window">
+                  <button type="button" data-window="7d" role="tab">7d</button>
+                  <button type="button" data-window="30d" role="tab">30d</button>
+                  <button type="button" data-window="90d" role="tab">90d</button>
+                  <button type="button" data-window="all" class="active" role="tab">All</button>
+                </div>
+              </div>
+            </header>
+            <div id="campaign-sub-compare-wrap">
+              <div class="chart-wrap"><canvas id="chart-campaign-subs"></canvas></div>
+            </div>
+            <div id="campaign-sub-table"></div>
+          </div>
+          <div id="campaign-sub-cards" class="campaign-sub-cards"></div>
+        </div>
+
+        <div class="campaign-section" id="camp-sec-posts"></div>
+
+        <div class="campaign-section" id="camp-sec-targeting">
+          <div class="card" id="discover-card">
+            <header class="card-header">
+              <div>
+                <h2>Find new subreddits for this campaign</h2>
+                <span class="hint">Matches your campaign's keywords against each community's own description</span>
+              </div>
+              <div class="card-actions">
+                <div class="segmented discover-mode" role="tablist" aria-label="Discovery filter">
+                  <button type="button" data-strict="1" class="active" role="tab" title="Drop obvious off-topic and mega-generic subs">Relevant</button>
+                  <button type="button" data-strict="0" role="tab" title="Show every match, including off-topic ones">All</button>
+                </div>
+                <button id="discover-run" class="btn primary small" type="button">Find subreddits</button>
+              </div>
+            </header>
+
+            <label class="visually-hidden" for="discover-campaign">Campaign</label>
+            <select id="discover-campaign" class="visually-hidden" aria-hidden="true" tabindex="-1"></select>
+
+            <div class="sphere-picker">
+              <span class="group-label">Issue spheres</span>
+              <div id="sphere-suggestions" class="sphere-suggestions"></div>
+              <div class="sphere-picker-selects">
+                <select id="sphere-add-issue" aria-label="Add an issue sphere"><option value="" disabled selected>+ Issue</option></select>
+                <select id="sphere-add-state" aria-label="Add a state sphere"><option value="" disabled selected>+ State</option></select>
+                <select id="sphere-add-audience" aria-label="Add an audience sphere"><option value="" disabled selected>+ Audience</option></select>
               </div>
             </div>
+            <div id="active-spheres" class="active-spheres"></div>
+            <div id="discover-status" class="meta" hidden></div>
+            <div id="discover-results" class="targeting-list"></div>
+          </div>
 
-            <div class="pc-filter">
-              <label class="group-label" for="crossposts-page-size">Per page</label>
-              <select id="crossposts-page-size" aria-label="Cross-posts per page">
-                <option value="10" selected>10</option>
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="all">All</option>
-              </select>
+          <div class="card" id="campaign-targets-card">
+            <header class="card-header">
+              <div>
+                <h2>Best fits among your loaded subs</h2>
+                <span class="hint">Ranked by theme, sentiment, reception and timing overlap</span>
+              </div>
+            </header>
+            <div id="campaign-detail-targets" class="targeting-list"></div>
+          </div>
+        </div>
+
+        <div class="campaign-section" id="camp-sec-plan">
+          <div class="grid two">
+            <div class="card" id="cascade-card">
+              <header class="card-header"><div><h2>Cross-post cascade</h2><span class="hint">A staggered posting plan across a sub list</span></div></header>
+              <div class="cascade-controls">
+                <select id="cascade-source"></select>
+                <button id="cascade-build" type="button" class="btn small primary">Plan cascade</button>
+              </div>
+              <div id="cascade-results"></div>
+            </div>
+
+            <div class="card" id="predict-card">
+              <header class="card-header"><div><h2>Predict &amp; rewrite</h2><span class="hint">Try a draft title across your loaded subs</span></div></header>
+              <div id="predict-body"></div>
+            </div>
+
+            <div class="card span-2" id="vol-card">
+              <header class="card-header"><div><h2>Volunteer coverage</h2><span class="hint">Claim a sub to post to, then share this session's link with teammates</span></div></header>
+              <div class="vol-controls">
+                <select id="vol-source"></select>
+                <button id="vol-load" type="button" class="btn small primary">Load coverage map</button>
+              </div>
+              <div id="vol-body"></div>
             </div>
           </div>
         </div>
 
-        <!-- Live result-count line so the user knows how many groups
-             matched the current search/filter combination. -->
-        <div id="crossposts-meta" class="meta crossposts-meta" hidden></div>
-        <div id="crossposts" class="crosspost-list"></div>
-        <div id="crossposts-pagination" class="pagination" hidden></div>
+        <div class="campaign-section" id="camp-sec-settings"></div>
+      </section>
+
+      <!-- ============================================================
+           COMMUNITIES — search, catalog, and what is loaded
+           ============================================================ -->
+      <section id="view-communities" class="view" role="region" aria-label="Communities">
+        <div class="view-head">
+          <div>
+            <h2>Communities</h2>
+            <p>Search Reddit for subreddits, see the communities most similar to any of them, or bulk-load a whole curated sphere into your dashboard.</p>
+          </div>
+        </div>
+
+        <nav class="section-rail" id="communities-rail" aria-label="Communities sections">
+          <button type="button" data-communities-tab="search" class="active">Search</button>
+          <button type="button" data-communities-tab="catalog">Sphere catalog</button>
+          <button type="button" data-communities-tab="loaded">Loaded subs</button>
+        </nav>
+
+        <div class="communities-section active" id="comm-sec-search">
+          <div class="card">
+            <header class="card-header">
+              <div>
+                <h2>Search subreddits</h2>
+                <span class="hint">Type a topic or a subreddit name. Paste an <code>/r/name</code> URL and it resolves.</span>
+              </div>
+            </header>
+            <form id="sub-search-form" class="sub-search">
+              <input id="sub-search-input" type="search" placeholder="healthcare, tenant rights, r/WorkReform…" autocomplete="off" aria-label="Search subreddits" />
+              <button class="btn primary" type="submit">Search</button>
+            </form>
+            <div id="sub-search-status" class="meta" hidden></div>
+            <div id="sub-search-results" class="sub-result-list"></div>
+          </div>
+        </div>
+
+        <div class="communities-section" id="comm-sec-catalog">
+          <div class="card">
+            <header class="card-header">
+              <div>
+                <h2>Curated sphere catalog</h2>
+                <span class="hint">Progressive-sphere communities, ready to load in one tap</span>
+              </div>
+              <div class="card-actions">
+                <div class="segmented" id="catalog-filter" role="tablist" aria-label="Catalog type">
+                  <button type="button" data-catalog="issue" class="active" role="tab">Issues</button>
+                  <button type="button" data-catalog="audience" role="tab">Audiences</button>
+                  <button type="button" data-catalog="state" role="tab">States</button>
+                </div>
+              </div>
+            </header>
+            <div id="catalog-bundles" class="catalog-bundles"></div>
+            <div id="catalog-grid" class="catalog-grid"></div>
+          </div>
+        </div>
+
+        <div class="communities-section" id="comm-sec-loaded">
+          <div class="card">
+            <header class="card-header">
+              <div>
+                <h2>Subreddits in your dashboard</h2>
+                <span class="hint">Toggle one off to exclude it from the next fetch without losing it</span>
+              </div>
+              <div class="card-actions">
+                <button class="btn small ghost" type="button" id="loaded-subs-all">Enable all</button>
+                <button class="btn small ghost" type="button" id="loaded-subs-none">Disable all</button>
+              </div>
+            </header>
+            <div id="loaded-subs-grid" class="loaded-subs-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           POSTS — the raw explorer
+           ============================================================ -->
+      <section id="view-posts" class="view" role="region" aria-label="Posts">
+        <div class="card">
+          <header class="card-header">
+            <div>
+              <h2>Posts (<span id="posts-count">0</span>)</h2>
+              <span class="hint">Tap a row for comments, sentiment and a title-quality breakdown</span>
+            </div>
+          </header>
+
+          <div class="posts-controls">
+            <div class="pc-search">
+              <label class="group-label" for="posts-title-search">Search</label>
+              <input id="posts-title-search" type="search" placeholder="title, author, flair…" autocomplete="off" />
+            </div>
+            <div class="pc-filters">
+              <div class="pc-filter">
+                <label class="group-label" for="posts-sub-filter">Sub</label>
+                <select id="posts-sub-filter"><option value="">All</option></select>
+              </div>
+              <div class="pc-filter">
+                <span class="group-label">Min score</span>
+                <div class="chip-group" role="radiogroup" aria-label="Minimum score">
+                  <button type="button" class="chip active" data-score-min="0" role="radio" aria-checked="true">All</button>
+                  <button type="button" class="chip" data-score-min="100" role="radio" aria-checked="false">≥100</button>
+                  <button type="button" class="chip" data-score-min="1000" role="radio" aria-checked="false">≥1k</button>
+                  <button type="button" class="chip" data-score-min="10000" role="radio" aria-checked="false">≥10k</button>
+                </div>
+              </div>
+              <div class="pc-filter">
+                <label class="group-label" for="post-id-filter">Post IDs</label>
+                <input id="post-id-filter" type="text" placeholder="paste post URLs or IDs" autocomplete="off" />
+                <div id="post-id-filter-preview" class="paste-preview tiny" hidden></div>
+              </div>
+              <div class="pc-filter">
+                <label class="group-label" for="posts-page-size">Per page</label>
+                <select id="posts-page-size">
+                  <option value="10">10</option>
+                  <option value="25" selected>25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
+              <div class="pc-filter only-mobile">
+                <label class="group-label" for="mobile-sort">Sort by</label>
+                <select id="mobile-sort" class="only-mobile">
+                  <option value="score:desc">Top score</option>
+                  <option value="num_comments:desc">Most comments</option>
+                  <option value="created_utc:desc">Newest</option>
+                  <option value="created_utc:asc">Oldest</option>
+                  <option value="upvote_ratio:desc">Highest UV%</option>
+                  <option value="title:asc">Title A→Z</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="posts-table">
+              <thead>
+                <tr>
+                  <th data-sort="created_utc" class="sortable">When</th>
+                  <th data-sort="subreddit" class="sortable">Sub</th>
+                  <th data-sort="title" class="sortable">Title</th>
+                  <th data-sort="author" class="sortable">Author</th>
+                  <th data-sort="score" class="sortable num">Score</th>
+                  <th data-sort="upvote_ratio" class="sortable num">UV %</th>
+                  <th data-sort="num_comments" class="sortable num">Comments</th>
+                  <th data-sort="id" class="sortable">ID</th>
+                  <th class="action-col" aria-label="Make campaign from this post"></th>
+                </tr>
+              </thead>
+              <tbody id="posts-tbody"></tbody>
+            </table>
+          </div>
+          <div id="posts-pagination" class="pagination" hidden></div>
+        </div>
+
+        <div class="card" id="post-detail" hidden style="margin-top:var(--s-4)">
+          <header class="card-header">
+            <div><h2>Post detail</h2></div>
+            <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
+          </header>
+          <div id="post-detail-body"></div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="statusbar">
+      <div id="status-bar" class="status-bar" aria-live="polite"></div>
+      <div id="proxy-health" class="proxy-health" hidden aria-live="polite"></div>
+      <span class="hint">Live data from <code>reddit.com/r/&lt;sub&gt;.json</code> via a CORS proxy. No server, no account, no tracking.</span>
+    </footer>
+  </div>
+
+  <!-- Bottom tab bar (mobile) — mirrors the rail's destinations. -->
+  <nav class="tabbar" aria-label="Primary navigation">
+    <button class="tabbar-link" type="button" data-view="dashboard"><span class="rail-link-icon" aria-hidden="true">◧</span>Dashboard</button>
+    <button class="tabbar-link" type="button" data-view="campaigns"><span class="rail-link-icon" aria-hidden="true">◆</span>Campaigns</button>
+    <button class="tabbar-link" type="button" data-view="communities"><span class="rail-link-icon" aria-hidden="true">⌗</span>Communities</button>
+    <button class="tabbar-link" type="button" data-view="posts"><span class="rail-link-icon" aria-hidden="true">≡</span>Posts</button>
+  </nav>
+</div>
+
+<!-- ==================================================================
+     OVERLAYS
+     ================================================================== -->
+
+<div id="toast" class="toast" hidden></div>
+<button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top" title="Back to top">↑</button>
+
+<!-- Settings sheet: everything that configures how data is fetched. -->
+<div id="settings-sheet-backdrop" class="sheet-backdrop" hidden></div>
+<aside id="settings-sheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="settings-sheet-title">
+  <header class="sheet-header">
+    <h2 id="settings-sheet-title">Settings</h2>
+    <button class="btn ghost icon-only" type="button" id="settings-close" aria-label="Close settings">×</button>
+  </header>
+  <div class="sheet-body">
+    <section class="sheet-section">
+      <h3>Fetch</h3>
+      <label class="field">
+        <span class="field-label">Listing</span>
+        <select id="listing-select">
+          <option value="new">New</option>
+          <option value="hot" selected>Hot</option>
+          <option value="top">Top</option>
+          <option value="rising">Rising</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Top window</span>
+        <select id="time-select">
+          <option value="day">Day</option>
+          <option value="week" selected>Week</option>
+          <option value="month">Month</option>
+          <option value="year">Year</option>
+          <option value="all">All</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Posts per subreddit</span>
+        <select id="limit-select">
+          <option>25</option>
+          <option selected>100</option>
+          <option>250</option>
+          <option>500</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="sheet-section">
+      <h3>Data source</h3>
+      <p class="hint">Reddit does not send CORS headers on <code>/json</code>, so the browser cannot fetch it directly. Requests route through a public proxy — switch if one stops working.</p>
+      <label class="field">
+        <span class="field-label">Proxy</span>
+        <select id="transport-select"></select>
+      </label>
+      <input id="custom-proxy-input" type="url" placeholder="https://reddit-proxy.you.workers.dev" autocomplete="off" spellcheck="false" hidden />
+      <a class="hint" href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md" target="_blank" rel="noopener">How to run your own Cloudflare Worker ↗</a>
+    </section>
+
+    <section class="sheet-section">
+      <h3>Appearance</h3>
+      <div class="segmented" id="theme-picker" role="radiogroup" aria-label="Theme">
+        <button type="button" data-theme-set="system" role="radio">System</button>
+        <button type="button" data-theme-set="dark" role="radio">Dark</button>
+        <button type="button" data-theme-set="light" role="radio">Light</button>
       </div>
     </section>
 
-  </main>
-
-  <div id="toast" class="toast" hidden></div>
-
-  <footer>
-    <div id="status-bar" class="status-bar" aria-live="polite"></div>
-    <!-- Per-proxy health dashboard: live success-rate per transport.
-         Helps the user see WHY a fetch is slow / failing without
-         diving into the console. Hidden until we've made at least
-         one attempt. -->
-    <div id="proxy-health" class="proxy-health" hidden aria-live="polite"></div>
-    <p>Live data from <code>www.reddit.com/r/&lt;sub&gt;.json</code> via your browser. Reddit blocks anonymous browser CORS, so requests route through a public CORS proxy (selectable in the top bar). No server, no tracking. Static site for GitHub Pages.</p>
-  </footer>
-
-  <!-- Compose & cross-post modal. Opens from the campaign-detail
-       panel via "Compose post" button. Lets the user write title +
-       markdown body once, see it rendered live, and bulk-emit
-       prefilled Reddit /submit URLs for selected target subs.
-       See cloudflare-worker/SETUP.md for the broader workflow context. -->
-  <!-- Composer sidebar. Owns its own state (composerState +
-       directly-bound input listeners) so its DOM persists across
-       opens — Sidebar.close on this id does NOT wipe the body.
-       Width: wide (960px max desktop, full-screen mobile). -->
-  <aside id="composer-sidebar" class="sidebar sidebar-wide" hidden role="dialog" aria-modal="true" aria-labelledby="composer-modal-title">
-    <header class="sidebar-header">
-      <div>
-        <h2 class="sidebar-title" id="composer-modal-title">Compose &amp; cross-post</h2>
-        <div class="sidebar-subtitle" id="composer-context" hidden></div>
+    <section class="sheet-section">
+      <h3>Cache</h3>
+      <p class="hint">Posts are cached on this device so a reload is instant. Clearing the cache forces the next Go to hit the network.</p>
+      <div class="row gap wrap">
+        <button id="clear-cache-btn" class="btn small" type="button">Clear request cache</button>
+        <button id="full-reset-btn" class="btn small danger" type="button">Full reset</button>
       </div>
-      <div class="sidebar-actions">
-        <button type="button" class="sidebar-close" data-sidebar-close aria-label="Close composer">×</button>
-      </div>
+    </section>
+  </div>
+</aside>
+
+<!-- Session sync -->
+<div id="session-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="session-modal-title">
+  <div class="modal-backdrop" data-action="close-session-modal"></div>
+  <div class="modal-card" role="document">
+    <header class="modal-header">
+      <h2 id="session-modal-title">Sync session</h2>
+      <button type="button" class="btn ghost small" data-action="close-session-modal" aria-label="Close session panel">×</button>
     </header>
-    <div class="sidebar-body composer-body">
-
-        <!-- Editor section: title + body + toolbar + live preview -->
-        <section class="composer-editor" aria-label="Editor">
-          <!-- Pane toggle (mobile only): switch between Source and Preview. -->
-          <div class="composer-pane-toggle only-mobile" role="tablist" aria-label="Editor pane">
-            <button type="button" class="chip active" data-composer-pane="source" role="tab" aria-selected="true">Source</button>
-            <button type="button" class="chip" data-composer-pane="preview" role="tab" aria-selected="false">Preview</button>
-          </div>
-
-          <div class="composer-title-row">
-            <label for="composer-title" class="group-label">Title</label>
-            <input id="composer-title" type="text" maxlength="320" autocomplete="off" placeholder="Hook in the first 8-10 words…" />
-            <span class="composer-counter" id="composer-title-counter" aria-live="polite">0 / 300</span>
-          </div>
-
-          <!-- Toolbar -->
-          <div class="composer-toolbar" role="toolbar" aria-label="Markdown formatting">
-            <button type="button" class="cm-btn" data-composer-action="bold" title="Bold (**text**)" aria-label="Bold"><strong>B</strong></button>
-            <button type="button" class="cm-btn" data-composer-action="italic" title="Italic (*text*)" aria-label="Italic"><em>I</em></button>
-            <button type="button" class="cm-btn" data-composer-action="strike" title="Strikethrough (~~text~~)" aria-label="Strikethrough"><span style="text-decoration:line-through">S</span></button>
-            <span class="cm-sep" aria-hidden="true"></span>
-            <button type="button" class="cm-btn" data-composer-action="h1" title="Header 1" aria-label="Header 1">H1</button>
-            <button type="button" class="cm-btn" data-composer-action="h2" title="Header 2" aria-label="Header 2">H2</button>
-            <button type="button" class="cm-btn" data-composer-action="h3" title="Header 3" aria-label="Header 3">H3</button>
-            <span class="cm-sep" aria-hidden="true"></span>
-            <button type="button" class="cm-btn" data-composer-action="link" title="Link" aria-label="Link">🔗</button>
-            <button type="button" class="cm-btn" data-composer-action="image" title="Image" aria-label="Image">🖼️</button>
-            <button type="button" class="cm-btn" data-composer-action="quote" title="Blockquote" aria-label="Blockquote">❝</button>
-            <button type="button" class="cm-btn" data-composer-action="ul" title="Bullet list" aria-label="Bullet list">•</button>
-            <button type="button" class="cm-btn" data-composer-action="ol" title="Numbered list" aria-label="Numbered list">1.</button>
-            <button type="button" class="cm-btn" data-composer-action="code" title="Inline code" aria-label="Inline code">&lt;/&gt;</button>
-            <button type="button" class="cm-btn" data-composer-action="codeblock" title="Fenced code block" aria-label="Code block">▦</button>
-            <button type="button" class="cm-btn" data-composer-action="table" title="Insert table" aria-label="Insert table">⊞</button>
-            <button type="button" class="cm-btn" data-composer-action="hr" title="Horizontal rule" aria-label="Horizontal rule">―</button>
-            <button type="button" class="cm-btn" data-composer-action="spoiler" title="Reddit spoiler (&gt;!text!&lt;)" aria-label="Reddit spoiler">⚫</button>
-          </div>
-
-          <!-- Split pane: source on left, preview on right (stacked on mobile via composer-pane-toggle) -->
-          <div class="composer-split">
-            <div class="composer-source-pane" data-composer-pane-content="source">
-              <textarea id="composer-body" rows="20" placeholder="Write your campaign post in Reddit-flavored markdown…&#10;&#10;Hook in the first 2 sentences. Neutral CTA at the end.&#10;Use the toolbar above for formatting."></textarea>
-              <div class="composer-counter-row">
-                <span class="composer-counter" id="composer-body-counter" aria-live="polite">0 / 40000</span>
-                <span class="composer-hint" id="composer-body-hint"></span>
-                <!-- Copy body as rich text (text/html on the
-                     clipboard). For users whose Reddit submit
-                     opens in the mobile app, which is rich-text-
-                     only — markdown pasted as plain text shows
-                     up literally. Pasting HTML preserves
-                     formatting. -->
-                <button type="button"
-                        class="btn small ghost composer-copy-rich"
-                        id="composer-copy-rich"
-                        title="Copy this body as rich text. Paste into Reddit's mobile app body field to keep bold / italic / lists / headings without the markdown source showing.">📋 Copy as rich text</button>
-              </div>
-            </div>
-            <div class="composer-preview-pane" data-composer-pane-content="preview">
-              <div class="composer-preview-label">Preview <span class="hint">(rendered as Reddit will show it)</span></div>
-              <div id="composer-preview" class="composer-preview" aria-live="polite"></div>
-            </div>
-          </div>
-
-          <!-- Link / image URL row -->
-          <div class="composer-extras">
-            <label class="composer-extra-row">
-              <input type="checkbox" id="composer-link-mode" />
-              <span>Link post (selftext disabled — body is replaced by URL)</span>
-            </label>
-            <div class="composer-extra-row">
-              <label class="group-label" for="composer-link-url">URL (link post)</label>
-              <input id="composer-link-url" type="url" autocomplete="off" placeholder="https://sevendaysinjune.org" />
-            </div>
-            <div class="composer-extra-row">
-              <label class="group-label" for="composer-image-url">Image URL (embeds in body)</label>
-              <input id="composer-image-url" type="url" autocomplete="off" placeholder="https://i.imgur.com/abc.jpg" />
-              <button type="button" class="btn small ghost" id="composer-image-insert" title="Insert as ![alt](url) at the cursor">Insert as markdown</button>
-            </div>
-            <!-- Local file image: stored client-side; used for clipboard-copy
-                 helper since Reddit's submit URL can't carry image bytes. -->
-            <div class="composer-extra-row composer-image-drop" id="composer-image-drop">
-              <label class="group-label" for="composer-image-file">Local image</label>
-              <input id="composer-image-file" type="file" accept="image/*" />
-              <span class="composer-hint" id="composer-image-status">No image attached. Drop a file here or pick one. Reddit's submit URL can't carry image bytes — we'll offer a clipboard-copy button per target so you paste it manually after the submit page opens.</span>
-              <div id="composer-image-preview" class="composer-image-preview" hidden></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- AI prompt drawer -->
-        <details class="composer-ai">
-          <summary>AI prompt helper</summary>
-          <div class="composer-ai-body">
-            <p class="hint">External AI only — copy this prompt into ChatGPT / Claude / Gemini, paste the output back here, then click "Insert into body".</p>
-            <div class="row gap wrap">
-              <button type="button" class="btn small primary" id="composer-ai-copy">📋 Copy prompt</button>
-              <label class="composer-ai-variants">
-                Variants
-                <input id="composer-ai-variants" type="number" min="1" max="5" value="1" />
-              </label>
-              <label class="composer-ai-words">
-                Words
-                <input id="composer-ai-words" type="text" value="300-800" placeholder="300-800" />
-              </label>
-            </div>
-            <textarea id="composer-ai-paste" rows="4" placeholder="Paste the AI's response here. The composer auto-extracts Title: and Body: lines."></textarea>
-            <div class="row gap">
-              <button type="button" class="btn small" id="composer-ai-insert-replace" title="Replace title + body">Replace title + body</button>
-              <button type="button" class="btn small ghost" id="composer-ai-insert-append" title="Append to body, keep title">Append to body</button>
-            </div>
-          </div>
-        </details>
-
-        <!-- Targets section -->
-        <section class="composer-targets" aria-label="Targets">
-          <header class="composer-targets-head">
-            <h3>Targets</h3>
-            <div class="composer-mode-toggle" role="radiogroup" aria-label="Body mode">
-              <button type="button" class="chip active" data-composer-mode="single" role="radio" aria-checked="true" title="Same body for every target">Same body for all</button>
-              <button type="button" class="chip" data-composer-mode="per-target" role="radio" aria-checked="false" title="Each target gets its own editable copy">Edit per target</button>
-            </div>
-          </header>
-          <p class="hint">First checked target is the <strong>seed</strong> (1st post). The rest are crossposts. Open submit URL → Reddit submit page opens with title + body prefilled → review &amp; click Post → paste the resulting URL back here to track.</p>
-          <p class="hint composer-mobile-hint">📱 <strong>Reddit mobile app users:</strong> the app's body editor is rich-text-only and won't render markdown. Tap <strong>📋 Body</strong> on a target row (or <strong>Copy as rich text</strong> above) before <strong>Open submit</strong>, switch to the Reddit app, and paste in the body field — formatting carries through.</p>
-          <!-- Selection helpers + sub-pool sources. Three quick selectors:
-                 All       check every row (also auto-promotes a seed)
-                 None      uncheck everything (clears the seed too)
-                 Unposted  check only rows NOT yet marked posted, so
-                           a partially-completed crosspost run resumes
-                           cleanly without reposting where you've
-                           already submitted. -->
-          <div class="composer-targets-actions">
-            <div class="composer-targets-select" role="group" aria-label="Bulk select targets">
-              <span class="composer-targets-select-label">Select:</span>
-              <button type="button" class="btn small ghost" id="composer-targets-all" title="Check every target">All</button>
-              <button type="button" class="btn small ghost" id="composer-targets-none" title="Uncheck everything">None</button>
-              <button type="button" class="btn small ghost" id="composer-targets-unposted" title="Check only the targets you haven't marked posted yet">Unposted only</button>
-              <span class="composer-targets-count" id="composer-targets-count" aria-live="polite"></span>
-            </div>
-            <button type="button" class="btn small ghost" id="composer-targets-from-recommended">+ From recommended</button>
-            <button type="button" class="btn small ghost" id="composer-targets-from-active">+ From active subs</button>
-            <input id="composer-targets-add" type="text" placeholder="r/SubName to add…" autocomplete="off" />
-            <button type="button" class="btn small" id="composer-targets-add-btn">Add</button>
-          </div>
-          <div id="composer-targets-list" class="composer-targets-list"></div>
-        </section>
-
-        <footer class="composer-footer">
-          <button type="button" class="btn ghost small" id="composer-clear-draft">Clear draft</button>
-          <span class="spacer"></span>
-          <span id="composer-saved-meta" class="meta hint"></span>
-        </footer>
+    <div class="modal-body">
+      <p class="modal-hint">Move campaigns, subs and preferences to another device. No server, no account — your data lives in the link or file.</p>
+      <div class="sync-actions">
+        <button id="sync-copy-link" type="button" class="btn small primary">📋 Copy share link</button>
+        <button id="sync-export-json" type="button" class="btn small">⤓ Download JSON</button>
+        <button id="sync-copy-json" type="button" class="btn small">📋 Copy JSON</button>
+        <button id="sync-show-import" type="button" class="btn small ghost">⤴ Import…</button>
       </div>
-  </aside>
-  <div id="composer-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
-
-  <!-- Session modal: cross-device sync. Toggled by #session-toggle in the topbar. -->
-  <div id="session-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="session-modal-title">
-    <div class="modal-backdrop" data-action="close-session-modal"></div>
-    <div class="modal-card" role="document">
-      <header class="modal-header">
-        <h2 id="session-modal-title">Sync session</h2>
-        <button type="button" class="btn ghost small" data-action="close-session-modal" aria-label="Close session panel">×</button>
-      </header>
-      <div class="modal-body">
-        <p class="modal-hint">Move campaigns, subs &amp; prefs to another device. No server, no account — your data lives in the link or file.</p>
-        <div class="sync-actions">
-          <button id="sync-copy-link" type="button" class="btn small primary">📋 Copy share link</button>
-          <button id="sync-export-json" type="button" class="btn small">⤓ Download JSON</button>
-          <button id="sync-copy-json" type="button" class="btn small">📋 Copy JSON</button>
-          <button id="sync-show-import" type="button" class="btn small ghost">⤴ Import…</button>
+      <div id="sync-status" class="meta"></div>
+      <div id="sync-import-panel" hidden>
+        <textarea id="sync-import-text" rows="4" placeholder="Paste a share link OR a session JSON blob here…"></textarea>
+        <div class="sync-import-actions">
+          <label class="btn small ghost" for="sync-import-file">⤓ Pick file</label>
+          <input id="sync-import-file" type="file" accept="application/json,.json" hidden />
+          <span class="spacer"></span>
+          <label class="sync-merge-label" title="Merge keeps existing campaigns and adds new ones. Replace wipes current state first.">
+            <input id="sync-import-merge" type="checkbox" checked /> Merge
+          </label>
+          <button id="sync-import-apply" type="button" class="btn small primary">Apply</button>
         </div>
-        <div id="sync-status" class="meta"></div>
-        <div id="sync-import-panel" hidden>
-          <textarea id="sync-import-text" rows="4" placeholder="Paste a share link OR a session JSON blob here…"></textarea>
-          <div class="sync-import-actions">
-            <label class="btn small ghost" for="sync-import-file">⤓ Pick file</label>
-            <input id="sync-import-file" type="file" accept="application/json,.json" hidden />
-            <span class="spacer"></span>
-            <label class="sync-merge-label" title="Merge keeps existing campaigns + adds new ones. Replace wipes current state first.">
-              <input id="sync-import-merge" type="checkbox" checked /> Merge
-            </label>
-            <button id="sync-import-apply" type="button" class="btn small primary">Apply</button>
-          </div>
-          <div id="sync-import-status" class="meta" hidden></div>
-        </div>
+        <div id="sync-import-status" class="meta" hidden></div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Generic sidebar overlay used by campaign-hub tile clicks.
-       Title + body are filled in per-open by Sidebar.open().
-       The composer has its own dedicated sidebar (#composer-sidebar)
-       below because it owns persistent state (composerState +
-       direct-bound input listeners) that mustn't be wiped between
-       opens. -->
-  <div id="section-sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="section-sidebar-title" hidden>
-    <header class="sidebar-header">
-      <div>
-        <h2 class="sidebar-title" id="section-sidebar-title" data-sidebar-title>Section</h2>
-        <div class="sidebar-subtitle" data-sidebar-subtitle hidden></div>
+<!-- Media lightbox for post thumbnails -->
+<div id="media-preview" class="media-preview" hidden role="dialog" aria-modal="true" aria-label="Media preview">
+  <button class="media-preview-close" type="button" aria-label="Close preview" data-action="close-media-preview">×</button>
+  <div class="media-preview-frame" id="media-preview-frame"></div>
+</div>
+
+<!-- Composer sidebar. Owns persistent state, so Sidebar.close does not
+     wipe its body. -->
+<aside id="composer-sidebar" class="sidebar sidebar-wide" hidden role="dialog" aria-modal="true" aria-labelledby="composer-modal-title">
+  <header class="sidebar-header">
+    <div>
+      <h2 class="sidebar-title" id="composer-modal-title">Compose &amp; cross-post</h2>
+      <div class="sidebar-subtitle" id="composer-context" hidden></div>
+    </div>
+    <div class="sidebar-actions">
+      <button type="button" class="sidebar-close" data-sidebar-close aria-label="Close composer">×</button>
+    </div>
+  </header>
+  <div class="sidebar-body composer-body">
+
+    <section class="composer-editor" aria-label="Editor">
+      <div class="composer-pane-toggle only-mobile" role="tablist" aria-label="Editor pane">
+        <button type="button" class="chip active" data-composer-pane="source" role="tab" aria-selected="true">Source</button>
+        <button type="button" class="chip" data-composer-pane="preview" role="tab" aria-selected="false">Preview</button>
       </div>
-      <div class="sidebar-actions">
-        <button type="button" class="sidebar-close" data-sidebar-close aria-label="Close">×</button>
+
+      <div class="composer-title-row">
+        <label for="composer-title" class="group-label">Title</label>
+        <input id="composer-title" type="text" maxlength="320" autocomplete="off" placeholder="Hook in the first 8-10 words…" />
+        <span class="composer-counter" id="composer-title-counter" aria-live="polite">0 / 300</span>
       </div>
-    </header>
-    <div class="sidebar-body" data-sidebar-body></div>
+
+      <div class="composer-toolbar" role="toolbar" aria-label="Markdown formatting">
+        <button type="button" class="cm-btn" data-composer-action="bold" title="Bold (**text**)" aria-label="Bold"><strong>B</strong></button>
+        <button type="button" class="cm-btn" data-composer-action="italic" title="Italic (*text*)" aria-label="Italic"><em>I</em></button>
+        <button type="button" class="cm-btn" data-composer-action="strike" title="Strikethrough (~~text~~)" aria-label="Strikethrough"><span style="text-decoration:line-through">S</span></button>
+        <span class="cm-sep" aria-hidden="true"></span>
+        <button type="button" class="cm-btn" data-composer-action="h1" title="Header 1" aria-label="Header 1">H1</button>
+        <button type="button" class="cm-btn" data-composer-action="h2" title="Header 2" aria-label="Header 2">H2</button>
+        <button type="button" class="cm-btn" data-composer-action="h3" title="Header 3" aria-label="Header 3">H3</button>
+        <span class="cm-sep" aria-hidden="true"></span>
+        <button type="button" class="cm-btn" data-composer-action="link" title="Link" aria-label="Link">🔗</button>
+        <button type="button" class="cm-btn" data-composer-action="image" title="Image" aria-label="Image">🖼️</button>
+        <button type="button" class="cm-btn" data-composer-action="quote" title="Blockquote" aria-label="Blockquote">❝</button>
+        <button type="button" class="cm-btn" data-composer-action="ul" title="Bullet list" aria-label="Bullet list">•</button>
+        <button type="button" class="cm-btn" data-composer-action="ol" title="Numbered list" aria-label="Numbered list">1.</button>
+        <button type="button" class="cm-btn" data-composer-action="code" title="Inline code" aria-label="Inline code">&lt;/&gt;</button>
+        <button type="button" class="cm-btn" data-composer-action="codeblock" title="Fenced code block" aria-label="Code block">▦</button>
+        <button type="button" class="cm-btn" data-composer-action="table" title="Insert table" aria-label="Insert table">⊞</button>
+        <button type="button" class="cm-btn" data-composer-action="hr" title="Horizontal rule" aria-label="Horizontal rule">―</button>
+        <button type="button" class="cm-btn" data-composer-action="spoiler" title="Reddit spoiler (&gt;!text!&lt;)" aria-label="Reddit spoiler">⚫</button>
+      </div>
+
+      <div class="composer-split">
+        <div class="composer-source-pane" data-composer-pane-content="source">
+          <textarea id="composer-body" rows="20" placeholder="Write your campaign post in Reddit-flavored markdown…&#10;&#10;Hook in the first 2 sentences. Neutral CTA at the end.&#10;Use the toolbar above for formatting."></textarea>
+          <div class="composer-counter-row">
+            <span class="composer-counter" id="composer-body-counter" aria-live="polite">0 / 40000</span>
+            <span class="composer-hint" id="composer-body-hint"></span>
+            <button type="button" class="btn small ghost composer-copy-rich" id="composer-copy-rich"
+                    title="Copy this body as rich text. Paste into Reddit's mobile app body field to keep formatting.">📋 Copy as rich text</button>
+          </div>
+        </div>
+        <div class="composer-preview-pane" data-composer-pane-content="preview">
+          <div class="composer-preview-label">Preview <span class="hint">(rendered as Reddit will show it)</span></div>
+          <div id="composer-preview" class="composer-preview" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <div class="composer-extras">
+        <label class="composer-extra-row">
+          <input type="checkbox" id="composer-link-mode" />
+          <span>Link post (selftext disabled — body is replaced by URL)</span>
+        </label>
+        <div class="composer-extra-row">
+          <label class="group-label" for="composer-link-url">URL (link post)</label>
+          <input id="composer-link-url" type="url" autocomplete="off" placeholder="https://example.org" />
+        </div>
+        <div class="composer-extra-row">
+          <label class="group-label" for="composer-image-url">Image URL (embeds in body)</label>
+          <input id="composer-image-url" type="url" autocomplete="off" placeholder="https://i.imgur.com/abc.jpg" />
+          <button type="button" class="btn small ghost" id="composer-image-insert" title="Insert as ![alt](url) at the cursor">Insert as markdown</button>
+        </div>
+        <div class="composer-extra-row composer-image-drop" id="composer-image-drop">
+          <label class="group-label" for="composer-image-file">Local image</label>
+          <input id="composer-image-file" type="file" accept="image/*" />
+          <span class="composer-hint" id="composer-image-status">No image attached. Reddit's submit URL cannot carry image bytes — we offer a clipboard-copy button per target so you paste it after the submit page opens.</span>
+          <div id="composer-image-preview" class="composer-image-preview" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="composer-ai">
+      <summary>AI prompt helper</summary>
+      <div class="composer-ai-body">
+        <p class="hint">External AI only — copy this prompt into ChatGPT / Claude / Gemini, paste the output back here, then insert it into the body.</p>
+        <div class="row gap wrap">
+          <button type="button" class="btn small primary" id="composer-ai-copy">📋 Copy prompt</button>
+          <label class="composer-ai-variants">Variants <input id="composer-ai-variants" type="number" min="1" max="5" value="1" /></label>
+          <label class="composer-ai-words">Words <input id="composer-ai-words" type="text" value="300-800" placeholder="300-800" /></label>
+        </div>
+        <textarea id="composer-ai-paste" rows="4" placeholder="Paste the AI's response here. The composer auto-extracts Title: and Body: lines."></textarea>
+        <div class="row gap">
+          <button type="button" class="btn small" id="composer-ai-insert-replace">Replace title + body</button>
+          <button type="button" class="btn small ghost" id="composer-ai-insert-append">Append to body</button>
+        </div>
+      </div>
+    </details>
+
+    <section class="composer-targets" aria-label="Targets">
+      <header class="composer-targets-head">
+        <h3>Targets</h3>
+        <div class="composer-mode-toggle" role="radiogroup" aria-label="Body mode">
+          <button type="button" class="chip active" data-composer-mode="single" role="radio" aria-checked="true" title="Same body for every target">Same body for all</button>
+          <button type="button" class="chip" data-composer-mode="per-target" role="radio" aria-checked="false" title="Each target gets its own editable copy">Edit per target</button>
+        </div>
+      </header>
+      <p class="hint">First checked target is the <strong>seed</strong> (1st post); the rest are crossposts. Open submit URL → Reddit opens with title and body prefilled → review and post → paste the resulting URL back here to track.</p>
+      <p class="hint composer-mobile-hint">📱 <strong>Reddit mobile app users:</strong> the app's body editor is rich-text-only and will not render markdown. Tap <strong>📋 Body</strong> on a target row before <strong>Open submit</strong>, then paste in the body field.</p>
+      <div class="composer-targets-actions">
+        <div class="composer-targets-select" role="group" aria-label="Bulk select targets">
+          <span class="composer-targets-select-label">Select:</span>
+          <button type="button" class="btn small ghost" id="composer-targets-all">All</button>
+          <button type="button" class="btn small ghost" id="composer-targets-none">None</button>
+          <button type="button" class="btn small ghost" id="composer-targets-unposted">Unposted only</button>
+          <span class="composer-targets-count" id="composer-targets-count" aria-live="polite"></span>
+        </div>
+        <button type="button" class="btn small ghost" id="composer-targets-from-recommended">+ From recommended</button>
+        <button type="button" class="btn small ghost" id="composer-targets-from-active">+ From active subs</button>
+        <input id="composer-targets-add" type="text" placeholder="r/SubName to add…" autocomplete="off" />
+        <button type="button" class="btn small" id="composer-targets-add-btn">Add</button>
+      </div>
+      <div id="composer-targets-list" class="composer-targets-list"></div>
+    </section>
+
+    <footer class="composer-footer">
+      <button type="button" class="btn ghost small" id="composer-clear-draft">Clear draft</button>
+      <span class="spacer"></span>
+      <span id="composer-saved-meta" class="meta hint"></span>
+    </footer>
   </div>
-  <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
+</aside>
+<div id="composer-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-  <!-- Floating "back to top" button. Visible after scrolling past
-       the first viewport. Hidden while a sidebar is open. -->
-  <button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top" title="Back to top">↑</button>
+<!-- Generic sidebar used for drill-downs that would otherwise bury the
+     page in a long scroll. -->
+<div id="section-sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="section-sidebar-title" hidden>
+  <header class="sidebar-header">
+    <div>
+      <h2 class="sidebar-title" id="section-sidebar-title" data-sidebar-title>Section</h2>
+      <div class="sidebar-subtitle" data-sidebar-subtitle hidden></div>
+    </div>
+    <div class="sidebar-actions">
+      <button type="button" class="sidebar-close" data-sidebar-close aria-label="Close">×</button>
+    </div>
+  </header>
+  <div class="sidebar-body" data-sidebar-body></div>
+</div>
+<div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-  <!-- Vendored markdown renderer for the composer (~32 KB).
-       Bundled rather than CDN'd so the dashboard stays a true static
-       site and the SW can pre-cache it for offline composition. -->
-  <script src="./vendor/marked.min.js?v=20260519d"></script>
+<script src="./vendor/marked.min.js?v=20260726"></script>
 
-  <script src="./js/util.js?v=20260519d"></script>
-  <script src="./js/sync.js?v=20260519d"></script>
-  <script src="./js/reddit.js?v=20260519d"></script>
-  <script src="./js/postcache.js?v=20260519d"></script>
-  <script src="./js/seeds.js?v=20260519d"></script>
-  <script src="./js/analysis.js?v=20260519d"></script>
-  <script src="./js/charts.js?v=20260519d"></script>
-  <script src="./js/campaigns.js?v=20260519d"></script>
-  <script src="./js/sidebar.js?v=20260519d"></script>
-  <script src="./js/composer.js?v=20260519d"></script>
-  <script src="./js/ui.js?v=20260519d"></script>
-  <script src="./js/app.js?v=20260519d"></script>
-  <!-- Service Worker registration (PR 7). Caches static assets for
-       offline use + stale-while-revalidate so the dashboard boots
-       instantly on repeat visits even with no network. Skipped on
-       file:// to avoid SecurityError when running locally. -->
-  <script>
-    (function() {
-      if (!("serviceWorker" in navigator)) return;
-      if (location.protocol === "file:") return;
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch((err) => {
-          console.warn("[sw] registration failed:", err && err.message);
-        });
+<script src="./js/dom.js?v=20260726"></script>
+<script src="./js/util.js?v=20260726"></script>
+<script src="./js/state.js?v=20260726"></script>
+<script src="./js/router.js?v=20260726"></script>
+<script src="./js/sync.js?v=20260726"></script>
+<script src="./js/reddit.js?v=20260726"></script>
+<script src="./js/postcache.js?v=20260726"></script>
+<script src="./js/subindex.js?v=20260726"></script>
+<script src="./js/seeds.js?v=20260726"></script>
+<script src="./js/analysis.js?v=20260726"></script>
+<script src="./js/discovery.js?v=20260726"></script>
+<script src="./js/charts.js?v=20260726"></script>
+<script src="./js/campaigns.js?v=20260726"></script>
+<script src="./js/sidebar.js?v=20260726"></script>
+<script src="./js/composer.js?v=20260726"></script>
+<script src="./js/ui.js?v=20260726"></script>
+<script src="./js/views/dashboard.js?v=20260726"></script>
+<script src="./js/views/campaign.js?v=20260726"></script>
+<script src="./js/views/communities.js?v=20260726"></script>
+<script src="./js/views/posts.js?v=20260726"></script>
+<script src="./js/demo.js?v=20260726"></script>
+<script src="./js/app.js?v=20260726"></script>
+
+<script>
+  (function () {
+    if (!("serviceWorker" in navigator)) return;
+    if (location.protocol === "file:") return;
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch((err) => {
+        console.warn("[sw] registration failed:", err && err.message);
       });
-    })();
-  </script>
+    });
+  })();
+</script>
 </body>
 </html>

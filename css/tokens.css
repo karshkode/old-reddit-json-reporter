@@ -1,0 +1,357 @@
+/* =====================================================================
+ * DESIGN TOKENS
+ * ---------------------------------------------------------------------
+ * Single source of truth for colour, space, type, radius, elevation and
+ * motion. Everything downstream (base.css, shell.css, styles.css and the
+ * Chart.js theme bridge in js/charts.js) reads these variables, so a
+ * palette change here propagates through the whole app — including the
+ * canvases, because Charts.theme() calls getComputedStyle on
+ * document.documentElement at render time.
+ *
+ * THEMING
+ * Themes are driven by [data-theme] on <html>, set by js/theme.js from
+ * the persisted preference. `system` mirrors prefers-color-scheme. The
+ * previous build was media-query-only, so users could not override their
+ * OS setting; the attribute lets them.
+ * ===================================================================== */
+
+:root {
+  /* ---- Spacing scale (4px base) ---- */
+  --s-0: 0;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 32px;
+  --s-8: 48px;
+
+  /* ---- Type scale ---- */
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --fs-3xl: 34px;
+
+  --lh-tight: 1.2;
+  --lh-normal: 1.5;
+
+  --fw-normal: 450;
+  --fw-medium: 550;
+  --fw-bold: 680;
+  --fw-black: 780;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Inter, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* ---- Radii ---- */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius: 13px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  /* ---- Motion ---- */
+  --dur-fast: 110ms;
+  --dur: 180ms;
+  --dur-slow: 320ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- Focus ---- */
+  --focus-ring: 2px solid var(--accent);
+
+  /* ---- Layout ---- */
+  --rail-w: 220px;
+  --rail-w-compact: 68px;
+  --topbar-h: 58px;
+  --content-max: 1560px;
+
+  /* ---- Safe areas (iOS notch / home indicator) ---- */
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* =====================================================================
+ * DARK PALETTE (default)
+ * ===================================================================== */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces, back to front */
+  --bg: #0a0c11;
+  --bg-elev: #12151d;
+  --bg-elev-2: #1a1f2b;
+  --bg-elev-3: #232936;
+  --bg-inset: #0d1016;
+
+  --border: #232a38;
+  --border-soft: #1a202c;
+  --border-strong: #333d52;
+
+  --text: #e8edf7;
+  --text-dim: #9ba7bf;
+  --text-mute: #6b7791;
+
+  /* Brand + semantics */
+  --accent: #ff5c2b;
+  --accent-2: #ffa14d;
+  --accent-soft: rgba(255, 92, 43, 0.14);
+  --accent-ring: rgba(255, 92, 43, 0.32);
+  --accent-contrast: #ffffff;
+
+  --good: #34d399;
+  --good-soft: rgba(52, 211, 153, 0.14);
+  --bad: #f87171;
+  --bad-soft: rgba(248, 113, 113, 0.14);
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.14);
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.14);
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.52);
+
+  /* Chrome */
+  --scrim: rgba(4, 6, 10, 0.68);
+  --skeleton-base: #1a1f2b;
+  --skeleton-shine: #262d3d;
+}
+
+/* =====================================================================
+ * LIGHT PALETTE
+ * ===================================================================== */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f4f6fb;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eef1f7;
+  --bg-elev-3: #e4e9f2;
+  --bg-inset: #f8fAfd;
+
+  --border: #e0e5ef;
+  --border-soft: #edf0f6;
+  --border-strong: #c3ccdd;
+
+  --text: #131a2a;
+  --text-dim: #4d5972;
+  --text-mute: #78829a;
+
+  --accent: #e8471a;
+  --accent-2: #f5842c;
+  --accent-soft: rgba(232, 71, 26, 0.1);
+  --accent-ring: rgba(232, 71, 26, 0.26);
+  --accent-contrast: #ffffff;
+
+  --good: #0f9d69;
+  --good-soft: rgba(15, 157, 105, 0.12);
+  --bad: #d63d3d;
+  --bad-soft: rgba(214, 61, 61, 0.12);
+  --warn: #b57608;
+  --warn-soft: rgba(181, 118, 8, 0.14);
+  --info: #2b6fd6;
+  --info-soft: rgba(43, 111, 214, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(24, 36, 66, 0.07);
+  --shadow: 0 3px 14px rgba(24, 36, 66, 0.08);
+  --shadow-lg: 0 20px 48px rgba(24, 36, 66, 0.16);
+
+  --scrim: rgba(20, 28, 48, 0.42);
+  --skeleton-base: #e7ebf3;
+  --skeleton-shine: #f3f6fa;
+}
+
+/* `system` resolves against the OS. Kept as an explicit block rather
+ * than a bare media query so the attribute always wins when the user
+ * has made a choice. */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+
+    --bg: #f4f6fb;
+    --bg-elev: #ffffff;
+    --bg-elev-2: #eef1f7;
+    --bg-elev-3: #e4e9f2;
+    --bg-inset: #f8fafd;
+
+    --border: #e0e5ef;
+    --border-soft: #edf0f6;
+    --border-strong: #c3ccdd;
+
+    --text: #131a2a;
+    --text-dim: #4d5972;
+    --text-mute: #78829a;
+
+    --accent: #e8471a;
+    --accent-2: #f5842c;
+    --accent-soft: rgba(232, 71, 26, 0.1);
+    --accent-ring: rgba(232, 71, 26, 0.26);
+
+    --good: #0f9d69;
+    --good-soft: rgba(15, 157, 105, 0.12);
+    --bad: #d63d3d;
+    --bad-soft: rgba(214, 61, 61, 0.12);
+    --warn: #b57608;
+    --warn-soft: rgba(181, 118, 8, 0.14);
+    --info: #2b6fd6;
+    --info-soft: rgba(43, 111, 214, 0.12);
+
+    --shadow-sm: 0 1px 2px rgba(24, 36, 66, 0.07);
+    --shadow: 0 3px 14px rgba(24, 36, 66, 0.08);
+    --shadow-lg: 0 20px 48px rgba(24, 36, 66, 0.16);
+
+    --scrim: rgba(20, 28, 48, 0.42);
+    --skeleton-base: #e7ebf3;
+    --skeleton-shine: #f3f6fa;
+  }
+}
+
+/* =====================================================================
+ * RESET / BASE ELEMENTS
+ * ===================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  padding-bottom: var(--safe-bottom);
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0 0 var(--s-3);
+}
+p:last-child {
+  margin-bottom: 0;
+}
+
+a {
+  color: var(--info);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+code,
+kbd {
+  font-family: var(--font-mono);
+  background: var(--bg-elev-2);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  font-size: 0.9em;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--s-4) 0;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Scrollbars — thin and theme-aware rather than the browser default,
+ * which reads as a light-mode artefact on the dark palette. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visibility helpers used across the shell. */
+.only-mobile {
+  display: none;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

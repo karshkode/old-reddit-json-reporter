@@ -1,0 +1,585 @@
+/* =====================================================================
+ * VIEW COMPOSITION
+ * ---------------------------------------------------------------------
+ * Layout for the four destinations, built from the primitives in
+ * base.css. Nothing here defines a colour or a size directly — it is all
+ * tokens — so retheming stays a tokens.css edit.
+ * ===================================================================== */
+
+/* =====================================================================
+   CAMPAIGN LIST
+   ===================================================================== */
+
+.campaign-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--s-3);
+}
+
+.campaign-tile {
+  appearance: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s-4);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.campaign-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.campaign-tile:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.campaign-tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.campaign-tile-name {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.01em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.campaign-tile-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+}
+.campaign-tile-stats strong {
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.campaign-tile-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.campaign-tile-subs {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--s-2);
+  overflow-wrap: anywhere;
+}
+
+/* =====================================================================
+   CAMPAIGN WORKSPACE
+   ===================================================================== */
+
+.campaign-workspace-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-4);
+}
+.campaign-workspace-head > .btn {
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+.campaign-workspace-title {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.campaign-workspace-title h2 {
+  font-size: var(--fs-2xl);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.campaign-workspace-title .meta {
+  margin-top: 2px;
+}
+.campaign-workspace-head .card-actions {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.campaign-goalbars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s-3);
+  margin: var(--s-3) 0;
+}
+.campaign-goalbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.campaign-goalbar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+}
+.campaign-goalbar-head strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Only the selected section is in the document flow; the rail above
+ * switches between them. */
+.campaign-section,
+.communities-section {
+  display: none;
+}
+.campaign-section.active,
+.communities-section.active {
+  display: block;
+  animation: view-in var(--dur) var(--ease-out);
+}
+
+/* ------------------------------------------------- Per-subreddit cards */
+
+.campaign-sub-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+}
+
+.sub-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.sub-card .card-header {
+  margin-bottom: 0;
+}
+.sub-card-stats {
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  padding: var(--s-2) 0;
+}
+
+.sub-card-benchmark {
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-mute);
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.sub-card-benchmark strong {
+  color: var(--text);
+}
+.sub-card-benchmark.muted {
+  color: var(--text-dim);
+}
+
+.sub-card-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-3);
+}
+/* One panel gets the full card width rather than being stranded in a
+ * half-width column with dead space beside it. */
+.sub-card-charts.single {
+  grid-template-columns: 1fr;
+}
+@media (max-width: 560px) {
+  .sub-card-charts {
+    grid-template-columns: 1fr;
+  }
+  .campaign-sub-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-panel-title {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.chart-panel-caption {
+  margin-top: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+.chart-panel-caption strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-card-best {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--good);
+  background: color-mix(in srgb, var(--good) 7%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--fs-sm);
+}
+.sub-card-best a {
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+/* ------------------------------------------------------ Campaign posts */
+
+.campaign-posts {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* =====================================================================
+   COMMUNITIES
+   ===================================================================== */
+
+.sub-search {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sub-search input[type="search"],
+.sub-search input[type="text"] {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.sub-result-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: var(--s-1);
+}
+
+.sub-result-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sub-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.sub-result:last-child {
+  border-bottom: 0;
+}
+
+.sub-result-main {
+  min-width: 0;
+}
+.sub-result-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.sub-result-name {
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-md);
+  color: var(--text);
+  text-decoration: none;
+}
+.sub-result-name:hover {
+  color: var(--accent);
+}
+.sub-result-desc {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+.sub-result-note {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.sub-result-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-1);
+  flex: 0 0 auto;
+}
+
+/* Similar-communities drawer, spanning both result columns. */
+.sub-similar {
+  grid-column: 1 / -1;
+  border-left: 2px solid var(--accent-soft);
+  padding: var(--s-2) 0 var(--s-2) var(--s-3);
+  margin-top: var(--s-1);
+}
+.sub-similar-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+.sub-similar-head .hint {
+  flex: 1 1 100%;
+  order: 3;
+}
+.sub-similar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sub-similar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: 4px 0;
+}
+.ssr-main {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.ssr-sources {
+  display: inline-flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.ssr-terms {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.ssr-terms code {
+  font-size: var(--fs-xs);
+}
+
+/* ----------------------------------------------------------- Catalog */
+
+.catalog-bundles {
+  margin-bottom: var(--s-4);
+}
+.catalog-bundle-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-2);
+}
+.catalog-bundle-row {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.catalog-bundle {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.catalog-bundle:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+}
+.catalog-bundle:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.catalog-bundle-label {
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-sm);
+}
+.catalog-bundle-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--s-3);
+}
+.catalog-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.catalog-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.catalog-card-head h3 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+}
+.catalog-card-head .hint {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  margin-top: 2px;
+}
+.catalog-card-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.catalog-card-subs .chip {
+  font-size: var(--fs-xs);
+  padding: 3px 8px;
+}
+
+/* ------------------------------------------------------- Loaded subs */
+
+.loaded-subs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--s-2);
+}
+.loaded-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  position: relative;
+}
+.loaded-sub.off {
+  opacity: 0.55;
+}
+.loaded-sub-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  margin: 0;
+}
+.loaded-sub-name {
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+.loaded-sub-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  padding-right: 64px;
+}
+.loaded-sub .btn.tiny {
+  position: absolute;
+  right: var(--s-2);
+  bottom: var(--s-2);
+}
+
+/* =====================================================================
+   DISCOVERY — sphere picker on the campaign targeting section
+   ===================================================================== */
+
+.sphere-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding-top: var(--s-2);
+}
+.sphere-picker .group-label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.sphere-picker-selects {
+  display: flex;
+  gap: var(--s-1);
+  flex-wrap: wrap;
+}
+.sphere-picker-selects select {
+  font-size: var(--fs-sm);
+  padding: 5px var(--s-2);
+}
+.sphere-suggestions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* Cross-post submit link on discovery candidates. Info-blue so it reads
+ * as "leave for Reddit" rather than competing with the orange add CTA. */
+.btn.submit-link {
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+  color: var(--info);
+}
+.btn.submit-link:hover {
+  background: color-mix(in srgb, var(--info) 20%, transparent);
+  border-color: var(--info);
+  color: var(--text);
+}
+
+/* =====================================================================
+   MISC
+   ===================================================================== */
+
+.muted {
+  color: var(--text-dim);
+}
+
+/* The escape hatch out of demo mode, inline in the action banner. */
+.demo-badge {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.demo-badge:hover {
+  color: var(--text);
+}
+
+/* Freeze the page behind an open sheet so mobile does not scroll the
+ * backdrop while the settings sheet is up. */
+body.sheet-open {
+  overflow: hidden;
+}

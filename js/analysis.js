@@ -113,6 +113,13 @@
     "tomorrow", "people", "thing", "things", "way", "ways",
   ]);
 
+  /* SubIndex keeps the larger, more carefully pruned stoplist because it
+   * has to survive subreddit sidebar boilerplate. Post titles benefit
+   * from the same exclusions — without them, calendar words like "after"
+   * and "months" surface as "overlapping keywords" in target reasoning,
+   * which reads as noise. */
+  if (window.SubIndex && SubIndex.STOP) for (const w of SubIndex.STOP) STOPWORDS.add(w);
+
   function tokenize(text) {
     return ((text || "").toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [])
       .filter((t) => !STOPWORDS.has(t) && t.length >= 3 && t.length <= 28);
@@ -486,6 +493,85 @@
       out[s] = Analysis.profile(list, { label: "r/" + s });
       out[s].subreddit = s;
     }
+    return out;
+  };
+
+  /* ============================================================
+     6b. DASHBOARD BUNDLE
+     ------------------------------------------------------------
+     Every chart-ready derivation for an arbitrary set of posts, in
+     one call. The individual analysers were always pure functions
+     over a post array, but the app only ever assembled them inline
+     inside its global re-render — which is why campaigns had tables
+     and prose while the global tabs had all the charts.
+
+     Passing a subset here (one campaign's posts, or one subreddit's
+     slice of them) yields exactly the same shape, so the same
+     renderers work at any scope.
+     ============================================================ */
+
+  Analysis.dashboard = function (posts, opts) {
+    opts = opts || {};
+    const list = posts || [];
+    const agg = Analysis.aggregate(list);
+    const sentiment = Analysis.aggregateSentiment(list);
+
+    const bundle = {
+      posts: list,
+      count: list.length,
+      agg: agg,
+      sentiment: sentiment,
+      trend: Analysis.engagementTrend(list),
+      timeline: Analysis.bucketByTimePerSub(list, { window: opts.window || "all" }),
+      histogram: Analysis.scoreHistogram(list, opts.bins || 12),
+      keywords: Analysis.extractKeywords(list, opts.keywordLimit || 30),
+    };
+
+    /* The heavier derivations are opt-out: a per-subreddit card wants
+     * charts but not a full theme clustering pass, and running themes
+     * across a dozen sub cards is the difference between an instant
+     * render and a visible stall. */
+    if (opts.themes !== false) bundle.themes = Analysis.themes(list);
+    if (opts.profile !== false) bundle.profile = Analysis.profile(list, { label: opts.label });
+    if (opts.subProfiles) bundle.subProfiles = Analysis.subredditProfiles(list);
+
+    return bundle;
+  };
+
+  /* Group posts by subreddit and build a full dashboard bundle for each
+   * one, sorted by whichever metric matters to the caller. This is what
+   * the campaign workspace uses to chart every community a campaign
+   * touched. */
+  Analysis.perSubredditDashboards = function (posts, opts) {
+    opts = opts || {};
+    const groups = new Map();
+    for (const p of posts || []) {
+      const key = (p.subreddit || "").toLowerCase();
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { name: p.subreddit, posts: [] });
+      groups.get(key).posts.push(p);
+    }
+
+    const out = [];
+    for (const [key, group] of groups.entries()) {
+      const bundle = Analysis.dashboard(group.posts, {
+        window: opts.window || "all",
+        themes: opts.themes === true,
+        label: "r/" + group.name,
+        keywordLimit: opts.keywordLimit || 12,
+        bins: opts.bins || 8,
+      });
+      bundle.subreddit = group.name;
+      bundle.key = key;
+      out.push(bundle);
+    }
+
+    const sortBy = opts.sortBy || "score";
+    out.sort((a, b) => {
+      if (sortBy === "posts") return b.count - a.count;
+      if (sortBy === "comments") return b.agg.totalComments - a.agg.totalComments;
+      return b.agg.totalScore - a.agg.totalScore;
+    });
     return out;
   };
 

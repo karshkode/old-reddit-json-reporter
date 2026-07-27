@@ -901,6 +901,48 @@
       }));
   };
 
+  /* Name-completion for the subreddit search box.
+   *
+   * /api/subreddit_autocomplete_v2 is what Reddit's own search field
+   * uses: it answers in a fraction of the time /subreddits/search takes
+   * and tolerates partial words, which is exactly what a typeahead
+   * needs. It is not documented as a public endpoint though, so a
+   * failure here is expected rather than exceptional — callers fall back
+   * to searchSubreddits. */
+  Reddit.autocompleteSubreddits = async function (query, opts) {
+    opts = opts || {};
+    const q = String(query || "").trim();
+    if (!q) return [];
+    let json;
+    try {
+      json = await fetchJson(`/api/subreddit_autocomplete_v2.json`, {
+        query: q,
+        limit: Math.min(opts.limit || 10, 25),
+        include_over_18: "false",
+        include_profiles: "false",
+        typeahead_active: "true",
+        search_query_id: "",
+      });
+    } catch (_) {
+      return [];
+    }
+    const children = (json && json.data && json.data.children) || [];
+    return children
+      .filter((c) => c && c.kind === "t5" && c.data)
+      .map((c) => ({
+        display_name: c.data.display_name,
+        name: c.data.name,
+        title: c.data.title || "",
+        public_description: c.data.public_description || "",
+        subscribers: c.data.subscribers || 0,
+        active_user_count: c.data.active_user_count || 0,
+        over18: !!c.data.over18,
+        url: c.data.url,
+        icon_img: c.data.icon_img || c.data.community_icon || "",
+        created_utc: c.data.created_utc || 0,
+      }));
+  };
+
   Reddit.fetchSubredditAbout = async function (name) {
     const sub = Util.normalizeSubName(name);
     const json = await fetchJson(`/r/${sub}/about.json`, {});
