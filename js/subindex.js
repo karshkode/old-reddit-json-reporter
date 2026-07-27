@@ -83,6 +83,10 @@
 
   SubIndex.stem = stem;
 
+  /* Exposed so the post-title tokenizer in analysis.js can share one
+   * curated list rather than drifting from this one. */
+  SubIndex.STOP = STOP;
+
   /* Split text into stemmed, stopword-filtered terms. CamelCase in
    * subreddit names is split too, so `MedicareForAll` contributes
    * `medicare` and `all` rather than one opaque token. */

@@ -113,6 +113,13 @@
     "tomorrow", "people", "thing", "things", "way", "ways",
   ]);
 
+  /* SubIndex keeps the larger, more carefully pruned stoplist because it
+   * has to survive subreddit sidebar boilerplate. Post titles benefit
+   * from the same exclusions — without them, calendar words like "after"
+   * and "months" surface as "overlapping keywords" in target reasoning,
+   * which reads as noise. */
+  if (window.SubIndex && SubIndex.STOP) for (const w of SubIndex.STOP) STOPWORDS.add(w);
+
   function tokenize(text) {
     return ((text || "").toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [])
       .filter((t) => !STOPWORDS.has(t) && t.length >= 3 && t.length <= 28);
