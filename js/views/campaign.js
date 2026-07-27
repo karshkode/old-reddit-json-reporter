@@ -403,16 +403,20 @@
     for (const sub of perSub) {
       const card = cardHost.querySelector(`[data-sub-card="${esc(sub.key)}"]`);
       if (!card) continue;
-      const timelineWrap = card.querySelector('[data-chart="timeline"]');
-      if (timelineWrap) {
-        Charts.mount(timelineWrap, {
+      const cadence = card.querySelector('[data-chart="campaign-cadence"]');
+      if (cadence) {
+        Charts.mount(cadence, {
           kind: "timeline",
           data: Analysis.bucketByTimePerSub(sub.posts, { window: win }),
           opts: { mode: "total" },
         });
       }
-      const hourWrap = card.querySelector('[data-chart="hour"]');
-      if (hourWrap) Charts.mount(hourWrap, { kind: "hourHeat", data: sub.agg });
+      const hour = card.querySelector('[data-chart="campaign-hour"]');
+      if (hour) Charts.mount(hour, { kind: "hourHeat", data: sub.agg });
+
+      const rhythm = card.querySelector('[data-chart="sub-rhythm"]');
+      const plan = (sub._charts || []).find((c) => c.kind === "sub-rhythm");
+      if (rhythm && plan) Charts.mount(rhythm, { kind: "hourHeat", data: plan.agg });
     }
   }
 
@@ -489,6 +493,9 @@
     const kw = (sub.keywords || []).slice(0, 6);
     const dir = sub.trend && sub.trend.direction;
     const best = bestPost(sub.posts);
+    /* Stashed so the mount pass below can reuse the baseline aggregate
+     * this computed rather than deriving it a second time. */
+    const charts = (sub._charts = chartPlan(sub));
 
     return `
       <div class="card sub-card" data-sub-card="${esc(sub.key)}">
@@ -512,16 +519,15 @@
 
         ${benchmarkHtml}
 
-        <div class="sub-card-charts">
-          <div class="chart-panel">
-            <div class="chart-panel-title">Posting cadence</div>
-            <div class="chart-wrap short" data-chart="timeline"><canvas></canvas></div>
-          </div>
-          <div class="chart-panel">
-            <div class="chart-panel-title">Score by hour</div>
-            <div class="chart-wrap short" data-chart="hour"><canvas></canvas></div>
-          </div>
-        </div>
+        ${charts.length ? `
+          <div class="sub-card-charts${charts.length === 1 ? " single" : ""}">
+            ${charts.map((c) => `
+              <div class="chart-panel">
+                <div class="chart-panel-title">${esc(c.title)}</div>
+                <div class="chart-wrap short" data-chart="${esc(c.kind)}"><canvas></canvas></div>
+                ${c.caption ? `<div class="chart-panel-caption">${c.caption}</div>` : ""}
+              </div>`).join("")}
+          </div>` : ""}
 
         ${best ? `
           <div class="sub-card-best">
@@ -536,6 +542,57 @@
 
   function bestPost(posts) {
     return (posts || []).slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
+  }
+
+  /* A cross-post campaign usually puts exactly one post in each sub, and
+   * a cadence line through a single point is worse than no chart at all.
+   * So the card asks what is actually answerable at this sample size:
+   * with a few posts, how the campaign moved over time; with one, how its
+   * timing lines up against the rhythm of the sub itself. */
+  const MIN_POSTS_TO_CHART = 3;
+
+  function chartPlan(sub) {
+    if (sub.count >= MIN_POSTS_TO_CHART) {
+      return [
+        { kind: "campaign-cadence", title: "Posting cadence" },
+        { kind: "campaign-hour", title: "Score by hour" },
+      ];
+    }
+
+    /* Baseline excludes the campaign's own posts. A single cross-post
+     * that outscores the sub's median tenfold would otherwise define the
+     * "peak hour" it is being compared against, and the card would
+     * cheerfully report that you posted at exactly the right time. */
+    const mine = new Set((sub.posts || []).map((p) => p.id));
+    const ambient = AppState.postsForSub(sub.subreddit).filter((p) => !mine.has(p.id));
+    if (ambient.length < 5) return [];
+
+    const agg = Analysis.aggregate(ambient);
+    const posted = (sub.posts || [])
+      .map((p) => new Date((p.created_utc || 0) * 1000).getHours())
+      .filter((h) => !isNaN(h));
+
+    let peak = -1, peakVal = -Infinity;
+    for (let h = 0; h < 24; h++) {
+      if (agg.byHour[h] > 0 && agg.avgScoreByHour[h] > peakVal) {
+        peakVal = agg.avgScoreByHour[h];
+        peak = h;
+      }
+    }
+
+    let caption = "";
+    if (posted.length) {
+      const when = posted.map(hh).join(" and ");
+      caption = peak >= 0
+        ? `You posted at <strong>${when}</strong>; the sub's other ${num(ambient.length)} loaded posts do best around <strong>${hh(peak)}</strong>.`
+        : `You posted at <strong>${when}</strong>.`;
+    }
+
+    return [{ kind: "sub-rhythm", title: `When r/${sub.subreddit} is busiest`, caption: caption, agg: agg }];
+  }
+
+  function hh(hour) {
+    return String(hour).padStart(2, "0") + ":00";
   }
 
   /* ------------------------------------------------------------------

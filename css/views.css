@@ -195,6 +195,11 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--s-3);
 }
+/* One panel gets the full card width rather than being stranded in a
+ * half-width column with dead space beside it. */
+.sub-card-charts.single {
+  grid-template-columns: 1fr;
+}
 @media (max-width: 560px) {
   .sub-card-charts {
     grid-template-columns: 1fr;
@@ -210,6 +215,16 @@
   letter-spacing: 0.06em;
   color: var(--text-dim);
   margin-bottom: 4px;
+}
+.chart-panel-caption {
+  margin-top: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+.chart-panel-caption strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .sub-card-best {
