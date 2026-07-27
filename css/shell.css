@@ -275,14 +275,19 @@
   flex: 0 0 auto;
 }
 
+/* One scrolling row rather than a wrapping block. A dozen subs is
+ * normal, and wrapped chips pushed the first card below the fold on a
+ * phone. The mask hints that there is more to the right. */
 .scopebar-chips {
   display: flex;
+  flex-wrap: nowrap;
   gap: var(--s-1);
   flex: 1 1 260px;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
   padding: 2px 0;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 .scopebar-chips::-webkit-scrollbar {
   display: none;
@@ -422,8 +427,17 @@
     display: none;
   }
 
+  /* One line, always: label, scrolling chips, Add. */
   .scopebar {
     padding: var(--s-2) var(--s-3);
+    flex-wrap: nowrap;
+    gap: var(--s-2);
+  }
+  .scopebar-label {
+    display: none;
+  }
+  .scopebar-chips {
+    flex: 1 1 auto;
   }
 
   .view-head h2 {

@@ -550,29 +550,17 @@
   color: var(--text-dim);
 }
 
-/* Persistent reminder that nothing on screen came from Reddit. Anchored
- * right so it does not land on top of the rail's footer links. */
+/* The escape hatch out of demo mode, inline in the action banner. */
 .demo-badge {
-  position: fixed;
-  right: var(--s-3);
-  bottom: calc(var(--s-2) + 22px);
-  z-index: 60;
+  display: inline-block;
+  margin-top: 2px;
   font-size: var(--fs-xs);
-  padding: 3px var(--s-2);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--info) 18%, var(--bg-elev));
-  border: 1px solid color-mix(in srgb, var(--info) 50%, transparent);
   color: var(--info);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .demo-badge:hover {
   color: var(--text);
-  border-color: var(--info);
-}
-@media (max-width: 900px) {
-  .demo-badge {
-    bottom: calc(72px + var(--safe-bottom));
-  }
 }
 
 /* Freeze the page behind an open sheet so mobile does not scroll the

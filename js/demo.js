@@ -283,15 +283,21 @@
     return map[sub.tone] || "";
   }
 
+  /* The way out of demo mode rides along inside the action banner rather
+   * than floating over the page — the banner already carries the "this
+   * is sample data" message, and a fixed badge covered content on a
+   * phone, which is exactly where the viewport is tightest. */
   function showDemoBadge() {
     if (document.getElementById("demo-badge")) return;
+    const host = document.querySelector("#action-banner .action-banner-status");
+    if (!host) return;
     const badge = document.createElement("a");
     badge.id = "demo-badge";
     badge.className = "demo-badge";
     badge.href = window.location.pathname;
-    badge.textContent = "Demo data · exit";
-    badge.title = "You are looking at bundled sample data. Click to leave demo mode.";
-    document.body.appendChild(badge);
+    badge.textContent = "Leave demo mode";
+    badge.title = "You are looking at bundled sample data. Click to fetch from Reddit instead.";
+    host.appendChild(badge);
   }
 
   Demo.maybeActivate = function () {

@@ -1534,10 +1534,6 @@
       customInput.addEventListener("change", onCustomProxyChange);
       customInput.addEventListener("blur", onCustomProxyChange);
     }
-    if (customInputMobile) {
-      customInputMobile.addEventListener("change", onCustomProxyChange);
-      customInputMobile.addEventListener("blur", onCustomProxyChange);
-    }
 
     syncCustomInputVisibility();
 
@@ -1553,14 +1549,12 @@
       const v = e.target.value;
       Reddit.setTransport(v);
       if (transportSelect && transportSelect !== e.target) transportSelect.value = v;
-      if (transportSelectMobile && transportSelectMobile !== e.target) transportSelectMobile.value = v;
       syncCustomInputVisibility();
       Reddit.clearCache();
       Util.toast(`Data source: ${v}`, "ok");
       refreshData(true);
     }
     if (transportSelect) transportSelect.addEventListener("change", onTransportChange);
-    if (transportSelectMobile) transportSelectMobile.addEventListener("change", onTransportChange);
 
     Reddit.onTransportSuccess = function (name) { state.lastTransport = name; };
 
@@ -1726,18 +1720,11 @@
     document.getElementById("time-select").value = state.timeWindow;
     document.getElementById("limit-select").value = String(state.limit);
 
-    document.getElementById("add-sub-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const input = document.getElementById("add-sub-input");
-      const name = Util.normalizeSubName(input.value);
-      if (!name) return;
-      if (!state.knownSubs.includes(name)) state.knownSubs.push(name);
-      state.activeSubs.add(name);
-      input.value = "";
-      persist();
-      renderChips();
-      markPending(`Added r/${name}`);
-    });
+    /* Wired here rather than in the Communities view because that view
+     * mounts lazily, and this button lives in the always-visible scope
+     * bar. */
+    const scopeAdd = document.getElementById("scope-add-sub");
+    if (scopeAdd) scopeAdd.addEventListener("click", () => CommunitiesView.openSearch());
 
     const debouncedFilter = Util.debounce(() => { rerenderAll(); }, 200);
     function renderPastePreview(targetId, ids, opts) {
@@ -2048,38 +2035,6 @@
         });
       });
     });
-
-    document.querySelectorAll("#posts-table thead th.sortable").forEach((th) => {
-      th.addEventListener("click", () => {
-        const k = th.dataset.sort;
-        if (state.sortKey === k) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
-        else { state.sortKey = k; state.sortDir = (k === "title" || k === "author" || k === "id" || k === "subreddit") ? "asc" : "desc"; }
-        state.postsPage = 0;
-        rerenderAll();
-        syncMobileSort();
-      });
-    });
-
-    const mobileSort = document.getElementById("mobile-sort");
-    if (mobileSort) {
-      mobileSort.addEventListener("change", (e) => {
-        const [k, d] = e.target.value.split(":");
-        state.sortKey = k;
-        state.sortDir = d === "asc" ? "asc" : "desc";
-        rerenderAll();
-      });
-    }
-
-    function syncMobileSort() {
-      if (mobileSort) {
-        const v = `${state.sortKey}:${state.sortDir}`;
-        const has = Array.from(mobileSort.options).some((o) => o.value === v);
-        if (has) mobileSort.value = v;
-      }
-    }
-    syncMobileSort();
-
-    document.getElementById("close-detail").addEventListener("click", UI.hidePostDetail);
 
     /* Submit handler is wrapped in try/catch and renders the campaign list
      * immediately after add, *before* any await, so a slow Reddit fetch
@@ -2476,20 +2431,10 @@
       }
     }
 
-    /* Inline add-posts form + per-row remove button inside the campaign
-     * detail panel. We use event delegation on the body so the handlers
-     * survive every re-render. */
-    /* Originally these were bound to #campaign-detail-body via
-     * delegation. With the campaign-hub refactor, the same
-     * interactive elements (add-posts form, posts list, goals
-     * editor, etc.) ALSO appear inside section sidebars — the
-     * hub renders compact tiles, each tile opens a Sidebar with
-     * the section's HTML. Binding to document keeps a single
-     * matcher pipeline alive regardless of where the element
-     * actually got rendered.
-     *
-     * The selectors haven't changed; only the event-target scope. */
-    const campaignDetailBody = document.getElementById("campaign-detail-body");
+    /* Add-posts form, per-row remove, digest and goals editor inside the
+     * campaign workspace. Delegated from document rather than from the
+     * section element, because every one of these is re-rendered from
+     * scratch whenever the campaign's data changes. */
     {
       /* Live paste preview under the add-posts textarea. */
       document.addEventListener("input", (e) => {
@@ -2553,8 +2498,6 @@
         const pasteBtn = e.target.closest && e.target.closest('[data-action="add-posts-paste"]');
         const rmBtn  = e.target.closest && e.target.closest('[data-action="remove-post"]');
         const digestBtn = e.target.closest && e.target.closest('[data-action="copy-campaign-digest"]');
-        const editGoalsBtn = e.target.closest && e.target.closest('[data-action="edit-campaign-goals"]');
-        const cancelGoalsBtn = e.target.closest && e.target.closest('[data-action="cancel-edit-goals"]');
 
         if (addBtn) {
           e.preventDefault();
@@ -2625,32 +2568,6 @@
             Util.toast("Could not access clipboard. Digest in console.", "error");
             console.log("[digest]\n" + text);
           }
-          return;
-        }
-        if (editGoalsBtn) {
-          e.preventDefault();
-          /* Find the form/toolbar in either location: section
-           * sidebar (#section-sidebar) when the user is in the
-           * Settings tile, or the legacy inline campaign-detail
-           * panel for users still on the old layout. */
-          const scope = editGoalsBtn.closest("#section-sidebar, #campaign-detail-body") || document;
-          const form = scope.querySelector(".goals-edit-form");
-          const toolbar = scope.querySelector(".campaign-toolbar");
-          if (form) {
-            form.hidden = false;
-            const firstInput = form.querySelector('input[data-field="goalScore"]');
-            if (firstInput) try { firstInput.focus(); firstInput.select(); } catch (_) {}
-          }
-          if (toolbar) toolbar.classList.add("editing-goals");
-          return;
-        }
-        if (cancelGoalsBtn) {
-          e.preventDefault();
-          const scope = cancelGoalsBtn.closest("#section-sidebar, #campaign-detail-body") || document;
-          const form = scope.querySelector(".goals-edit-form");
-          const toolbar = scope.querySelector(".campaign-toolbar");
-          if (form) form.hidden = true;
-          if (toolbar) toolbar.classList.remove("editing-goals");
           return;
         }
       });
@@ -2822,52 +2739,6 @@
       refreshAllCampaignSummaries().catch(() => {});
     }
 
-
-    /* Posts tab — title search input (mirrors the global search input). */
-    const postsTitleSearch = document.getElementById("posts-title-search");
-    if (postsTitleSearch) {
-      const globalSearch = document.getElementById("search-input");
-      if (globalSearch) postsTitleSearch.value = globalSearch.value || "";
-      const debouncedTabSearch = Util.debounce(() => { rerenderLight(); }, 200);
-      postsTitleSearch.addEventListener("input", (e) => {
-        state.searchQuery = e.target.value.trim();
-        state.postsPage = 0;
-        if (globalSearch && globalSearch.value !== e.target.value) globalSearch.value = e.target.value;
-        debouncedTabSearch();
-      });
-    }
-
-    /* Posts tab — sub filter + per-page. */
-    const postsSubSel = document.getElementById("posts-sub-filter");
-    if (postsSubSel) postsSubSel.addEventListener("change", (e) => {
-      state.postsSubFilter = e.target.value || "";
-      state.postsPage = 0;
-      rerenderLight();
-    });
-    const postsPageSizeSel = document.getElementById("posts-page-size");
-    if (postsPageSizeSel) postsPageSizeSel.addEventListener("change", (e) => {
-      state.postsPageSize = e.target.value === "all" ? "all" : Number(e.target.value) || 25;
-      state.postsPage = 0;
-      rerenderLight();
-    });
-
-    /* Posts tab — Min-score chip filter (constraint, distinct from
-     * free-text search). The chips behave like a radio group: clicking
-     * any chip activates that threshold and clears the others. */
-    document.querySelectorAll('.pc-filter .chip-group [data-score-min]').forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const v = Number(chip.dataset.scoreMin || 0) || 0;
-        if (state.postsScoreMin === v) return;
-        state.postsScoreMin = v;
-        document.querySelectorAll('.pc-filter .chip-group [data-score-min]').forEach((c) => {
-          const isOn = Number(c.dataset.scoreMin || 0) === v;
-          c.classList.toggle("active", isOn);
-          c.setAttribute("aria-checked", isOn ? "true" : "false");
-        });
-        state.postsPage = 0;
-        rerenderLight();
-      });
-    });
 
     /* Section rail: pill links that smooth-scroll to a section inside
      * the current view. */
@@ -3470,10 +3341,15 @@ const bestCampaignPost = (summary.posts || [])
    * whole startup sequence. wireSyncSession() runs FIRST after bind so
    * the share-link banner + the export/import buttons get listeners
    * even if any later step throws. */
+  /* Each boot step is isolated so one failure cannot leave the page
+   * blank. Logged as an error, not a warning: a step that throws part
+   * way through takes every listener it had not reached yet with it,
+   * which is the kind of half-wired UI that is very hard to diagnose
+   * later from user reports. */
   function safeRun(label, fn) {
     try { fn(); }
     catch (err) {
-      console.warn(`[init] ${label} failed:`, err && err.message);
+      console.error(`[init] ${label} failed:`, err);
       try { Util.toast(`${label} hit an error — see console.`, "error"); } catch (_) {}
     }
   }
@@ -3514,8 +3390,13 @@ const bestCampaignPost = (summary.posts || [])
    * when knownSubs was empty and never came back. The curated bundles it
    * offered now live permanently in the Communities view, so a first-run
    * user just gets pointed there. */
+  /* An empty dashboard is a dead end, so a first-time visitor lands on
+   * the catalog instead. Demo mode is about to fill the dashboard, and a
+   * shared link names its own destination — neither should be hijacked. */
   function nudgeFirstRun() {
     if (state.knownSubs && state.knownSubs.length) return;
+    if (window.Demo && Demo.isActive()) return;
+    if (window.location.hash && window.location.hash.length > 2) return;
     Router.go("communities", {}, { replace: true });
     if (window.CommunitiesView) CommunitiesView.goToTab("catalog");
   }
@@ -3867,28 +3748,6 @@ const bestCampaignPost = (summary.posts || [])
       render();
     });
   }
-
-  /* Campaign-hub tile click delegation.
-   *
-   * Each tile renders with data-campaign-section="<id>" + data-
-   * campaign-id="<id>". Tapping it opens the section's content
-   * inside the generic #section-sidebar via Sidebar.open().
-   *
-   * Section content comes from UI.renderCampaignSection(sectionId,
-   * campaign, agg, deep). The agg + deep payloads are pulled from
-   * state.campaignSummaries which holds whatever the most recent
-   * openCampaign() resolved.
-   *
-   * Targeting is special-cased: the section renderer emits an
-   * empty hosting div, then we call UI.renderTargeting against
-   * that div post-mount so the existing pagination state machine
-   * (state.recommend.targeting.inline) picks up uniformly.
-   */
-  /* The campaign "hub" — a grid of tiles that opened each section in a
-   * sidebar — has been replaced by the campaign workspace, where the
-   * sections are inline and switch without an overlay. UI.renderCampaignSection
-   * survives and is composed directly by js/views/campaign.js.
-   */
 
   function wireBackToTop() {
     const btn = document.getElementById("back-to-top");

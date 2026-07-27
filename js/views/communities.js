@@ -89,15 +89,21 @@
 
     const token = ++searchToken;
 
-    /* Paint cached matches immediately so typing feels instant, then
-     * replace with the live results when they land. */
-    const cached = SubIndex.searchLocal(q, 8);
-    if (cached.length && opts.instant !== false) {
-      host.innerHTML = cached.map((r) => subRow(r)).join("");
-      setSearchStatus(`${cached.length} match${cached.length === 1 ? "" : "es"} from your local index · searching Reddit…`);
-    } else if (opts.instant !== false) {
-      host.innerHTML = Dom.skeleton(4);
-      setSearchStatus("Searching Reddit…");
+    /* Two passes. The first is offline — the local index plus the
+     * curated catalog — and paints immediately, so typing feels
+     * instant and the box still returns something useful when every
+     * proxy is down. The second adds whatever Reddit has to say. */
+    if (opts.instant !== false) {
+      const offline = await Discovery.searchSubreddits(q, { limit: 12, live: false });
+      if (token !== searchToken) return;
+      if (offline.length) {
+        AppState.communitiesResults = offline;
+        host.innerHTML = offline.map((r) => subRow(r.record)).join("");
+        setSearchStatus(`${offline.length} from your local index and the catalog · asking Reddit for more…`);
+      } else {
+        host.innerHTML = Dom.skeleton(4);
+        setSearchStatus("Searching Reddit…");
+      }
     }
 
     let results;
@@ -105,7 +111,7 @@
       results = await Discovery.searchSubreddits(q, { limit: 30 });
     } catch (err) {
       if (token !== searchToken) return;
-      setSearchStatus(`Search failed: ${esc((err && err.message) || err)}. The CORS proxy may be down — try another in Settings.`, "err");
+      setSearchStatus(`Reddit search failed: ${esc((err && err.message) || err)}. Results above are from your local index and the catalog — switch proxy in Settings to search Reddit itself.`, "err");
       return;
     }
     if (token !== searchToken) return;
@@ -352,6 +358,19 @@
   View.goToTab = function (tab) {
     AppState.communitiesTab = tab;
     View.render();
+  };
+
+  /* The scope bar's "+ Add" lands here rather than opening a second,
+   * dumber add-a-subreddit box: one search surface, and it is the one
+   * that can show you a community's neighbours before you commit. */
+  View.openSearch = function () {
+    Router.go("communities");
+    View.goToTab("search");
+    const input = Dom.byId("sub-search-input");
+    if (input) {
+      input.focus();
+      input.select();
+    }
   };
 
   View.mount = function () {

@@ -155,32 +155,67 @@
     seniors:      ["AARP", "olderthan30", "Eldergoth"],
   };
 
-  /* ---------- Auto-detection triggers ---------- */
-  /* Map each issue sphere to a small set of trigger keywords. If the
-   * campaign profile's keywords include any trigger, the sphere is
-   * "detected" for that campaign. Conservative — better to under-detect
-   * than over-detect. */
+  /* ---------- Issue lexicons ----------
+   *
+   * These used to be a trigger table: if a campaign keyword appeared
+   * verbatim in a sphere's list, the sphere was "detected", otherwise it
+   * was invisible. js/discovery.js now treats them as the seed vocabulary
+   * for each sphere's term vector, ranking every sphere by overlap, so
+   * the lists want to be *representative of how people write about the
+   * issue* rather than a minimal set of unambiguous tokens.
+   *
+   * That changes the editing rules in two ways. Breadth helps: a term
+   * that appears in real post titles earns its place even if it is not
+   * definitional. Overlap hurts: "rent" sitting in both labor and
+   * housing used to be harmless belt-and-braces, but now it drags a
+   * union campaign toward the tenancy sphere. Each term belongs to the
+   * one issue it most identifies. */
   Seeds.SPHERE_TRIGGERS = {
-    progressive:    ["progressive", "socialist", "democrat", "leftist", "leftwing", "liberal", "abolitionist", "antifascist"],
-    movement:       ["movement", "march", "protest", "rally", "organize", "organizing", "strike", "occupy", "boycott"],
-    healthcare:     ["healthcare", "medicare", "medicaid", "insurance", "hospital", "doctor", "patient", "drug", "pharmaceutical", "premiums", "deductible"],
-    labor:          ["labor", "labour", "union", "worker", "workers", "wage", "wages", "minimum", "tenant", "rent", "employed", "unemployment", "amazon", "starbucks"],
-    voting:         ["vote", "voter", "voters", "voting", "ballot", "ballots", "election", "registration", "polling", "gerrymander", "suppression"],
-    climate:        ["climate", "environment", "environmental", "green", "ecology", "pollution", "carbon", "emissions", "fossil", "renewable"],
-    reproductive:   ["abortion", "reproductive", "roe", "wade", "planned", "parenthood", "contraception", "miscarriage", "ivf"],
-    immigration:    ["immigration", "immigrant", "asylum", "border", "deportation", "ice", "dreamer", "daca", "refugee"],
-    education:      ["education", "school", "schools", "student", "students", "loan", "loans", "teacher", "teachers", "university", "college", "tuition"],
-    housing:        ["housing", "homeless", "homelessness", "tenant", "tenants", "rent", "landlord", "evict", "evicted", "eviction", "mortgage", "rental"],
-    palestine_gaza: ["palestine", "palestinian", "gaza", "israeli", "ceasefire", "intifada", "westbank"],
-    racial_justice: ["racial", "racism", "antiracist", "blacklivesmatter", "george", "floyd", "policing", "brutality"],
-    media_news:     ["media", "press", "journalism", "propaganda", "disinformation", "censor", "censorship"],
+    progressive: ["progressive", "socialist", "socialism", "democrat", "democratic", "leftist", "leftwing", "liberal",
+      "abolitionist", "antifascist", "primary", "incumbent", "challenger", "caucus", "platform", "grassroots",
+      "canvass", "canvassing", "doorknock", "fundraising", "smalldollar", "downballot", "councilmember", "legislature"],
+    movement: ["movement", "march", "protest", "rally", "organize", "organizing", "organizer", "strike", "picket",
+      "occupy", "boycott", "walkout", "sitin", "directaction", "solidarity", "coalition", "mutualaid", "volunteer",
+      "turnout", "demonstration", "civildisobedience"],
+    healthcare: ["healthcare", "medicare", "medicaid", "singlepayer", "payer", "universal", "coverage", "insurance",
+      "insurer", "hospital", "clinic", "doctor", "nurse", "patient", "prescription", "drug", "pharmacy",
+      "pharmaceutical", "premium", "premiums", "deductible", "copay", "claim", "denial", "publicoption", "billing"],
+    labor: ["labor", "labour", "union", "unionize", "unionization", "organizing", "worker", "workers", "workplace",
+      "wage", "wages", "overtime", "scheduling", "employer", "employee", "boss", "manager", "shift", "warehouse",
+      "contract", "bargaining", "grievance", "steward", "strikefund", "unionbusting", "nlrb", "unemployment",
+      "wagetheft", "amazon", "starbucks", "layoff", "layoffs"],
+    voting: ["vote", "voter", "voters", "voting", "ballot", "ballots", "election", "elections", "registration",
+      "polling", "pollworker", "precinct", "gerrymander", "gerrymandering", "suppression", "turnout", "mailin",
+      "absentee", "earlyvoting", "signaturematch", "disenfranchise"],
+    climate: ["climate", "environment", "environmental", "green", "ecology", "pollution", "carbon", "emissions",
+      "fossil", "renewable", "solar", "wind", "grid", "utility", "electrification", "heatpump", "decarbonize",
+      "decarbonization", "netmetering", "interconnection", "drilling", "pipeline", "wildfire", "heatwave", "flooding"],
+    reproductive: ["abortion", "reproductive", "roe", "wade", "planned", "parenthood", "contraception", "contraceptive",
+      "miscarriage", "ivf", "prenatal", "maternal", "clinic", "bodilyautonomy", "trigger", "ban"],
+    immigration: ["immigration", "immigrant", "migrant", "asylum", "border", "deportation", "detention", "ice",
+      "dreamer", "daca", "refugee", "visa", "citizenship", "naturalization", "sanctuary", "raid"],
+    education: ["education", "school", "schools", "student", "students", "loan", "loans", "debt", "forgiveness",
+      "teacher", "teachers", "university", "college", "tuition", "curriculum", "schoolboard", "bookban",
+      "publicschool", "charter", "pell"],
+    housing: ["housing", "homeless", "homelessness", "tenant", "tenants", "rent", "renter", "landlord", "lease",
+      "evict", "evicted", "eviction", "mortgage", "rental", "zoning", "affordable", "stabilization", "vacancy",
+      "habitability", "repairs", "deposit", "gentrification", "nimby", "upzoning"],
+    palestine_gaza: ["palestine", "palestinian", "gaza", "israel", "israeli", "ceasefire", "intifada", "westbank",
+      "occupation", "settler", "bds", "divest", "apartheid"],
+    racial_justice: ["racial", "racism", "racist", "antiracist", "blacklivesmatter", "george", "floyd", "policing",
+      "police", "brutality", "reparations", "redlining", "segregation", "profiling", "civilrights"],
+    media_news: ["media", "press", "journalism", "journalist", "newsroom", "propaganda", "disinformation",
+      "misinformation", "censor", "censorship", "paywall", "localnews", "factcheck", "bias"],
   };
 
   Seeds.DEMOGRAPHIC_TRIGGERS = {
-    lgbtq:        ["lgbt", "lgbtq", "queer", "gay", "lesbian", "trans", "transgender", "bisexual", "nonbinary"],
-    women:        ["woman", "women", "feminist", "feminism", "girl", "girls", "mother", "mothers"],
-    bipoc:        ["black", "blacklives", "asian", "latino", "latina", "hispanic", "indigenous", "native"],
-    veterans:     ["veteran", "veterans", "soldier", "military"],
+    lgbtq: ["lgbt", "lgbtq", "queer", "gay", "lesbian", "trans", "transgender", "bisexual", "nonbinary",
+      "pronoun", "genderaffirming", "pride", "drag"],
+    women: ["woman", "women", "feminist", "feminism", "girl", "girls", "mother", "mothers", "maternity",
+      "childcare", "paygap", "harassment"],
+    bipoc: ["black", "blacklives", "asian", "latino", "latina", "latinx", "hispanic", "indigenous", "native",
+      "tribal", "immigrantcommunity", "diaspora"],
+    veterans: ["veteran", "veterans", "soldier", "military", "va", "servicemember", "deployment", "gibill"],
   };
 
   /* ---------- Helpers ---------- */

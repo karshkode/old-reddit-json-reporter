@@ -38,6 +38,10 @@
    * against this ceiling before being folded into the composite. */
   const SIM_CEILING = 0.32;
 
+  /* Below this, the best-matching sphere is indistinguishable from
+   * coincidental word overlap and no sphere is offered at all. */
+  const MIN_SPHERE_SIGNAL = 0.012;
+
   /* Terms that signal a community is in the civic / organising space at
    * all. A candidate can match a campaign's exact vocabulary by accident
    * (r/AskHistorians discussing "labor unions"); this is the sanity
@@ -82,6 +86,16 @@
     return Math.max(0, Math.min(1, x));
   }
 
+  /* The `limit` heaviest terms of a vector. */
+  function trimVector(vec, limit) {
+    const entries = Object.entries(vec);
+    if (entries.length <= limit) return vec;
+    entries.sort((a, b) => b[1] - a[1]);
+    const out = {};
+    for (let i = 0; i < limit; i++) out[entries[i][0]] = entries[i][1];
+    return out;
+  }
+
   function rescale(sim) {
     return clamp01(sim / SIM_CEILING);
   }
@@ -95,9 +109,26 @@
    * itself applied, so both are used at different weights. */
   Discovery.campaignVector = function (posts, profile) {
     const vec = {};
+    const subs = new Set();
     for (const p of posts || []) {
       SubIndex.addText(vec, p.title || "", 3);
       if (p.flair) SubIndex.addText(vec, p.flair, 1);
+      if (p.subreddit) subs.add(p.subreddit);
+    }
+
+    /* Where a campaign already posted is evidence about what it is
+     * about, and it disambiguates titles that read across two issues —
+     * "single-payer polling is at 63%" is voting vocabulary and
+     * healthcare vocabulary in one sentence, but r/MedicareForAll and
+     * r/publichealth settle the question. Weighted below the titles:
+     * a cross-post into a broad sub should not redefine the campaign. */
+    for (const name of subs) {
+      SubIndex.addText(vec, name, 1.5);
+      const record = SubIndex.get(name);
+      if (record) {
+        SubIndex.addText(vec, record.title || "", 1);
+        SubIndex.addText(vec, record.public_description || "", 0.8);
+      }
     }
     /* The profile's extracted keywords and bigrams are already
      * frequency-ranked, so folding them back in sharpens the peaks
@@ -162,7 +193,14 @@
         label: Seeds.labelOf(key),
         subs: members,
         describedCount: described,
-        vector: vec,
+        /* Trimmed to the discriminative core. A sphere accumulates one
+         * token per member name plus every word of every description,
+         * so its norm grows with membership — and because cosine divides
+         * by that norm, a big well-documented sphere would score *lower*
+         * against a short campaign than a thin one. Keeping the heaviest
+         * terms removes the long tail without losing the vocabulary that
+         * actually identifies the issue. */
+        vector: trimVector(vec, 64),
       });
     }
 
@@ -191,23 +229,30 @@
     if (!profiles.length) return [];
 
     const idf = SubIndex.buildIdf(profiles.map((s) => s.vector));
-    const ranked = profiles.map((sphere) => {
-      const sim = SubIndex.cosine(vector, sphere.vector, idf);
-      return {
-        key: sphere.key,
-        kind: sphere.kind,
-        label: sphere.label,
-        subs: sphere.subs,
-        score: sim,
-        confidence: Math.round(rescale(sim) * 100),
-        terms: SubIndex.overlapTerms(vector, sphere.vector, 5).map((t) => t.term),
-      };
-    });
+    const ranked = profiles.map((sphere) => ({
+      key: sphere.key,
+      kind: sphere.kind,
+      label: sphere.label,
+      subs: sphere.subs,
+      score: SubIndex.cosine(vector, sphere.vector, idf),
+      terms: SubIndex.overlapTerms(vector, sphere.vector, 5).map((t) => t.term),
+    }));
 
     ranked.sort((a, b) => b.score - a.score);
-    const floor = opts.minConfidence == null ? 12 : opts.minConfidence;
-    const kept = ranked.filter((s) => s.confidence >= floor);
-    return kept.slice(0, opts.limit || 8);
+
+    /* A campaign is usually a handful of post titles, so absolute cosine
+     * against a sphere stays small even for an unmistakable match. What
+     * the user needs is "how strongly does this sphere match relative to
+     * the others", so confidence is expressed against the best match —
+     * gated by an absolute floor, otherwise a campaign about nothing in
+     * the catalog would still crown a 100% winner out of noise. */
+    const best = ranked.length ? ranked[0].score : 0;
+    if (best < MIN_SPHERE_SIGNAL) return [];
+
+    for (const s of ranked) s.confidence = Math.round(clamp01(s.score / best) * 100);
+
+    const floor = opts.minConfidence == null ? 20 : opts.minConfidence;
+    return ranked.filter((s) => s.confidence >= floor).slice(0, opts.limit || 8);
   };
 
   /* ==================================================================
@@ -793,6 +838,20 @@
 
     for (const record of SubIndex.searchLocal(q, 8)) add(record, "cache");
 
+    /* The curated catalog answers issue queries without a single request.
+     * That matters more than it sounds: Reddit blocks anonymous browser
+     * CORS, so on a bad proxy day the live sources below return nothing
+     * at all, and a search box that can only fail is worse than no
+     * search box. Ranking the spheres against the query and offering
+     * their members means "tenant rights" still returns the tenancy
+     * communities. */
+    const catalogSpheres = Discovery.rankSpheres(Discovery.textVector(q), { limit: 2, minConfidence: 45 });
+    for (const sphere of catalogSpheres) {
+      for (const name of (sphere.subs || []).slice(0, 8)) {
+        add(SubIndex.get(name) || SubIndex.makeRecord({ display_name: name }, { partial: true }), "catalog");
+      }
+    }
+
     if (window.Reddit && opts.live !== false) {
       const tasks = [
         Reddit.autocompleteSubreddits(q, { limit: 10 }).catch(() => []),
@@ -819,7 +878,15 @@
         exact: exact,
         sources: entry.sources,
         spheres: window.Seeds ? Seeds.spheresOf(record.display_name) : [],
-        rank: (exact ? 2 : 0) + (prefix ? 0.6 : 0) + rescale(relevance) + popularity * 0.5,
+        /* The catalog bonus is what keeps "tenant rights" from leading
+         * with r/VotingRights: a community someone deliberately filed
+         * under the matching issue beats one that happens to share a
+         * word with the query. */
+        rank: (exact ? 2 : 0)
+          + (prefix ? 0.6 : 0)
+          + (entry.sources.indexOf("catalog") >= 0 ? 0.5 : 0)
+          + rescale(relevance)
+          + popularity * 0.5,
       };
     });
 

@@ -452,23 +452,44 @@
     return scored.slice(0, opts.limit || 12);
   };
 
-  /* Substring / prefix match over cached names, so the search box can
-   * paint instantly before the network answers. */
+  /* Offline search over the cache, so the box paints something useful
+   * before the network answers — and stays useful when it never does.
+   *
+   * Name matching alone only answers "what is this sub called", which
+   * fails the moment someone types what they care about rather than who
+   * they want: "labor union" matches no subreddit name. So exact and
+   * prefix name hits come first, then anything the descriptions say is
+   * about the same subject. */
   SubIndex.searchLocal = function (query, limit) {
-    const q = normalizeName(query).toLowerCase();
-    if (!q) return [];
+    const raw = String(query || "").trim();
+    if (!raw) return [];
+    const cap = limit || 10;
+
+    const q = normalizeName(raw).toLowerCase();
     const starts = [];
     const contains = [];
+    const seen = new Set();
     for (const record of mem.values()) {
       const key = record.key;
       if (key === q) starts.unshift(record);
       else if (key.startsWith(q)) starts.push(record);
       else if (key.includes(q) || (record.title || "").toLowerCase().includes(q)) contains.push(record);
+      else continue;
+      seen.add(key);
     }
     const bySubs = (a, b) => (b.subscribers || 0) - (a.subscribers || 0);
     starts.sort(bySubs);
     contains.sort(bySubs);
-    return starts.concat(contains).slice(0, limit || 10);
+
+    const out = starts.concat(contains);
+    if (out.length >= cap) return out.slice(0, cap);
+
+    for (const hit of SubIndex.nearest(SubIndex.vectorFromText(raw, 1), { limit: cap, minScore: 0.05 })) {
+      if (seen.has(hit.record.key)) continue;
+      seen.add(hit.record.key);
+      out.push(hit.record);
+    }
+    return out.slice(0, cap);
   };
 
   SubIndex.clear = async function () {

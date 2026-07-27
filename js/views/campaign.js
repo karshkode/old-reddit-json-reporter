@@ -550,13 +550,17 @@
     host.innerHTML = `
       <div class="card">
         <header class="card-header">
-          <div><h2>Add posts</h2><span class="hint">Paste Reddit URLs, mobile share links, or bare IDs</span></div>
+          <div><h2>Add posts</h2><span class="hint">Paste Reddit URLs, mobile share links, or bare IDs — anything from your phone works</span></div>
         </header>
-        <form class="inline-form" data-role="add-posts-form">
-          <textarea data-role="add-posts-input" rows="2" placeholder="https://www.reddit.com/r/…/comments/abc123/…"></textarea>
-          <button class="btn primary" type="submit">Add</button>
-        </form>
-        <div class="paste-preview" data-role="add-posts-preview" hidden></div>
+        <div class="add-posts-form" data-campaign-id="${esc(campaign.id)}">
+          <textarea data-role="add-posts-textarea" rows="2" placeholder="https://www.reddit.com/r/…/comments/abc123/title/&#10;https://www.reddit.com/r/…/s/AbCdEf1234"></textarea>
+          <div class="paste-preview" data-role="add-posts-preview" hidden></div>
+          <div class="add-posts-status" data-role="add-posts-status" hidden></div>
+          <div class="add-posts-row">
+            <button class="btn small ghost" type="button" data-action="add-posts-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
+            <button class="btn small primary" type="button" data-action="add-posts">Add posts</button>
+          </div>
+        </div>
       </div>
 
       <div class="card" style="margin-top:var(--s-4)">
@@ -632,12 +636,12 @@
     host.innerHTML = `
       <div class="card">
         <header class="card-header"><div><h2>Goals</h2><span class="hint">Progress bars appear on the campaign header and list</span></div></header>
-        <form class="form-grid" data-role="goals-edit-form">
+        <form class="form-grid goals-edit-form" data-campaign-id="${esc(campaign.id)}">
           <label>Goal upvotes
-            <input type="number" min="0" data-role="goal-score" value="${campaign.goalScore || ""}" placeholder="e.g. 5000" inputmode="numeric" />
+            <input type="number" min="0" data-field="goalScore" value="${campaign.goalScore || ""}" placeholder="e.g. 5000" inputmode="numeric" />
           </label>
           <label>Goal comments
-            <input type="number" min="0" data-role="goal-comments" value="${campaign.goalComments || ""}" placeholder="e.g. 500" inputmode="numeric" />
+            <input type="number" min="0" data-field="goalComments" value="${campaign.goalComments || ""}" placeholder="e.g. 500" inputmode="numeric" />
           </label>
           <div class="full row-end"><button class="btn primary" type="submit">Save goals</button></div>
         </form>
@@ -645,7 +649,7 @@
 
       <div class="card" style="margin-top:var(--s-4)">
         <header class="card-header"><div><h2>Share a digest</h2><span class="hint">Plain text you can paste into a group chat</span></div></header>
-        <button class="btn" type="button" data-action="copy-digest">📋 Copy digest</button>
+        <button class="btn" type="button" data-action="copy-campaign-digest" data-campaign-id="${esc(campaign.id)}">📋 Copy digest</button>
       </div>
 
       <div class="card" style="margin-top:var(--s-4)">
