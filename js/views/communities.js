@@ -140,7 +140,12 @@
   }
 
   function renderSearchIdle() {
-    const suggestions = ["healthcare", "tenant rights", "labor union", "climate", "voting rights", "mutual aid"];
+    /* Drawn from the catalog rather than hardcoded, so a suggestion can
+     * never be a chip that returns nothing when the proxies are down. */
+    const suggestions = Object.keys(Seeds.ISSUE_SPHERES || {})
+      .sort((a, b) => (Seeds.ISSUE_SPHERES[b].length || 0) - (Seeds.ISSUE_SPHERES[a].length || 0))
+      .slice(0, 6)
+      .map((k) => Seeds.labelOf(k));
     return Dom.emptyState({
       icon: "⌕",
       title: "Search for communities",

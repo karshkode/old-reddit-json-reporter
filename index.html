@@ -738,13 +738,14 @@
 
     <section class="sheet-section">
       <h3>Data source</h3>
-      <p class="hint">Reddit does not send CORS headers on <code>/json</code>, so the browser cannot fetch it directly. Requests route through a public proxy — switch if one stops working.</p>
+      <p class="hint">Reddit answers <strong>403 Blocked</strong> to every datacenter IP, which is what CORS proxies and Cloudflare Workers both are — so the proxies below mostly fail. The <strong>Reddit archive</strong> is a separate public dataset that your browser can read directly, with no proxy and no account.</p>
       <label class="field">
-        <span class="field-label">Proxy</span>
+        <span class="field-label">Source</span>
         <select id="transport-select"></select>
       </label>
       <input id="custom-proxy-input" type="url" placeholder="https://reddit-proxy.you.workers.dev" autocomplete="off" spellcheck="false" hidden />
-      <a class="hint" href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md" target="_blank" rel="noopener">How to run your own Cloudflare Worker ↗</a>
+      <p class="hint" id="archive-note">The archive records a post within minutes but only learns its final score about a day later. <strong>Hot</strong> and <strong>Top</strong> therefore show only posts whose scores have settled; <strong>New</strong> shows everything and marks the unsettled ones.</p>
+      <a class="hint" href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md" target="_blank" rel="noopener">Getting live scores instead (needs a Reddit app) ↗</a>
     </section>
 
     <section class="sheet-section">
@@ -968,6 +969,7 @@
 <script src="./js/state.js?v=20260726"></script>
 <script src="./js/router.js?v=20260726"></script>
 <script src="./js/sync.js?v=20260726"></script>
+<script src="./js/archive.js?v=20260726"></script>
 <script src="./js/reddit.js?v=20260726"></script>
 <script src="./js/postcache.js?v=20260726"></script>
 <script src="./js/subindex.js?v=20260726"></script>

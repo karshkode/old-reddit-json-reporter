@@ -845,8 +845,15 @@
      * search box. Ranking the spheres against the query and offering
      * their members means "tenant rights" still returns the tenancy
      * communities. */
-    const catalogSpheres = Discovery.rankSpheres(Discovery.textVector(q), { limit: 2, minConfidence: 45 });
-    for (const sphere of catalogSpheres) {
+    const queryVector = Discovery.textVector(q);
+    /* States are in scope here, unlike campaign discovery: someone
+     * typing "texas" into a search box wants the Texas communities, and
+     * offline the catalog is the only place they exist. */
+    const ranked = Discovery.rankSpheres(queryVector, { minConfidence: 0, limit: 100, includeStates: true });
+    const sphereConfidence = new Map(ranked.map((s) => [s.key, s.confidence / 100]));
+
+    for (const sphere of ranked.slice(0, 2)) {
+      if (sphere.confidence < 45) break;
       for (const name of (sphere.subs || []).slice(0, 8)) {
         add(SubIndex.get(name) || SubIndex.makeRecord({ display_name: name }, { partial: true }), "catalog");
       }
@@ -862,7 +869,6 @@
       for (const raw of full) add(SubIndex.put(raw, { partial: true }), "search");
     }
 
-    const queryVector = Discovery.textVector(q);
     const entries = Array.from(byKey.values());
     const idf = SubIndex.buildIdf(entries.map((e) => e.record.vector));
 
@@ -872,19 +878,29 @@
       const prefix = record.key.startsWith(q.toLowerCase().replace(/^\/?r\//, ""));
       const relevance = SubIndex.cosine(queryVector, record.vector, idf);
       const popularity = clamp01(Math.log10((record.subscribers || 0) + 10) / 6);
+      const spheres = window.Seeds ? Seeds.spheresOf(record.display_name) : [];
+
+      /* Which issue a human filed this community under, weighted by how
+       * well that issue matches the query. This is what keeps "tenant
+       * rights" from leading with r/VotingRights: both share the word
+       * "rights", but Housing scores 100% against the query and Voting
+       * scores 12%, so the tenancy subs pull far ahead. */
+      let affinity = 0;
+      for (const key of spheres) {
+        /* spheresOf namespaces states and audiences; the profiles are
+         * keyed bare. */
+        affinity = Math.max(affinity, sphereConfidence.get(key.replace(/^(state|demo):/, "")) || 0);
+      }
+
       return {
         record: record,
         name: record.display_name,
         exact: exact,
         sources: entry.sources,
-        spheres: window.Seeds ? Seeds.spheresOf(record.display_name) : [],
-        /* The catalog bonus is what keeps "tenant rights" from leading
-         * with r/VotingRights: a community someone deliberately filed
-         * under the matching issue beats one that happens to share a
-         * word with the query. */
+        spheres: spheres,
         rank: (exact ? 2 : 0)
           + (prefix ? 0.6 : 0)
-          + (entry.sources.indexOf("catalog") >= 0 ? 0.5 : 0)
+          + affinity * 0.9
           + rescale(relevance)
           + popularity * 0.5,
       };
