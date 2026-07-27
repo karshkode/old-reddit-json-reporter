@@ -993,12 +993,20 @@
      * the user lands on the top of the new ranking instead of being
      * stranded on page 5 of the previous campaign's results. */
     if (state.recommend.targeting[which]) state.recommend.targeting[which].page = 0;
-    state.lastRenderedTargeting[which] = { campaign, targets, container: out, opts: { heading: true } };
-    UI.renderTargeting(campaign, targets, out, {
-      heading: true,
-      surfaceKey: which,
-      paging: state.recommend.targeting[which] || { page: 0, pageSize: 25 },
-    });
+    renderTargetingInto(which, campaign, targets, out, { heading: true });
+  }
+
+  /* Render a ranked target list and register it as a pageable surface,
+   * so the pagination handler can repaint it later without recomputing
+   * the ranking. The views call this rather than UI.renderTargeting
+   * directly — bookkeeping the caller should not have to remember. */
+  function renderTargetingInto(surfaceKey, campaign, targets, container, opts) {
+    opts = opts || {};
+    state.lastRenderedTargeting[surfaceKey] = { campaign, targets, container, opts };
+    UI.renderTargeting(campaign, targets, container, Object.assign({}, opts, {
+      surfaceKey: surfaceKey,
+      paging: state.recommend.targeting[surfaceKey] || { page: 0, pageSize: 25 },
+    }));
   }
 
   /* Re-render whichever recommendation surface the user just paged
@@ -3946,6 +3954,7 @@ const bestCampaignPost = (summary.posts || [])
     loadCampaign: loadCampaign,
     openCampaign: openCampaign,
     refreshCampaignSummaries: refreshAllCampaignSummaries,
+    renderTargetingInto: renderTargetingInto,
     openComposer: function (id) { return openComposer(id); },
     openPostDetail: openPostDetail,
     runDiscovery: function () { return _runDiscover && _runDiscover(); },

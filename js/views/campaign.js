@@ -595,15 +595,11 @@
    * ------------------------------------------------------------------ */
 
   function renderTargeting(campaign, agg) {
+    /* The discovery pipeline reads its campaign from this control. It is
+     * visually hidden because the workspace already establishes which
+     * campaign we are in; app.js owns its options. */
     const select = Dom.byId("discover-campaign");
-    if (select) {
-      /* The discovery pipeline reads its campaign from this control; it
-       * is visually hidden because the workspace already establishes
-       * which campaign we are in. */
-      const options = Campaigns.list().map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
-      select.innerHTML = options;
-      select.value = campaign.id;
-    }
+    if (select) select.value = campaign.id;
 
     const deep = AppState.campaignDeep;
     const host = Dom.byId("campaign-detail-targets");
@@ -618,11 +614,8 @@
       return;
     }
 
-    UI.renderTargeting(deep.targets, host, {
-      campaign: campaign,
+    App.renderTargetingInto("campaigns", campaign, deep.targets, host, {
       bestCampaignPost: bestPost(agg.posts),
-      surface: "campaigns",
-      paging: AppState.recommend.targeting.campaigns,
     });
   }
 
