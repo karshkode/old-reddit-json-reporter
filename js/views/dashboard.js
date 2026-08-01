@@ -123,8 +123,7 @@
 
     const posts = bundle.posts;
     if (section === "summary") {
-      UI.renderNarrative(Analysis.narrative(bundle.agg, bundle.sentiment, Array.from(AppState.activeSubs)));
-      UI.renderRecommendations(Analysis.recommendations(bundle.agg, bundle.sentiment, posts));
+      UI.renderBriefing(Analysis.postingBriefing(posts, { agg: bundle.agg, timing: timingModel }));
     } else if (section === "timing") {
       UI.renderPostingTimes(timingModel, { limit: timingLimit });
       renderTimeline(posts);

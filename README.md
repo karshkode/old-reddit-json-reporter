@@ -102,7 +102,7 @@ snapping row rather than stacking.
 
 | Tab | What is in it |
 |---|---|
-| **Summary** | What the data is telling you, in plain English, and the quick takeaways drawn from it |
+| **Summary** | What the data is telling you — see [below](#the-summary-is-a-briefing-not-a-recap) |
 | **Timing** | **When posts go up** — a full-width timeline, switchable between *Per sub*, *Stacked*, *Density* (each sub normalised to its own peak, so cadence shapes overlay without volume bias) and *Total*, across windows from 1 day to all time, with bucket size following the window. Below it, **best hours to post per subreddit**: one small chart per community, each on its own clock — see [below](#posting-times-are-per-subreddit) |
 | **Charts** | **Busiest days**, **score vs comments**, **side-by-side subreddit totals**, a **score histogram**, a **sentiment doughnut** and **recent-post velocity** |
 | **Themes** | **Words coming up most**, and **topics that keep coming up** — recurring themes with sentiment, engagement, cross-sub spread and clickable examples |
@@ -169,6 +169,38 @@ sentiment, clickbait), and **where else this post could go** — see
 
 ---
 
+## The summary is a briefing, not a recap
+
+The Summary tab used to open with four paragraphs of prose. They restated
+the totals already on screen in the KPI row directly above, ranked the
+subreddits by total score, counted the sentiment split, and quoted the
+top post — around 110 words, followed by a second card of takeaways that
+repeated half of it. Nothing in there told you where or when to post.
+
+It is now a labelled list you read by scanning the left column. Each row
+is one finding, and the rules behind it are deliberately strict:
+
+- **Nothing that is already a number on screen.** Totals, medians and
+  percentiles live in the KPI row; the summary does not narrate them.
+- **Communities are compared on the median post, never on totals.** A
+  subreddit does not become the better place to post because more of its
+  posts happen to be loaded. This changes the answer: given a community
+  carrying 500k points off one viral post against a flat body, and
+  another with 4k points spread evenly, the second is named — because
+  that is the one where *your* next post is likely to do well.
+- **A leader has to be clearly ahead**, by 25%, before it is named at
+  all. Two communities separated by a rounding error produce no row
+  rather than false confidence.
+- **Rows are omitted when the data cannot support them.** One subreddit
+  loaded means no where-to-post comparison. Too few posts in any single
+  community means the timing row says so instead of guessing.
+- **No line of reassurance.** A healthy upvote ratio gets the number and
+  the word; it gets no sentence explaining that nothing is wrong.
+
+The full breakdowns behind every row are a tab away.
+
+---
+
 ## Posting times are per subreddit
 
 Ask "when should I post" of a dashboard holding a dozen communities and
@@ -201,7 +233,7 @@ Where you see it:
 |---|---|
 | **Dashboard → Best hours to post, per subreddit** | A chart per community: bars are average upvotes by hour, the line is how many posts landed in that hour. Under each one: the lift over that sub's own average, the sample behind the peak, its busiest weekday, where early traction is fastest, and its dead window. Six panels, with the rest a click away. |
 | **Dashboard → KPI row** | The busiest subreddit's own peak, labelled with its name, plus how many other subs peak somewhere else. |
-| **Dashboard → Quick takeaways** | Names the subs and how many hours apart their peaks are, instead of asserting one hour for everything. |
+| **Dashboard → Summary** | The peak hour for each of the top three communities on one line, and how far the strongest of them beats its own average. |
 | **Campaign → When to post, community by community** | The same per-sub reading scoped to the campaign. Where a campaign has too few posts in a community to measure, it borrows that subreddit's own loaded traffic — excluding the campaign's posts, so the answer is "when is this room busy" and not a restatement of when you posted — and says so on the row. |
 | **Campaign → Subreddits** | A trend card per community with its own cadence and hour charts. |
 

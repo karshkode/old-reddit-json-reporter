@@ -150,20 +150,15 @@
           </nav>
 
           <div class="dash-section active" id="dash-summary" role="tabpanel">
-            <div class="grid two">
-              <div class="card narrative-card span-2">
-                <header class="card-header">
-                  <div>
-                    <h2>What this data is telling you</h2>
-                    <span class="hint">Plain-English summary, generated locally from your data</span>
-                  </div>
-                </header>
-                <div id="ai-summary" class="prose"></div>
-              </div>
-              <div class="card span-2">
-                <header class="card-header"><div><h2>Quick takeaways</h2><span class="hint">Suggestions derived from your data</span></div></header>
-                <ul id="recommendations" class="reco-list"></ul>
-              </div>
+            <div class="card">
+              <header class="card-header">
+                <div>
+                  <h2>What this data is telling you</h2>
+                  <span class="hint">Where and when to post next, read from your own loaded posts</span>
+                </div>
+                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one is scoped to a named community rather than pooled across them. Communities are compared on the median post, not on totals — a sub does not become the better place to post because more of its posts happen to be loaded. A line is left out entirely when there is not enough data to support it. The totals themselves are in the row above, and the full breakdowns are on the other tabs.">?</button>
+              </header>
+              <ul id="dash-briefing" class="briefing"></ul>
             </div>
           </div>
 

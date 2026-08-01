@@ -1175,92 +1175,168 @@
   };
 
   /* ============================================================
-     12. RECOMMENDATIONS  &  NARRATIVE
+     12. POSTING BRIEFING
      ============================================================ */
 
   const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
-  Analysis.recommendations = function (agg, sentiment, posts) {
+  function medianOf(values) {
+    if (!values.length) return 0;
+    const s = values.slice().sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  }
+
+  /* Cut a headline on a word boundary so it reads as shortened rather
+     than severed. */
+  function headline(text, max) {
+    const t = String(text || "").trim();
+    if (t.length <= max) return t;
+    const cut = t.slice(0, max);
+    const space = cut.lastIndexOf(" ");
+    return (space > max * 0.6 ? cut.slice(0, space) : cut) + "…";
+  }
+
+  /* The dashboard's at-a-glance summary.
+   *
+   * This deliberately does not narrate the KPI row sitting directly
+   * above it. Totals, medians and percentiles are already on screen as
+   * numbers, and restating them in prose made the card four dense
+   * paragraphs that nobody could scan. Nor does it rank subreddits by
+   * total score, which mostly measures how many posts you happened to
+   * load rather than anything about the communities.
+   *
+   * Every line answers "where, when or what should I post", is scoped
+   * to a named community rather than pooled across them, and is
+   * omitted entirely when the data cannot support it. Returns
+   * { label, value, note } rows; `value` may carry inline markup and
+   * is already escaped. */
+  Analysis.postingBriefing = function (posts, opts) {
+    opts = opts || {};
+    const list = posts || [];
+    if (!list.length) return [];
+
+    const esc = Util.escapeHtml;
+    const agg = opts.agg || Analysis.aggregate(list);
+    const timing = opts.timing || Analysis.postingTimes(list, { minSample: 4 });
+    const ranked = timing.ranked || [];
+    const tz = esc(Util.getTzLabel());
     const out = [];
-    if (!agg || !agg.count) {
-      out.push("No posts loaded yet — pick a subreddit and refresh to begin analysis.");
-      return out;
-    }
 
-    /* Timing advice is per community. A pooled "best hour" across a
-       dozen subs is an average of audiences that never overlap, so the
-       bullet names the subs it applies to and says outright when they
-       disagree. */
-    const timing = Analysis.postingTimes(posts || [], { minSample: 4 });
-    const tz = Util.escapeHtml(Util.getTzLabel());
-    if (!timing.ranked.length) {
-      out.push(`No single community has ${timing.minSample} posts loaded yet, so posting-time advice would be guesswork. Load more posts per subreddit for a peak hour you can trust.`);
+    /* ---- When ---- */
+    if (!ranked.length) {
+      out.push({
+        label: "When",
+        value: "Not enough posts from any one community yet",
+        note: `a peak hour needs ${timing.minSample}+ posts from the same subreddit to mean anything`,
+      });
     } else if (timing.agree) {
-      const hours = timing.ranked.map((r) => r.bestHour).sort((a, b) => a - b);
-      out.push(`All ${timing.ranked.length} measured communities peak within ${timing.spread} hour${timing.spread === 1 ? "" : "s"} of each other, around <strong>${pad2(hours[Math.floor(hours.length / 2)])}:00 ${tz}</strong> — a rare case where one posting slot serves everyone.`);
+      const hours = ranked.map((r) => r.bestHour).sort((a, b) => a - b);
+      out.push({
+        label: "When",
+        value: `<strong>${pad2(hours[Math.floor(hours.length / 2)])}:00</strong> ${tz}`,
+        note: `unusually, all ${ranked.length} measured communities peak within ${timing.spread}h of each other`,
+      });
     } else {
-      const lead = timing.ranked.slice(0, 3)
-        .map((r) => `<strong>r/${Util.escapeHtml(r.subreddit)}</strong> at ${pad2(r.bestHour)}:00${r.lift > 0 ? ` (+${r.lift}%)` : ""}`)
-        .join(", ");
-      const rest = timing.ranked.length > 3 ? ` and ${timing.ranked.length - 3} more below` : "";
-      out.push(`Peak hours differ by up to <strong>${timing.spread} hours</strong> across your communities: ${lead}${rest}. Times are local (${tz}); each lift is against that sub's own average, not a pooled one.`);
+      const shown = ranked.slice(0, 3);
+      const more = ranked.length > shown.length ? ` · +${ranked.length - shown.length} more` : "";
+      /* One striking lift is worth more than three of them: name the
+         community whose slot matters most and leave the rest to the
+         Timing tab. */
+      const strongest = ranked.slice().sort((a, b) => b.lift - a.lift)[0];
+      out.push({
+        label: "When",
+        value: shown.map((r) => `r/${esc(r.subreddit)} <strong>${pad2(r.bestHour)}:00</strong>`).join(" · ") + more,
+        note: strongest && strongest.lift > 0
+          ? `${tz} · r/${esc(strongest.subreddit)}'s slot beats its own average by ${strongest.lift}%`
+          : `${tz} · each community on its own clock`,
+      });
     }
 
-    const dowLead = timing.ranked.slice(0, 2).filter((r) => r.bestDow >= 0);
-    if (dowLead.length) {
-      out.push(dowLead
-        .map((r) => `<strong>r/${Util.escapeHtml(r.subreddit)}</strong> posts most on ${DAY_NAMES[r.bestDow]}`)
-        .join("; ") + ".");
+    /* ---- Where ---- */
+    const groups = new Map();
+    for (const p of list) {
+      const key = (p.subreddit || "").toLowerCase();
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { name: p.subreddit, scores: [], comments: [] });
+      const g = groups.get(key);
+      g.scores.push(p.score || 0);
+      g.comments.push(p.num_comments || 0);
     }
 
+    /* Medians, not totals: a community does not become the better place
+       to post because more of its posts happen to be loaded. */
+    const MIN_SUB_POSTS = 5;
+    const subs = [];
+    for (const g of groups.values()) {
+      if (g.scores.length < MIN_SUB_POSTS) continue;
+      subs.push({
+        name: g.name,
+        medScore: medianOf(g.scores),
+        medComments: medianOf(g.comments),
+      });
+    }
+
+    /* A community only earns a line by being clearly ahead. Naming a
+       winner that beats the runner-up by a rounding error would be
+       advice the data cannot back. */
+    const MARGIN = 1.25;
+
+    if (subs.length >= 2) {
+      const byReach = subs.slice().sort((a, b) => b.medScore - a.medScore);
+      const byTalk = subs.slice().sort((a, b) => b.medComments - a.medComments);
+      const reach = byReach[0];
+      const talk = byTalk[0];
+      const reachWins = reach.medScore >= byReach[1].medScore * MARGIN;
+      const talkWins = talk.name !== reach.name && talk.medComments >= byTalk[1].medComments * MARGIN;
+
+      if (reachWins) {
+        out.push({
+          label: "Best reach",
+          value: `r/${esc(reach.name)}`,
+          note: `${Util.fmtNum(reach.medScore)} upvotes on a typical post, against ${Util.fmtNum(byReach[1].medScore)} in r/${esc(byReach[1].name)}`
+            + (talk.name === reach.name ? " — and it leads on discussion too" : ""),
+        });
+      }
+
+      if (talkWins) {
+        out.push({
+          label: "Most discussion",
+          value: `r/${esc(talk.name)}`,
+          note: `${Util.fmtNum(talk.medComments)} comments on a typical post, against ${Util.fmtNum(reach.medComments)} in r/${esc(reach.name)}`,
+        });
+      }
+    }
+
+    /* ---- Reception ---- */
     if (agg.avgUpvoteRatio != null) {
       const r = agg.avgUpvoteRatio;
-      if (r >= 0.9) out.push(`Audience reception is <strong>strongly positive</strong> — upvote ratio ${Util.fmtPct(r)}.`);
-      else if (r >= 0.75) out.push(`Audience reception is <strong>healthy</strong> — upvote ratio ${Util.fmtPct(r)}.`);
-      else if (r >= 0.6) out.push(`Audience reception is <strong>mixed</strong> — upvote ratio ${Util.fmtPct(r)}; consider tightening title framing.`);
-      else out.push(`Audience reception looks <strong>contentious</strong> — upvote ratio ${Util.fmtPct(r)}. Posts may be drawing brigading or off-topic engagement.`);
+      const word = r >= 0.9 ? "strongly positive" : r >= 0.75 ? "healthy" : r >= 0.6 ? "mixed" : "contentious";
+      /* No note when the number is fine on its own — a line of
+         reassurance is one more line to read for no decision. */
+      const note = r >= 0.75 ? ""
+        : r >= 0.6 ? "tighter title framing is the cheapest thing to try"
+          : "posts may be drawing brigading or off-topic replies";
+      out.push({
+        label: "Reception",
+        value: `<strong>${Util.fmtPct(r)}</strong> upvote ratio — ${word}`,
+        note: note,
+      });
     }
 
-    if (sentiment) {
-      if (sentiment.average > 0.15) out.push(`Title sentiment skews <strong>positive</strong> (${sentiment.positive} pos / ${sentiment.negative} neg).`);
-      else if (sentiment.average < -0.15) out.push(`Title sentiment skews <strong>negative</strong> (${sentiment.positive} pos / ${sentiment.negative} neg) — common for activism/news framing.`);
-      else out.push(`Title sentiment is <strong>roughly balanced</strong> (${sentiment.positive} pos / ${sentiment.negative} neg).`);
-    }
-
-    if (agg.topPost) {
-      out.push(`Top performer: <strong>${Util.escapeHtml((agg.topPost.title || "").slice(0, 110))}</strong> in r/${Util.escapeHtml(agg.topPost.subreddit)} — ${Util.fmtNum(agg.topPost.score)} score, ${Util.fmtNum(agg.topPost.num_comments)} comments.`);
-    }
-
-    const ratio = agg.avgComments > 0 ? agg.avgScore / Math.max(1, agg.avgComments) : 0;
-    if (ratio >= 25) out.push(`Posts attract upvotes faster than comments (≈${ratio.toFixed(1)}× score-to-comment ratio) — content is shareable rather than discussion-driving.`);
-    else if (ratio > 0 && ratio <= 5) out.push(`Posts spark above-average discussion (low score-to-comment ratio of ${ratio.toFixed(1)}) — strong engagement content.`);
-
-    if (agg.viewsKnown && agg.viewsKnown < agg.count) {
-      out.push(`View counts are only known for ${agg.viewsKnown} of ${agg.count} posts — Reddit hides <code>view_count</code> from non-owners on most submissions.`);
+    /* ---- What worked ---- */
+    if (agg.topPost && agg.topPost.title) {
+      const t = agg.topPost;
+      const title = esc(headline(t.title, 90));
+      out.push({
+        label: "Best post",
+        value: t.permalink
+          ? `<a href="${esc(t.permalink)}" target="_blank" rel="noopener">${title}</a>`
+          : title,
+        note: `${Util.fmtNum(t.score)} upvotes and ${Util.fmtNum(t.num_comments)} comments in r/${esc(t.subreddit)}`,
+      });
     }
 
     return out;
-  };
-
-  Analysis.narrative = function (agg, sentiment, subs) {
-    if (!agg || !agg.count) return "<p>No data loaded yet. Add a subreddit and refresh.</p>";
-    const subsList = subs.map((s) => `r/${Util.escapeHtml(s)}`).join(", ");
-    const parts = [];
-    parts.push(`<p>Across ${subsList || "the loaded subreddits"}, <strong>${agg.count}</strong> posts collected <strong>${Util.fmtNum(agg.totalScore)}</strong> upvotes and <strong>${Util.fmtNum(agg.totalComments)}</strong> comments. Median score is <strong>${Util.fmtNum(agg.medianScore)}</strong>; the 95th percentile clears <strong>${Util.fmtNum(agg.p95Score)}</strong>.</p>`);
-    const subList = Object.entries(agg.bySubreddit)
-      .sort((a, b) => b[1].score - a[1].score)
-      .map(([k, v]) => `r/${k} (${Util.fmtNum(v.score)} pts, ${Util.fmtNum(v.comments)} comments across ${v.count} posts)`);
-    if (subList.length > 1) {
-      parts.push(`<p>Subreddit ranking by total score: ${subList.join(" · ")}.</p>`);
-    }
-    if (sentiment) {
-      const lean = sentiment.average > 0.1 ? "positive-leaning" : sentiment.average < -0.1 ? "negative-leaning" : "balanced";
-      parts.push(`<p>Title sentiment is <strong>${lean}</strong>: ${sentiment.positive} positive / ${sentiment.negative} negative / ${sentiment.neutral} neutral. The lexicon is tuned for activism keywords so treat values as directional.</p>`);
-    }
-    if (agg.topPost) {
-      parts.push(`<p>The single highest-performing post is <a href="${Util.escapeHtml(agg.topPost.permalink)}" target="_blank" rel="noopener">${Util.escapeHtml((agg.topPost.title || "").slice(0, 140))}</a> with ${Util.fmtNum(agg.topPost.score)} upvotes and ${Util.fmtNum(agg.topPost.num_comments)} comments in r/${Util.escapeHtml(agg.topPost.subreddit)}.</p>`);
-    }
-    return parts.join("\n");
   };
 
   /* ============================================================
