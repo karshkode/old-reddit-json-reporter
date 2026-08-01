@@ -149,11 +149,20 @@ Where subreddits come from. Three tabs:
   upgrade when the network answers. Each result can expand into its
   **similar communities**, derived from four independent signals with
   the contributing ones named.
-- **Sphere catalog** — 13 progressive issue spheres, 51 state spheres
-  (50 states plus DC), 6 audience spheres, 318 subreddits in total. Load
+- **Sphere catalog** — 20 progressive issue spheres, 51 state spheres
+  (50 states plus DC), 6 audience spheres, 405 subreddits in total. Load
   a whole sphere, pick individual subs out of one, or take a starter
   bundle (*Progressive core*, *Movement & direct action*, *Economic
-  justice*, *Civil rights*, *Climate*).
+  justice*, *Civil rights*, *Climate*, *Democracy & courts*, *Safety net
+  & disability*).
+
+  Every issue and audience entry is checked against the archive rather
+  than recalled: it has to exist, be public rather than private or
+  restricted, have been posted in within the last 30 days, and have at
+  least a thousand subscribers. The first audit of the hand-written
+  catalog failed a third of it — nineteen names had no subreddit behind
+  them, eighteen more were closed to posting, and r/Dreamers, filed
+  under immigration, is a subreddit for an alt-rock band.
 - **Loaded subs** — what is currently in the dashboard, with per-sub
   removal.
 
@@ -307,6 +316,17 @@ is scored with a confidence. A housing campaign surfaces the tenancy
 sphere because the vocabulary matches, not because someone remembered
 to add "eviction" to a list. The spheres that scored appear as chips
 with their confidence; clicking one pins it so it seeds later runs too.
+
+Two things about how that vocabulary is turned into a vector matter more
+than they look. Each phrase is added on its own rather than as one
+joined string, because the tokenizer also emits bigrams and joining the
+list invented a bigram out of every adjacent pair of unrelated entries —
+the labor sphere was carrying `steward strikefund` as one of its
+heaviest features. And a multi-word phrase gives most of its weight to
+the phrase rather than its halves, because `sanctuary city` identifies
+immigration while `city` does not; at full weight a post about a city
+cutting bus service ranked the immigration sphere above half the
+catalog.
 
 A run has four phases:
 

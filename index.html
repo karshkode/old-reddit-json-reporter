@@ -156,7 +156,7 @@
                   <h2>What this data is telling you</h2>
                   <span class="hint">Where and when to post next, read from your own loaded posts</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one is scoped to a named community rather than pooled across them. Communities are compared on the median post, not on totals — a sub does not become the better place to post because more of its posts happen to be loaded. A line is left out entirely when there is not enough data to support it. The totals themselves are in the row above, and the full breakdowns are on the other tabs.">?</button>
+                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one is scoped to a named community rather than pooled across them. Communities are compared on the median post, not on totals — a sub does not become the better place to post because more of its posts happen to be loaded. A line is left out entirely when there is not enough data to support it. Under When, every percentage is the lift on a typical post against that community's own baseline, with a 95% confidence interval beside it; the p-value comes from reshuffling the same scores across the same timestamps a few hundred times and asking how often chance produces a peak that good. A community whose scores do not track the clock is listed as having no signal rather than being assigned an hour. The totals themselves are in the row above, and the full breakdowns are on the other tabs.">?</button>
               </header>
               <ul id="dash-briefing" class="briefing"></ul>
             </div>
@@ -962,6 +962,7 @@
 <script src="./js/postcache.js?v=20260726"></script>
 <script src="./js/subindex.js?v=20260726"></script>
 <script src="./js/seeds.js?v=20260726"></script>
+<script src="./js/timing.js?v=20260726"></script>
 <script src="./js/analysis.js?v=20260726"></script>
 <script src="./js/discovery.js?v=20260726"></script>
 <script src="./js/charts.js?v=20260726"></script>

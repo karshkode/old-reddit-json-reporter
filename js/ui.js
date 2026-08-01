@@ -41,32 +41,30 @@
       { label: "Total comments", value: Util.fmtNum(agg.totalComments), sub: `avg ${Util.fmtNum(agg.avgComments)} per post` },
       { label: "Avg upvote ratio", value: agg.avgUpvoteRatio == null ? "—" : Util.fmtPct(agg.avgUpvoteRatio), sub: "Reddit-reported sentiment" },
       (function () {
-        /* Best posting hour, scoped to a real community rather than to
-         * the pool. Pooling every loaded sub into one histogram used to
-         * produce an hour that suited none of them, so this tile now
-         * reports the busiest sub's own peak and says plainly when the
-         * other subs peak somewhere else. The full breakdown lives in
-         * the per-subreddit timing card. */
+        /* The next slot worth acting on, scoped to a real community
+         * rather than to the pool. Pooling every loaded sub into one
+         * histogram used to produce an hour that suited none of them,
+         * and a bare hour label gave no sense of when to actually do
+         * anything. This tile names the community, the quarter hour
+         * and how long away it is; the full breakdown lives in the
+         * per-subreddit timing card. */
         const tz = (typeof Util.getTzLabel === "function") ? Util.getTzLabel() : "";
-        const ranked = (timing && timing.ranked) || [];
-        if (!ranked.length) {
+        const lead = timing && timing.nextUp;
+        if (!lead) {
+          const measured = (timing && timing.measured) || [];
           return {
-            label: "Best hour to post",
+            label: "Next posting slot",
             value: "—",
-            sub: timing ? `needs ${timing.minSample}+ posts in one sub` : "needs more posts",
+            sub: measured.length
+              ? `no time-of-day effect in ${measured.length === 1 ? "the measured community" : `any of ${measured.length} communities`}`
+              : timing ? `needs ${timing.minSample}+ posts in one sub` : "needs more posts",
           };
         }
-        const lead = ranked[0];
-        const hour = String(lead.bestHour).padStart(2, "0") + ":00" + (tz ? " " + tz : "");
-        let sub;
-        if (ranked.length === 1) {
-          sub = `r/${Util.escapeHtml(lead.subreddit)}${lead.lift > 0 ? ` · +${lead.lift}% vs its own avg` : ""}`;
-        } else if (timing.agree) {
-          sub = `all ${ranked.length} subs peak within ${timing.spread}h`;
-        } else {
-          sub = `r/${Util.escapeHtml(lead.subreddit)} · ${ranked.length - 1} sub${ranked.length === 2 ? "" : "s"} peak elsewhere`;
-        }
-        return { label: "Best hour to post", value: hour, sub: sub };
+        const when = (lead.slotLabel || "—") + (tz ? " " + tz : "");
+        const bits = [`r/${Util.escapeHtml(lead.subreddit)}`];
+        if (lead.next) bits.push(lead.next.inLabel.replace(/^in /, ""));
+        if (lead.lift > 0) bits.push(signed(lead.lift));
+        return { label: "Next posting slot", value: when, sub: bits.join(" · ") };
       })(),
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
     ];
@@ -86,6 +84,121 @@
   function hhmm(h) {
     return String(h).padStart(2, "0") + ":00";
   }
+
+  /* One decimal below a whole point, so an interval that only just
+   * clears zero does not render as "+0%" next to a claim that it
+   * does. */
+  function signed(v) {
+    const n = Math.abs(v) < 1 ? v.toFixed(1) : String(Math.round(v));
+    return (v > 0 ? "+" : "") + n + "%";
+  }
+
+  /* The clock time a row recommends. Falls back to the hour label for
+   * rows assembled before the quarter-hour model existed. */
+  function slotOf(r) {
+    return r.slotLabel || (r.bestHour >= 0 ? hhmm(r.bestHour) : "—");
+  }
+
+  /* Everything the estimate rests on, collapsed into a hover/long-press
+   * title. The visible row stays scannable; the justification is one
+   * gesture away rather than four lines of prose away. */
+  function evidenceTitle(r) {
+    const bits = [];
+    if (r.liftLow != null && r.liftHigh != null) {
+      bits.push(`Typical post scores ${signed(r.lift)} against this community's own baseline (95% CI ${signed(r.liftLow)} to ${signed(r.liftHigh)})`);
+    }
+    if (r.window && r.window.slots < Timing.SLOTS) {
+      bits.push(`Statistically tied window ${Timing.windowLabel(r)} — any minute inside it is as good`);
+    }
+    if (r.effectiveN != null) {
+      bits.push(`${r.effectiveN.toFixed(1)} effective posts inside a ${r.bandwidthHours.toFixed(1)}h smoothing window`);
+    }
+    if (r.ratioAt != null && r.ratioBase != null) {
+      bits.push(`Upvote ratio ${Util.fmtPct(r.ratioAt)} at that moment against ${Util.fmtPct(r.ratioBase)} overall`);
+    }
+    if (r.ratioDecided) {
+      bits.push("Reception picked the minute inside the tied window");
+    }
+    if (r.clipped) {
+      bits.push(`${r.clipped} extreme score${r.clipped === 1 ? "" : "s"} capped, so a single breakout post cannot set the peak`);
+    }
+    if (r.excluded) {
+      bits.push(`${r.excluded} pinned or removed post${r.excluded === 1 ? "" : "s"} left out`);
+    }
+    if (r.p != null) {
+      bits.push(`Permutation test against ${r.permutations || 250} reshuffles of the same posts: ${Timing.pLabel(r.p)}`);
+    }
+    return bits.join(". ");
+  }
+
+  /* Signal strength as a word, not a colour alone. */
+  function signalBadge(r) {
+    if (!r.signal || r.signal === "none") return "";
+    const cls = r.signal === "strong" ? "good" : r.signal === "likely" ? "" : "warn";
+    return `<span class="badge ${cls} timing-signal">${Util.escapeHtml(Timing.signalLabel(r.signal))}</span>`;
+  }
+
+  /* The one-line justification under each community. Ordered by how
+   * much it should change your mind: effect size, then how much data
+   * is behind it, then whether the shuffle test believed it. */
+  function timingFacts(r) {
+    if (r.ambient) {
+      return `read from the sub's own ${Util.fmtNum(r.count)} loaded posts — your ${r.campaignCount} campaign post${r.campaignCount === 1 ? "" : "s"} there ${r.campaignCount === 1 ? "is" : "are"} too few to measure`;
+    }
+    const bits = [];
+    if (r.lift > 0) {
+      /* The interval is not optional detail. A "+50%" that could just
+       * as easily be -8% is a different instruction from a "+50%"
+       * that bottoms out at +20%, and only one of them is worth
+       * rearranging an afternoon for. */
+      bits.push(`<strong>${signed(r.lift)}</strong>`
+        + (r.liftLow != null ? ` <span class="timing-ci">(${signed(r.liftLow)} to ${signed(r.liftHigh)})</span>` : ""));
+    }
+    /* Anything inside the tied window is as good, and those windows
+     * are often hours wide. Showing only the quarter hour would read
+     * as an instruction to be at a desk at 22:45 exactly. */
+    if (r.window && r.window.minutes > 60 && r.window.slots < Timing.SLOTS) {
+      bits.push(`${Util.escapeHtml(Timing.windowLabel(r))} window`);
+    }
+    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts near it`);
+    if (r.p != null) bits.push(Util.escapeHtml(Timing.pLabel(r.p)));
+    if (r.ratioAt != null && r.ratioBase != null && Math.abs(r.ratioAt - r.ratioBase) >= 0.01) {
+      bits.push(`ratio ${Util.fmtPct(r.ratioAt)} vs ${Util.fmtPct(r.ratioBase)}`);
+    }
+    if (r.dowName) bits.push(`${Util.escapeHtml(r.dowName)}s`);
+    if (r.next) bits.push(Util.escapeHtml(r.next.inLabel));
+    return bits.join(" · ");
+  }
+
+  /* Communities whose scores demonstrably do not depend on posting
+   * time. Saying so is more useful than inventing a peak for them. */
+  function flatNote(model) {
+    if (!model.flat || !model.flat.length) return "";
+    const names = model.flat.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)}</span>`).join(" ");
+    return `<p class="timing-skipped">No time-of-day effect worth acting on in ${names} — across ${model.flat.length === 1 ? "its" : "their"} loaded posts, score does not track the clock. Post when the draft is ready.</p>`;
+  }
+
+  /* The compact all-communities list. Deliberately not the Timing
+   * tab: one line per community, the quarter hour, and just enough
+   * numbers to tell a finding from a coincidence. */
+  UI.timingListHtml = function (model, opts) {
+    opts = opts || {};
+    const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
+    const all = model.ranked || [];
+    const limit = opts.limit === "all" ? all.length : (opts.limit || all.length);
+    const rows = all.slice(0, limit);
+    const hidden = all.length - rows.length;
+    return `
+      <ul class="timing-summary">
+        ${rows.map((r) => `
+          <li data-signal="${Util.escapeHtml(r.signal || "none")}" title="${Util.escapeHtml(evidenceTitle(r))}">
+            <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}${signalBadge(r)}</span>
+            <span class="timing-peak">${Util.escapeHtml(slotOf(r))}${tz}</span>
+            <span class="timing-facts">${timingFacts(r)}</span>
+          </li>`).join("")}
+      </ul>
+      ${hidden > 0 ? `<div class="timing-more"><button class="btn small ghost" type="button" data-action="show-all-timing">Show ${hidden} more communit${hidden === 1 ? "y" : "ies"}</button></div>` : ""}`;
+  };
 
   /* Small multiples, one community per panel. The alternative — a
    * single chart with a line per sub — was unreadable past four subs,
@@ -112,12 +225,14 @@
     const hidden = ranked.length - shown.length;
 
     let lead;
-    if (!ranked.length) {
-      lead = `None of your ${model.rows.length} communities has ${model.minSample} posts loaded yet — that is the floor for calling an hour a peak rather than a coincidence.`;
+    if (!ranked.length && model.measured && model.measured.length) {
+      lead = `Score does not track the clock in ${model.measured.length === 1 ? "the one community with enough posts" : `any of the ${model.measured.length} communities with enough posts`}. Reshuffling the same posts against the same timestamps produces day curves as uneven as the real one, so there is no hour here worth waiting for.`;
+    } else if (!ranked.length) {
+      lead = `None of your ${model.rows.length} communities has ${model.minSample} posts loaded yet — that is the floor for calling a slot a peak rather than a coincidence.`;
     } else if (ranked.length === 1) {
-      lead = `<strong>r/${Util.escapeHtml(ranked[0].subreddit)}</strong> peaks at <strong>${hhmm(ranked[0].bestHour)}${tz}</strong>. Load a second community to compare.`;
+      lead = `<strong>r/${Util.escapeHtml(ranked[0].subreddit)}</strong> peaks at <strong>${Util.escapeHtml(slotOf(ranked[0]))}${tz}</strong>. Load a second community to compare.`;
     } else if (model.agree) {
-      lead = `Unusually, all ${ranked.length} communities peak within <strong>${model.spread} hour${model.spread === 1 ? "" : "s"}</strong> of each other — one posting slot will serve all of them.`;
+      lead = `Unusually, all ${ranked.length} communities peak within <strong>${model.spreadMinutes} minutes</strong> of each other — one posting slot will serve all of them.`;
     } else {
       lead = `These ${ranked.length} communities peak up to <strong>${model.spread} hours</strong> apart, so there is no single best time. Post into each one on its own clock.`;
     }
@@ -128,6 +243,7 @@
         ${shown.map((r) => timingPanel(r, tz)).join("")}
       </div>
       ${hidden > 0 ? `<div class="timing-more"><button class="btn small ghost" type="button" data-action="show-all-timing">Show ${hidden} more communit${hidden === 1 ? "y" : "ies"}</button></div>` : ""}
+      ${flatNote(model)}
       ${model.skipped.length ? `
         <p class="timing-skipped">
           Not enough posts to call a peak in
@@ -141,7 +257,7 @@
       const slot = host.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
       if (!slot) continue;
       try {
-        Charts.mount(slot, { kind: "hourHeat", data: row.agg, opts: { compact: true } });
+        Charts.mount(slot, { kind: "timingCurve", data: row, opts: { compact: true } });
       } catch (err) {
         console.warn(`[timing] r/${row.subreddit}:`, err && err.message);
       }
@@ -152,51 +268,62 @@
    * subreddit further down the page and only need the headline. */
   UI.postingTimesSummaryHtml = function (model, opts) {
     opts = opts || {};
-    if (!model || !model.ranked.length) {
-      return `<p class="timing-lead">No community here has ${model ? model.minSample : 4} posts yet, so a peak hour would be a coin flip. Add more of the campaign's posts, or load the subreddit itself to borrow its ambient rhythm.</p>`;
+    if (!model) return "";
+    if (!model.ranked.length) {
+      if (model.measured && model.measured.length) {
+        return `<p class="timing-lead">Nothing here posts better at one time than another. ${model.measured.length === 1 ? "The one community" : `All ${model.measured.length} communities`} with enough posts to test came back flat — shuffling the scores across the same timestamps produces day curves just as uneven as the real one.</p>${flatNote(model)}`;
+      }
+      return `<p class="timing-lead">No community here has ${model.minSample} posts yet, so a peak would be a coin flip. Add more of the campaign's posts, or load the subreddit itself to borrow its ambient rhythm.</p>`;
     }
-    const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
-    const rows = model.ranked.slice(0, opts.limit || 6);
-    const borrowed = rows.filter((r) => r.ambient).length;
+    const borrowed = model.ranked.filter((r) => r.ambient).length;
     const lead = (model.agree
-      ? `All ${model.ranked.length} communities peak within ${model.spread} hour${model.spread === 1 ? "" : "s"} of each other.`
+      ? `All ${model.ranked.length} communities peak within ${model.spreadMinutes} minutes of each other.`
       : model.ranked.length === 1
-        ? `Only one community has enough posts to call a peak.`
+        ? `One community has a time-of-day effect worth acting on.`
         : `Peaks are up to <strong>${model.spread} hours</strong> apart — there is no one time that serves all of these.`)
       + (borrowed ? ` ${borrowed} of these ${borrowed === 1 ? "is" : "are"} read from the subreddit's own traffic rather than your posts.` : "");
 
     return `
       <p class="timing-lead">${lead}</p>
-      <ul class="timing-summary">
-        ${rows.map((r) => `
-          <li>
-            <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}</span>
-            <span class="timing-peak">${hhmm(r.bestHour)}${tz}</span>
-            <span class="timing-facts">${r.ambient
-              ? `read from the sub's own ${Util.fmtNum(r.count)} loaded posts — your ${r.campaignCount} campaign post${r.campaignCount === 1 ? "" : "s"} there ${r.campaignCount === 1 ? "is" : "are"} too few to measure`
-              : `${r.lift > 0 ? `+${r.lift}% vs its own average · ` : ""}${r.bestHourSample} of ${Util.fmtNum(r.count)} campaign posts${r.bestDow >= 0 ? ` · busiest on ${DOW_SHORT[r.bestDow]}` : ""}`}</span>
-          </li>`).join("")}
-      </ul>
+      ${UI.timingListHtml(model, { limit: opts.limit || 6 })}
+      ${flatNote(model)}
       ${model.skipped.length ? `<p class="timing-skipped">Too few posts to measure: ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}</p>` : ""}`;
   };
 
   function timingPanel(r, tz) {
     const facts = [];
-    if (r.lift > 0) facts.push(`<strong>+${r.lift}%</strong> vs its own average`);
-    facts.push(`${r.bestHourSample} of ${Util.fmtNum(r.count)} posts landed in that hour`);
-    if (r.bestDow >= 0) facts.push(`busiest on ${DOW_SHORT[r.bestDow]}`);
-    if (r.velocityHour >= 0 && r.velocityHour !== r.bestHour) {
+    if (r.lift > 0) {
+      facts.push(`<strong>${signed(r.lift)}</strong> on a typical post${r.liftLow != null ? ` (95% CI ${signed(r.liftLow)} to ${signed(r.liftHigh)})` : ""}`);
+    }
+    if (r.window && r.window.slots < Timing.SLOTS) facts.push(`tied window ${Timing.windowLabel(r)}`);
+    if (r.effectiveN != null) facts.push(`${r.effectiveN.toFixed(0)} of ${Util.fmtNum(r.count)} posts near that time`);
+    if (r.p != null) facts.push(Util.escapeHtml(Timing.pLabel(r.p)));
+    if (r.ratioAt != null && r.ratioBase != null) {
+      facts.push(`${Util.fmtPct(r.ratioAt)} upvote ratio there vs ${Util.fmtPct(r.ratioBase)}`);
+    }
+    if (r.dowName) facts.push(`best on ${Util.escapeHtml(r.dowName)}${r.dowLift > 0 ? ` (${signed(r.dowLift)})` : ""}`);
+    else if (r.bestDow >= 0) facts.push(`busiest on ${DOW_SHORT[r.bestDow]}`);
+    if (r.velocityHour >= 0 && Math.abs(r.velocityHour - r.bestHour) >= 2) {
       facts.push(`fastest early traction at ${hhmm(r.velocityHour)}`);
     }
     if (r.quiet) facts.push(`dead ${hhmm(r.quiet.start)}–${hhmm(r.quiet.end)}`);
+    if (r.next) facts.push(`next ${Util.escapeHtml(r.next.label)}`);
+
+    /* A negatively correlated reception curve means the slot that
+     * scores best is also the one drawing the most downvotes — worth
+     * saying rather than burying. */
+    const caution = (r.ratioCorr != null && r.ratioCorr < -0.3)
+      ? `<span class="badge warn timing-thin">scores well, received worse</span>`
+      : "";
 
     return `
-      <div class="timing-panel" data-sub="${Util.escapeHtml(r.key)}">
+      <div class="timing-panel" data-sub="${Util.escapeHtml(r.key)}" data-signal="${Util.escapeHtml(r.signal || "none")}">
         <div class="timing-panel-head">
-          <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}</span>
-          <span class="timing-peak">${hhmm(r.bestHour)}${tz}</span>
+          <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}${signalBadge(r)}</span>
+          <span class="timing-peak">${Util.escapeHtml(slotOf(r))}${tz}</span>
         </div>
         ${r.confidence === "thin" ? `<span class="badge warn timing-thin">thin sample — ${r.count} posts</span>` : ""}
+        ${caution}
         <div class="chart-wrap short" data-timing-chart="${Util.escapeHtml(r.key)}"><canvas></canvas></div>
         <div class="timing-facts">${facts.join(" · ")}</div>
       </div>`;
@@ -1198,6 +1325,7 @@
         <span class="briefing-body">
           <span class="briefing-value">${r.value}</span>
           ${r.note ? `<span class="briefing-note">${r.note}</span>` : ""}
+          ${r.timing ? `<span class="briefing-timing">${UI.timingListHtml(r.timing, { limit: "all" })}</span>` : ""}
         </span>
       </li>`).join("");
   };

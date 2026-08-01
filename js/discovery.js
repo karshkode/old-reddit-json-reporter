@@ -49,6 +49,11 @@
    * coincidental word overlap and no sphere is offered at all. */
   const MIN_SPHERE_SIGNAL = 0.012;
 
+  /* How much a sphere's curated vocabulary counts for, and how much of
+   * that a multi-word entry passes down to its individual words. */
+  const TRIGGER_WEIGHT = 2.5;
+  const PHRASE_WORD_SHARE = 0.24;
+
   /* Terms that signal a community is in the civic / organising space at
    * all. A candidate can match a campaign's exact vocabulary by accident
    * (r/AskHistorians discussing "labor unions"); this is the sanity
@@ -187,7 +192,33 @@
       const triggers = (Seeds.SPHERE_TRIGGERS && Seeds.SPHERE_TRIGGERS[key])
         || (Seeds.DEMOGRAPHIC_TRIGGERS && Seeds.DEMOGRAPHIC_TRIGGERS[key])
         || [];
-      SubIndex.addText(vec, triggers.join(" "), 2.5);
+      /* One entry at a time, not one call for the joined list.
+       * addText also emits bigrams, at 1.5x the weight of a single
+       * term, so joining the list into a sentence invented a bigram
+       * for every adjacent *pair of unrelated list entries* — the
+       * labor sphere was carrying "steward strikefund" and the racial
+       * justice sphere "floyd policing" as its heaviest features. They
+       * outweighed every real term, and because the vector is then
+       * trimmed to its 64 largest entries they crowded out the member
+       * descriptions the trim was supposed to preserve.
+       *
+       * Multi-word entries then get their halves discounted, because a
+       * phrase can identify an issue when neither of its words does.
+       * "sanctuary city" is unmistakably immigration vocabulary; at
+       * full weight it also made "city" an immigration term, and a
+       * post about a city cutting bus frequency ranked the immigration
+       * sphere above half the catalog. The phrase keeps the weight,
+       * its words keep a trace. */
+      for (const phrase of triggers) {
+        const terms = SubIndex.tokenize(phrase);
+        if (!terms.length) continue;
+        if (terms.length === 1) {
+          vec[terms[0]] = (vec[terms[0]] || 0) + TRIGGER_WEIGHT;
+          continue;
+        }
+        for (const t of terms) vec[t] = (vec[t] || 0) + TRIGGER_WEIGHT * PHRASE_WORD_SHARE;
+        for (const b of SubIndex.bigrams(terms)) vec[b] = (vec[b] || 0) + TRIGGER_WEIGHT * 1.5;
+      }
 
       let described = 0;
       for (const name of members) {

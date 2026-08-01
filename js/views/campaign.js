@@ -353,7 +353,11 @@
     const own = Analysis.postingTimes(posts, { minSample: 3 });
     const rows = own.ranked.slice();
 
-    for (const thin of own.skipped) {
+    /* Both the too-thin communities and the ones whose own posts show
+     * no time-of-day effect are worth a second look at the sub's
+     * ambient traffic — a handful of campaign posts scattered at
+     * random will read as "no signal" even where the room has one. */
+    for (const thin of own.skipped.concat(own.flat)) {
       const mine = new Set(posts.filter((p) => (p.subreddit || "").toLowerCase() === thin.key).map((p) => p.id));
       const ambient = AppState.postsForSub(thin.subreddit).filter((p) => !mine.has(p.id));
       if (ambient.length < 5) { rows.push(thin); continue; }
