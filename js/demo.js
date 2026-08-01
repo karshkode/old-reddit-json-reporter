@@ -171,7 +171,7 @@
      * the campaign workspace both have something real to show. */
     const shared = [
       { title: "We won. First contract ratified after 19 months of bargaining", subs: ["WorkReform", "antiwork", "Unions", "Political_Revolution"] },
-      { title: "Single-payer polling is at 63% support and still nobody will move a bill", subs: ["MedicareForAll", "publichealth", "ProgressivePolitics"] },
+      { title: "Single-payer polling is at 63% support and still nobody will move a bill", subs: ["MedicareForAll", "publichealth", "DemocraticSocialism"] },
     ];
     for (const group of shared) {
       const t0 = now - Math.floor(3 + rand() * 6) * 86400;
