@@ -2058,16 +2058,6 @@ body.modal-open { overflow: hidden; }
 .cg-listing .cg-row {
   width: 100%;
 }
-/* Brief visual flash on a card when the user jump-navs to it, so
- * they see *which* card they landed on (especially helpful on small
- * screens where the section title might be off-screen). */
-@keyframes just-jumped-flash {
-  0%   { box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.45); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 87, 34, 0); }
-}
-[data-anchor].just-jumped {
-  animation: just-jumped-flash 0.85s ease-out;
-}
 /* ---------- Posts controls — split FILTERS row from SEARCH row ---------- */
 
 /* Override the legacy .sort-row layout (which packed search + sub +

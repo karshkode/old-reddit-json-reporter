@@ -1,20 +1,37 @@
 /* =====================================================================
  * DASHBOARD VIEW
  * ---------------------------------------------------------------------
- * The audience-wide picture across every loaded subreddit. Merges what
- * used to be two separate tabs (Overview and Trends) into one scrollable
- * view with a section rail, because the split was arbitrary — "when do
- * posts go up" lived on one tab and "what hour do they do best" on the
- * other.
+ * The audience-wide picture across every loaded subreddit. Fourteen
+ * cards and ten charts is far too much for one column — on a phone the
+ * whole thing measured close to eleven screenfuls of scrolling — so the
+ * rail across the top is a real tab strip rather than a set of jump
+ * links. Only the selected section is in the document flow.
  *
- * Everything here derives from one Analysis.dashboard() call, so the
- * same code path serves the global scope and, in the campaign
- * workspace, a single campaign's posts.
+ * That also makes the render cheaper than the scrolling version ever
+ * was: a repaint builds the charts for one section instead of all of
+ * them, and Chart.js is never asked to size a canvas inside a hidden
+ * container.
+ *
+ * Everything here derives from one Analysis.dashboard() call, cached
+ * against the current scope so flipping between tabs re-uses the
+ * existing analysis instead of recomputing it.
  * ===================================================================== */
 (function () {
   const View = {};
 
-  let lastSignature = "";
+  const SECTIONS = ["summary", "timing", "charts", "themes", "communities", "crossposts"];
+  const RAIL = "dashboard-section-rail";
+
+  /* The last analysis and the scope it was computed for. */
+  let bundle = null;
+  let timingModel = null;
+  let signature = "";
+
+  /* Sections already painted from the current `bundle`. Repainting an
+   * unchanged section would throw away in-place state the user built up,
+   * like an expanded theme list, so we only draw a section once per
+   * analysis. */
+  const painted = new Set();
 
   /* How many per-subreddit timing panels to draw before collapsing the
    * rest behind a button. Twenty charts on one card is a stall. */
@@ -39,6 +56,29 @@
     });
   }
 
+  function activeSection() {
+    const s = AppState.dashSection;
+    return SECTIONS.indexOf(s) === -1 ? "summary" : s;
+  }
+
+  /* Identifies the data the current analysis was built from, so a
+   * repaint can re-use it and a genuine change cannot go unnoticed. The
+   * ends of the list plus its length pin the contents down without
+   * walking every post; the timeline controls are in here too because
+   * they decide the bucketing the bundle carries. */
+  function scopeSignature(posts) {
+    const first = posts[0];
+    const last = posts[posts.length - 1];
+    return [
+      posts.length,
+      first ? first.id : "",
+      last ? last.id : "",
+      AppState.activeSubs.size,
+      AppState.timelineWindow,
+      AppState.timelineMode,
+    ].join(":");
+  }
+
   View.render = function () {
     const posts = App.filteredPosts();
     const emptyHost = Dom.byId("dashboard-empty");
@@ -50,41 +90,73 @@
         emptyHost.innerHTML = `<div class="card">${renderEmpty()}</div>`;
       }
       if (contentHost) contentHost.hidden = true;
+      /* The rail lives inside the content wrapper, so an empty
+       * dashboard shows the empty state alone rather than six tabs
+       * over six empty panels. */
       return;
     }
     if (emptyHost) { emptyHost.hidden = true; emptyHost.innerHTML = ""; }
     if (contentHost) contentHost.hidden = false;
 
-    const bundle = Analysis.dashboard(posts, {
-      window: AppState.timelineWindow,
-      subProfiles: true,
-      label: "All loaded subreddits",
-    });
-
-    const timing = Analysis.postingTimes(posts);
-
-    UI.renderKpis(bundle.agg, timing);
-    UI.renderPostingTimes(timing, { limit: timingLimit });
-    UI.renderNarrative(Analysis.narrative(bundle.agg, bundle.sentiment, Array.from(AppState.activeSubs)));
-    UI.renderRecommendations(Analysis.recommendations(bundle.agg, bundle.sentiment, posts));
-    UI.renderKeywords(bundle.keywords);
-    UI.renderThemes(bundle.themes);
-    UI.renderSubProfiles(AppState.subProfiles);
-
-    renderCharts(posts, bundle);
-    App.renderCrossPostsView();
-    updateScopeSummary(bundle);
-
-    lastSignature = posts.length + ":" + AppState.timelineWindow + ":" + AppState.timelineMode;
-  };
-
-  function renderCharts(posts, bundle) {
-    if (!window.Chart) return;
-
-    function safe(label, fn) {
-      try { fn(); } catch (err) { console.warn(`[dashboard] ${label}:`, err && err.message); }
+    const sig = scopeSignature(posts);
+    if (sig !== signature) {
+      bundle = Analysis.dashboard(posts, {
+        window: AppState.timelineWindow,
+        label: "All loaded subreddits",
+      });
+      timingModel = Analysis.postingTimes(posts);
+      signature = sig;
+      painted.clear();
     }
 
+    UI.renderKpis(bundle.agg, timingModel);
+    updateScopeSummary(bundle);
+    paintSection();
+  };
+
+  /* Draw whichever section the rail is on, once per analysis. */
+  function paintSection() {
+    const section = activeSection();
+    Dom.paintRail(RAIL, "dash-tab", section, "dash-", ".dash-section");
+    if (!bundle || painted.has(section)) return;
+    painted.add(section);
+
+    const posts = bundle.posts;
+    if (section === "summary") {
+      UI.renderNarrative(Analysis.narrative(bundle.agg, bundle.sentiment, Array.from(AppState.activeSubs)));
+      UI.renderRecommendations(Analysis.recommendations(bundle.agg, bundle.sentiment, posts));
+    } else if (section === "timing") {
+      UI.renderPostingTimes(timingModel, { limit: timingLimit });
+      renderTimeline(posts);
+    } else if (section === "charts") {
+      renderCharts(posts, bundle);
+    } else if (section === "themes") {
+      UI.renderKeywords(bundle.keywords);
+      UI.renderThemes(bundle.themes);
+    } else if (section === "communities") {
+      UI.renderSubProfiles(AppState.subProfiles);
+    } else if (section === "crossposts") {
+      App.renderCrossPostsView();
+    }
+  }
+
+  View.goToSection = function (section) {
+    if (SECTIONS.indexOf(section) === -1) return;
+    AppState.dashSection = section;
+    paintSection();
+    Dom.revealRailTab(RAIL, "dash-tab", section);
+    /* Land at the top of the new section rather than wherever the last
+     * one had been scrolled to. */
+    const view = Dom.byId("view-dashboard");
+    if (view) window.scrollTo({ top: Math.max(0, view.offsetTop - 8), behavior: "auto" });
+  };
+
+  function safe(label, fn) {
+    try { fn(); } catch (err) { console.warn(`[dashboard] ${label}:`, err && err.message); }
+  }
+
+  function renderTimeline(posts) {
+    if (!window.Chart) return;
     safe("timeline", () => {
       const data = Analysis.bucketByTimePerSub(posts, { window: AppState.timelineWindow });
       Charts.timeline("chart-timeline", data, { mode: AppState.timelineMode });
@@ -105,7 +177,10 @@
         : "";
       hint.textContent = `${modeLabel} · ${winLabel} · ${data.bucketLabel} buckets · ${data.subs.length} sub${data.subs.length === 1 ? "" : "s"}${dropped}`;
     });
+  }
 
+  function renderCharts(posts, bundle) {
+    if (!window.Chart) return;
     safe("scatter", () => Charts.scatter("chart-scatter", posts));
     safe("subCompare", () => Charts.subCompare("chart-sub-compare", bundle.agg));
     safe("histogram", () => Charts.histogram("chart-hist", bundle.histogram));
@@ -150,16 +225,19 @@
 
     Dom.delegate(document, "click", '[data-action="show-all-timing"]', () => {
       timingLimit = "all";
-      View.render();
+      /* Same scope, so the cached analysis stands — only this section's
+       * markup needs redrawing. */
+      painted.delete("timing");
+      paintSection();
     });
 
-    /* Section rail: smooth-scroll and reflect the section in view. */
-    Dom.delegate(document, "click", "#view-dashboard .section-rail a", (e, link) => {
+    Dom.wireRail(RAIL, "dash-tab", View.goToSection);
+
+    /* Buttons elsewhere in the app that deep-link to a section. */
+    Dom.delegate(document, "click", "[data-dash-goto]", (e, btn) => {
       e.preventDefault();
-      const target = Dom.byId(link.dataset.jump);
-      if (!target) return;
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      for (const sib of link.parentElement.children) sib.classList.toggle("active", sib === link);
+      Router.go("dashboard");
+      View.goToSection(btn.dataset.dashGoto);
     });
   };
 

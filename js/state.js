@@ -49,7 +49,9 @@
     postsSubFilter: "",
     postsScoreMin: 0,
 
-    /* ---- Dashboard chart controls ---- */
+    /* ---- Dashboard ---- */
+    /* summary | timing | charts | themes | communities | crossposts */
+    dashSection: "summary",
     timelineMode: "lines", /* lines | stacked | density | total */
     timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
 

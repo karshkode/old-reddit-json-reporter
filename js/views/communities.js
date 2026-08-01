@@ -341,12 +341,7 @@
 
   function paintTabs() {
     const active = AppState.communitiesTab || "search";
-    for (const btn of Dom.$$("#communities-rail [data-communities-tab]")) {
-      btn.classList.toggle("active", btn.dataset.communitiesTab === active);
-    }
-    for (const sec of Dom.$$("#view-communities .communities-section")) {
-      sec.classList.toggle("active", sec.id === "comm-sec-" + active);
-    }
+    Dom.paintRail("communities-rail", "communities-tab", active, "comm-sec-", "#view-communities .communities-section");
   }
 
   View.render = function () {
@@ -363,6 +358,7 @@
   View.goToTab = function (tab) {
     AppState.communitiesTab = tab;
     View.render();
+    Dom.revealRailTab("communities-rail", "communities-tab", tab);
   };
 
   /* The scope bar's "+ Add" lands here rather than opening a second,
@@ -406,9 +402,7 @@
       });
     }
 
-    Dom.delegate(document, "click", "#communities-rail [data-communities-tab]", (e, btn) => {
-      View.goToTab(btn.dataset.communitiesTab);
-    });
+    Dom.wireRail("communities-rail", "communities-tab", View.goToTab);
     Dom.delegate(document, "click", "[data-communities-tab]:not(#communities-rail [data-communities-tab])", (e, btn) => {
       Router.go("communities");
       View.goToTab(btn.dataset.communitiesTab);
