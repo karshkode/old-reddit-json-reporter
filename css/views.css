@@ -12,7 +12,7 @@
 
 .campaign-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--s-3);
 }
 
@@ -118,7 +118,7 @@
 
 .campaign-goalbars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: var(--s-3);
   margin: var(--s-3) 0;
 }
@@ -134,9 +134,56 @@
   font-size: var(--fs-sm);
   color: var(--text-mute);
 }
+/* The number is the point of the row, so the label gives way first
+ * rather than the two of them pushing the count off the edge. */
+.campaign-goalbar-head > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.campaign-goalbar-head > :last-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .campaign-goalbar-head strong {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+/* On a phone the workspace header ran the back link, a headline sized
+ * for a desktop column and four buttons across one 366px row. The
+ * buttons could not wrap out of it, so Delete fell off the right edge —
+ * and because the overflow widened the layout viewport, it dragged the
+ * fixed tab bar out with it. Each part gets its own row instead. */
+@media (max-width: 900px) {
+  .campaign-workspace-head {
+    gap: var(--s-2);
+  }
+  .campaign-workspace-head > .btn {
+    order: -1;
+    flex: 0 0 100%;
+    justify-content: flex-start;
+    margin-top: 0;
+    padding-left: 0;
+  }
+  .campaign-workspace-title {
+    flex: 1 1 100%;
+  }
+  .campaign-workspace-title h2 {
+    /* Matches the mobile size the other views use for their headings. */
+    font-size: var(--fs-xl);
+    /* Campaign names minted from a post title run long. Three lines is
+     * enough to identify one without burying the controls below it. */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .campaign-workspace-head .card-actions {
+    flex: 1 1 100%;
+    margin-top: 0;
+  }
 }
 
 /* Only the selected section is in the document flow; the rail above
@@ -155,7 +202,7 @@
 
 .campaign-sub-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: var(--s-4);
   margin-top: var(--s-4);
 }
@@ -430,7 +477,7 @@
 
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: var(--s-3);
 }
 .catalog-card {
@@ -473,7 +520,7 @@
 
 .loaded-subs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: var(--s-2);
 }
 .loaded-sub {
@@ -602,7 +649,7 @@
 
 .timing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: var(--s-4);
 }
 

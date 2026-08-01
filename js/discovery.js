@@ -29,6 +29,13 @@
  * confidence value. A housing campaign now surfaces the tenancy sphere
  * because the vocabulary matches, not because someone remembered to add
  * "eviction" to a list.
+ *
+ * That confidence is then carried all the way into candidate scoring.
+ * How well a community embodies a sphere and whether the campaign
+ * belongs to that sphere are separate questions, and conflating them
+ * was the whole of a class of bad suggestions: one incidental word
+ * ranked a sphere, and every hand-curated member of that sphere then
+ * scored as a perfect match for a campaign with nothing to do with it.
  * ===================================================================== */
 (function () {
   const Discovery = {};
@@ -74,6 +81,12 @@
     "makeup skincare fashion sneakers watches",
     "dating relationship tinder hookup",
     "movie movies television netflix marvel starwars",
+    /* Scripted-television vocabulary specifically. A show sub's blurb
+     * ("Subreddit for the CBS television series … Starring …") otherwise
+     * registered a single off-topic hit, one short of the threshold that
+     * would have kept r/PersonOfInterest out of a civic campaign. */
+    "series episode episodes seasons sitcom starring spoilers rewatch",
+    "cinema actor actress screenwriter hbo hulu showtime",
   ].join(" ")).split(/\s+/).filter(Boolean);
 
   Discovery.CIVIC_TERMS = CIVIC_TERMS;
@@ -251,8 +264,15 @@
 
     for (const s of ranked) s.confidence = Math.round(clamp01(s.score / best) * 100);
 
+    /* The floor applies to every sphere, not just the leader. It used to
+     * gate the leader alone, so a runner-up matching on one incidental
+     * word rode in behind a strong first place: a post flaired "Police
+     * State" pulled in the racial justice sphere on the word "police",
+     * and from there every racial justice community in the catalog. */
     const floor = opts.minConfidence == null ? 20 : opts.minConfidence;
-    return ranked.filter((s) => s.confidence >= floor).slice(0, opts.limit || 8);
+    return ranked
+      .filter((s) => s.score >= MIN_SPHERE_SIGNAL && s.confidence >= floor)
+      .slice(0, opts.limit || 8);
   };
 
   /* ==================================================================
@@ -286,6 +306,31 @@
     return hits;
   }
 
+  /* How far the campaign itself trusts a sphere, 0..1. A sphere the user
+   * pinned by hand carries no computed confidence and is taken at face
+   * value. */
+  function sphereWeight(sphere) {
+    if (!sphere) return 0;
+    if (sphere.confidence == null) return 1;
+    return clamp01(sphere.confidence / 100);
+  }
+
+  /* The campaign's confidence in whichever of a sub's catalog spheres it
+   * matches best. Catalog keys carry a `demo:` / `state:` prefix that the
+   * sphere profiles do not. */
+  function catalogAffinityOf(catalogSpheres, spheres) {
+    let best = 0;
+    for (const raw of catalogSpheres || []) {
+      const key = String(raw).replace(/^(state|demo):/, "");
+      for (const sphere of spheres || []) {
+        if (sphere.key !== key) continue;
+        const w = sphereWeight(sphere);
+        if (w > best) best = w;
+      }
+    }
+    return best;
+  }
+
   /* Score one candidate. `ctx` carries the campaign vector, the ranked
    * spheres, the idf table, and the per-name hit tallies from search and
    * post mining. */
@@ -293,22 +338,42 @@
     const vec = record.vector || SubIndex.vectorFor(record);
 
     const themeSim = SubIndex.cosine(ctx.vector, vec, ctx.idf);
-    const theme = rescale(themeSim);
 
-    /* Best-matching sphere, and the alignment with civic vocabulary in
-     * general. A sub can be strongly on-theme without being civic (a
-     * news aggregator) or civic without being on-theme (a generic
-     * politics sub) — both matter, differently. */
+    /* Cosine cannot tell a shared vocabulary from a shared word, and on
+     * documents this short one word is enough to look like a match:
+     * r/PersonOfInterest, a subreddit about a television series, scored
+     * against a post on a person being arrested because both said
+     * "person". Credit is scaled by how many terms carry the similarity,
+     * so a match resting on a single term keeps very little of it. */
+    const shape = SubIndex.overlapProfile(ctx.vector, vec, ctx.idf);
+    const breadth = clamp01((shape.count - 1) / 2);
+    const dilution = 1 - 0.7 * shape.topShare * (1 - breadth);
+    const theme = rescale(themeSim) * dilution;
+
+    /* Sphere fit is a claim about the *candidate* — "this is a racial
+     * justice community" — and says nothing about whether the campaign
+     * is a racial justice campaign. Scoring it raw meant a sphere the
+     * campaign barely matched handed full marks to every one of its
+     * members, so the fit is discounted by the campaign's own confidence
+     * in that sphere, and the sphere offered as the explanation is the
+     * one that survives that discount. */
     let bestSphere = null;
-    let sphereSim = 0;
+    let sphereFit = 0;
+    let sphereScore = 0;
     for (const sphere of ctx.spheres || []) {
-      const sim = SubIndex.cosine(sphere.vector || sphere._vector || {}, vec, ctx.idf);
-      if (sim > sphereSim) {
-        sphereSim = sim;
+      const fit = rescale(SubIndex.cosine(sphere.vector || sphere._vector || {}, vec, ctx.idf));
+      const weighted = fit * sphereWeight(sphere);
+      if (weighted > sphereScore) {
+        sphereScore = weighted;
+        sphereFit = fit;
         bestSphere = sphere;
       }
     }
-    const sphereScore = rescale(sphereSim);
+    const sphereConfidence = sphereWeight(bestSphere);
+
+    /* A sub can be strongly on-theme without being civic (a news
+     * aggregator) or civic without being on-theme (a generic politics
+     * sub) — both matter, differently. */
     const civic = rescale(SubIndex.cosine(civicVector, vec, ctx.idf));
 
     const popularity = clamp01(Math.log10((record.subscribers || 0) + 10) / 6);
@@ -320,8 +385,15 @@
     const queryBoost = clamp01(queryHits / 4);
     const postBoost = clamp01(postHits / 8);
 
+    /* Being in the curated catalog shows a sub is a real organising
+     * space; it does not show it is *this* campaign's organising space.
+     * A flat boost let hand-listed communities ride into unrelated
+     * campaigns on curation alone, so only a small part of it is
+     * unconditional and the rest tracks how well the campaign matches
+     * the sphere the sub was catalogued under. */
     const catalogSpheres = window.Seeds ? Seeds.spheresOf(record.display_name) : [];
-    const catalogBoost = catalogSpheres.length ? 0.12 : 0;
+    const catalogAffinity = catalogSpheres.length ? catalogAffinityOf(catalogSpheres, ctx.spheres) : 0;
+    const catalogBoost = catalogSpheres.length ? 0.03 + 0.11 * catalogAffinity : 0;
 
     const offtopic = offtopicHits(record);
     const offtopicPenalty = clamp01(offtopic / 3);
@@ -355,7 +427,10 @@
       signals: {
         theme: theme,
         themeSim: themeSim,
+        overlapCount: shape.count,
         sphere: sphereScore,
+        sphereFit: sphereFit,
+        sphereConfidence: sphereConfidence,
         sphereKey: bestSphere ? bestSphere.key : null,
         sphereLabel: bestSphere ? bestSphere.label : null,
         civic: civic,
@@ -365,13 +440,16 @@
         postHits: postHits,
         offtopic: offtopic,
         catalog: catalogSpheres,
+        catalogAffinity: catalogAffinity,
         megaGeneric: megaGeneric,
       },
       overlapTerms: overlap,
       reasons: buildReasons(record, overlap, {
         theme: theme, sphere: sphereScore, civic: civic,
+        sphereFit: sphereFit, sphereConfidence: sphereConfidence,
         bestSphere: bestSphere, queryHits: queryHits, postHits: postHits,
-        catalogSpheres: catalogSpheres, offtopic: offtopic,
+        catalogSpheres: catalogSpheres, catalogAffinity: catalogAffinity,
+        offtopic: offtopic,
         megaGeneric: megaGeneric, engagement: engagement,
         subject: ctx.subject,
       }),
@@ -382,6 +460,7 @@
    * the score, so a user can judge whether the match is real. */
   function buildReasons(record, overlap, s) {
     const esc = window.Util ? Util.escapeHtml : (x) => String(x);
+    const subject = esc(s.subject || "campaign");
     const out = [];
 
     if (overlap.length) {
@@ -389,20 +468,31 @@
          bigrams, and space-separated they ran together into phrases
          nobody wrote ("healthcare policy policy single single payer"). */
       const words = overlap.slice(0, 5).map((t) => `<code>${esc(t.term)}</code>`).join(", ");
-      out.push(`Shares ${overlap.length === 1 ? "the term" : "vocabulary"} ${words} with your ${esc(s.subject || "campaign")}`);
+      out.push(overlap.length === 1
+        ? `Shares only the term ${words} with your ${subject} — thin evidence on its own`
+        : `Shares vocabulary ${words} with your ${subject}`);
     } else {
       out.push("No direct vocabulary overlap — surfaced by sphere or activity signals");
     }
 
-    if (s.bestSphere && s.sphere > 0.25) {
-      out.push(`Reads as a <strong>${esc(s.bestSphere.label)}</strong> community (${Math.round(s.sphere * 100)}% sphere fit)`);
+    /* Both halves of the sphere claim, because they answer different
+     * questions. The fit says how squarely the sub sits in the sphere;
+     * the confidence says whether the campaign belongs there at all. */
+    if (s.bestSphere && s.sphereFit > 0.25) {
+      const fit = Math.round(s.sphereFit * 100);
+      const conf = Math.round(s.sphereConfidence * 100);
+      out.push(s.sphereConfidence >= 0.6
+        ? `Reads as a <strong>${esc(s.bestSphere.label)}</strong> community (${fit}% fit)`
+        : `Reads as a <strong>${esc(s.bestSphere.label)}</strong> community (${fit}% fit), a sphere your ${subject} matches only weakly (${conf}%)`);
     }
     if (s.catalogSpheres && s.catalogSpheres.length) {
       const labels = s.catalogSpheres
         .slice(0, 2)
         .map((k) => esc(Seeds.labelOf(k.replace(/^(state|demo):/, ""))))
         .join(", ");
-      out.push(`In the curated catalog under ${labels}`);
+      out.push(s.catalogAffinity >= 0.5
+        ? `In the curated catalog under ${labels}`
+        : `In the curated catalog under ${labels}, which your ${subject} does not clearly match`);
     }
     if (s.postHits >= 2) {
       out.push(`${s.postHits} recent top posts on your keywords came from here`);
@@ -443,15 +533,23 @@
     const dropped = { offtopic: 0, weak: 0, mega: 0 };
     for (const c of scored) {
       const s = c.signals;
-      /* Catalog members are curated by hand; never filter them out. */
-      if (s.catalog && s.catalog.length) { kept.push(c); continue; }
+      /* Curated membership earns a free pass, but only for the sphere it
+       * was curated under. Passing every catalog member unconditionally
+       * is how a racial justice community survived Relevant mode on a
+       * campaign about a data centre: hand-listed somewhere was treated
+       * as hand-listed here. */
+      if (s.catalog && s.catalog.length && s.catalogAffinity >= 0.5) { kept.push(c); continue; }
 
       if (s.offtopic >= 2 && s.theme < 0.3) { dropped.offtopic++; continue; }
       if (s.megaGeneric && s.postHits < 3 && s.sphere < 0.3) { dropped.mega++; continue; }
 
+      /* Sphere fit alone only carries a sub when the campaign clearly
+       * belongs to that sphere. Otherwise a community can be a perfect
+       * example of an issue the campaign is not about, and score well
+       * for it. */
       const strongEnough =
         s.theme >= 0.28 ||
-        s.sphere >= 0.3 ||
+        (s.sphere >= 0.3 && s.sphereConfidence >= 0.5) ||
         (s.theme >= 0.15 && s.sphere >= 0.18) ||
         s.postHits >= 2;
       if (!strongEnough) { dropped.weak++; continue; }

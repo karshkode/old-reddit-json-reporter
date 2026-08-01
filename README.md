@@ -287,9 +287,30 @@ A run has five phases:
    discount for mega-subs that match any vocabulary by sheer surface
    area.
 
+Two of those signals are deliberately hedged, because each was a source
+of confident-looking nonsense:
+
+- **Sphere fit is weighted by the campaign's own confidence in the
+  sphere.** How squarely a community sits in a sphere and whether your
+  campaign belongs to that sphere are different questions. Scored
+  together, one incidental word could rank a sphere and every curated
+  member of it then scored as a perfect match — a post flaired *Police
+  State* pulled in the racial justice sphere on the word "police", and
+  the whole sphere came with it.
+- **Curated catalog membership is credited for the sphere it was curated
+  under, not in general.** A hand-listed community still has to belong
+  to a sphere your campaign matches before it gets the full boost, or a
+  pass through **Relevant** mode.
+
+Theme is hedged too: a match resting on a single shared word keeps very
+little of its score, because on documents this short one word in common
+is a coincidence rather than a subject.
+
 Each candidate carries reasoning that names the overlapping words rather
 than restating its score, so you can tell a real match from a
-coincidence. The **Relevant / All** toggle re-filters the scored list in
+coincidence — including when the honest answer is "this really is a
+racial justice community, but your campaign is not a racial justice
+campaign". The **Relevant / All** toggle re-filters the scored list in
 place — no refetch, no waiting.
 
 `Discovery.forPost` is the single-post variant of the same machinery,

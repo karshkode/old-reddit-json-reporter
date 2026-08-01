@@ -263,7 +263,11 @@ tbody td .title-text {
   select.only-mobile { display: block; flex: 1 1 auto; }
   /* Posts table → card list */
   .sort-row { display: flex; }
-  .table-wrap { overflow-x: visible; margin: 0; padding: 0; }
+  /* Only the posts table stops being a table here. Releasing the scroll
+   * on every .table-wrap took the campaign's eight-column subreddit
+   * table with it, which then overflowed the viewport and stretched the
+   * fixed tab bar along with it. */
+  .table-wrap:has(#posts-table) { overflow-x: visible; margin: 0; padding: 0; }
   #posts-table thead { display: none; }
   #posts-table tbody tr {
     display: block;
@@ -355,7 +359,7 @@ tbody td .title-text {
 /* Subreddit profiles list */
 .profile-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 12px;
 }
 .profile-card {
@@ -588,7 +592,7 @@ tbody td .title-text {
 .mini-table tr:last-child td { border-bottom: 0; }
 .compare-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -2241,7 +2245,7 @@ body.modal-open { overflow: hidden; }
 }
 .starter-packs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 8px;
 }
 .starter-pack {
@@ -2526,7 +2530,7 @@ body.modal-open { overflow: hidden; }
 .ab-vs { color: var(--text-mute); font-size: 11px; }
 .ab-insights { margin: 6px 0 14px; padding-left: 18px; color: var(--text-dim); font-size: 12px; }
 .ab-insights li { margin: 3px 0; }
-.ab-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
+.ab-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 6px; }
 .ab-tile { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .ab-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-mute); margin-bottom: 4px; }
 .ab-values { display: flex; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }
@@ -3485,7 +3489,7 @@ body.sidebar-open {
  * ==================================================================== */
 .campaign-hub {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 10px;
   margin-top: 14px;
 }
@@ -3530,7 +3534,7 @@ body.sidebar-open {
  * the same numbers are repeated in the Overview section. */
 .campaign-hub-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   gap: 8px;
   margin-top: 10px;
   padding: 10px 12px;
@@ -3542,38 +3546,9 @@ body.sidebar-open {
 .campaign-hub-kpi-label { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.5px; }
 .campaign-hub-kpi-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
 .campaign-hub-kpi-sub   { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-/* ====================================================================
- * Floating "back to top" button. Appears after the user scrolls
- * past the first viewport-height. Tucked away in the bottom-right
- * with thumb-friendly sizing. Hidden when a sidebar is open
- * (the sidebar's own scroll is independent). */
-.back-to-top {
-  position: fixed;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  border: 0;
-  font-size: 20px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.back-to-top.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-.back-to-top:hover { transform: translateY(-2px); }
-.back-to-top:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-body.sidebar-open .back-to-top { display: none; }
+/* The back-to-top button lives in css/shell.css with the rest of the
+ * fixed furniture. A second copy here used to win on load order and
+ * quietly undo the mobile offset that keeps it off the tab bar. */
 /* "When" cell in the Posts table: relative age over actual clock
  * time. The pair makes timing patterns visible at a glance. */
 .when-age {
