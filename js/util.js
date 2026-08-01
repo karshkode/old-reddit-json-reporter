@@ -179,10 +179,18 @@
     return a[idx];
   };
 
+  /* A toast is glanced at for three and a half seconds, so anything past
+   * a couple of lines is not going to be read — and on a phone a long
+   * one covered the content it was reporting on. Callers that quote a
+   * user-supplied name cannot know how long it will be, so the cap lives
+   * here rather than at every call site. */
+  const TOAST_MAX = 96;
+
   Util.toast = function (msg, kind) {
     const el = document.getElementById("toast");
     if (!el) return;
-    el.textContent = msg;
+    const text = String(msg == null ? "" : msg);
+    el.textContent = text.length > TOAST_MAX ? text.slice(0, TOAST_MAX - 1).trimEnd() + "…" : text;
     el.className = "toast" + (kind ? " " + kind : "");
     el.hidden = false;
     clearTimeout(Util._toastTimer);

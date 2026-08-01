@@ -659,6 +659,10 @@
   max-width: min(560px, 92vw);
   text-align: center;
   animation: toast-in var(--dur) var(--ease-out);
+  /* Toasts quote subreddit and campaign names, which are single long
+   * tokens. Without this one of them sets the width and the rest of the
+   * message wraps around it. Length itself is capped in Util.toast. */
+  overflow-wrap: anywhere;
 }
 .toast[hidden] {
   display: none;
@@ -706,32 +710,45 @@
 
 /* ------------------------------------------------------- Back to top */
 
+/* Appears once the user is a viewport-height down the page, and hides
+ * while a sidebar is open since that scrolls independently. */
 .back-to-top {
   position: fixed;
-  right: var(--s-4);
+  right: max(var(--s-4), var(--safe-right));
   bottom: calc(var(--s-6) + var(--safe-bottom));
   z-index: 26;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-elev-3);
-  color: var(--text);
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-contrast);
   cursor: pointer;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
   display: grid;
   place-items: center;
-  font-size: 16px;
+  font-size: 20px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--dur) var(--ease);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 .back-to-top.visible {
   opacity: 1;
   pointer-events: auto;
 }
+.back-to-top:hover {
+  transform: translateY(-2px);
+}
+.back-to-top:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+body.sidebar-open .back-to-top {
+  display: none;
+}
 @media (max-width: 900px) {
+  /* Clear of the tab bar, which owns the bottom 56px plus the inset. */
   .back-to-top {
-    bottom: calc(80px + var(--safe-bottom));
+    bottom: calc(72px + var(--safe-bottom));
   }
 }

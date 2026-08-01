@@ -457,11 +457,24 @@
     return host.querySelector(".post-make-form");
   };
 
+  /* The name a campaign gets when it is minted from a post. Kept short
+   * enough to stay a heading: at 60 characters of title it ran to five
+   * lines in the workspace header on a phone. Cut on a word boundary so
+   * it reads as a truncated headline rather than a severed one. */
+  UI.campaignNameForPost = function (post) {
+    const title = String((post && post.title) || "Untitled").trim();
+    let trimmed = title.slice(0, 38);
+    if (title.length > 38) {
+      const space = trimmed.lastIndexOf(" ");
+      if (space > 20) trimmed = trimmed.slice(0, space);
+      trimmed += "…";
+    }
+    return `From r/${(post && post.subreddit) || "reddit"}: ${trimmed}`;
+  };
+
   UI.postMakeCampaignFormHtml = function (post, opts) {
     opts = opts || {};
-    const titleSrc = String(post.title || "Untitled").trim();
-    const trimmed = titleSrc.slice(0, 60);
-    const defaultName = `From r/${post.subreddit}: ${trimmed}${titleSrc.length > 60 ? "…" : ""}`;
+    const defaultName = UI.campaignNameForPost(post);
     /* Suggest goals as ~1.5× the post's current performance. */
     function niceCeil(n) {
       if (n <= 0) return 0;
