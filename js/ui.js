@@ -1481,10 +1481,14 @@
        * worth acting on. Which sphere the bar refers to is named in the
        * reasons directly below, so the label stays short here and keeps
        * the rows aligned. */
+      const pct = (x) => Math.round((x || 0) * 100);
+      const sphereTitle = s.sphereLabel
+        ? `${pct(s.sphereFit)}% fit with the ${s.sphereLabel} sphere, weighted down to ${pct(s.sphere)}% because your campaign matches that sphere at ${pct(s.sphereConfidence)}%`
+        : "No sphere matched";
       const meters = `
         <div class="meter-list">
           ${meterRow("Theme", s.theme, "var(--accent)", "Vocabulary overlap with your campaign's posts")}
-          ${meterRow("Sphere", s.sphere, "var(--accent-2)", s.sphereLabel ? `Fit with the ${s.sphereLabel} sphere` : "No sphere matched")}
+          ${meterRow("Sphere", s.sphere, "var(--accent-2)", sphereTitle)}
           ${meterRow("Reach", s.popularity, "var(--info)", "Subscriber count, log-scaled")}
           ${meterRow("Activity", s.engagement, "var(--good)", "How much discussion a post here tends to get")}
         </div>

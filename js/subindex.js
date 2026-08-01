@@ -59,6 +59,17 @@
     "one two three first second last next best good great",
     "day days week weeks month months year years time times",
     "http https www com org net html json amp gt lt nbsp",
+    /* Generic nouns and filler that read as topical because they are
+     * nouns, but describe nothing. Without these a post about a *person*
+     * being arrested matched r/PersonOfInterest, a TV-show sub, on the
+     * single word they had in common. Deliberately excludes words that
+     * look generic but carry civic meaning: state, case, right, court,
+     * party, movement, women, men, race. */
+    "person persons someone somebody anyone anybody everyone everybody nobody",
+    "thing things something anything nothing stuff lot lots bit way ways",
+    "kind sort really actually even much maybe perhaps always never often",
+    "going gone went come came coming look looking looks seen tell told",
+    "give given gives put keep let may might must would could shall around",
   ].join(" ")).split(/\s+/).filter(Boolean));
 
   /* Conservative suffix stripping. Full Porter stemming over-merges
@@ -166,6 +177,31 @@
     }
     if (!na || !nb) return 0;
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  };
+
+  /* Cosine reports how similar two documents are, not whether the
+   * similarity is spread across a shared vocabulary or resting on one
+   * word. Those are very different kinds of evidence, so callers that
+   * act on a similarity need the shape of it too.
+   *
+   * `count`    how many terms contribute at all
+   * `topShare` the fraction of the similarity held by the single
+   *            heaviest term — 1.0 means one word is the whole match */
+  SubIndex.overlapProfile = function (a, b, idf) {
+    const weight = (term) => (idf ? (idf[term] || idf.__default || 1) : 1);
+    let total = 0;
+    let top = 0;
+    let count = 0;
+    for (const [term, va] of Object.entries(a || {})) {
+      const vb = (b || {})[term];
+      if (!vb) continue;
+      const w = weight(term);
+      const contrib = va * w * vb * w;
+      total += contrib;
+      if (contrib > top) top = contrib;
+      count++;
+    }
+    return { count: count, total: total, topShare: total > 0 ? top / total : 0 };
   };
 
   /* The terms two vectors share, strongest first. Used to explain a
