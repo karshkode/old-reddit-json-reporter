@@ -34,12 +34,12 @@
     { name: "Political_Revolution", subs: 210000, weight: 0.8, tone: "progressive" },
     { name: "antiwork", subs: 2800000, weight: 1.2, tone: "labor" },
     { name: "climate", subs: 190000, weight: 0.6, tone: "climate" },
-    { name: "Tenants", subs: 28000, weight: 0.4, tone: "housing" },
-    { name: "VotingRights", subs: 41000, weight: 0.45, tone: "voting" },
+    { name: "Renters", subs: 111000, weight: 0.4, tone: "housing" },
+    { name: "VoteDEM", subs: 64000, weight: 0.45, tone: "voting" },
     { name: "GreenNewDeal", subs: 33000, weight: 0.4, tone: "climate" },
     { name: "Unions", subs: 96000, weight: 0.55, tone: "labor" },
-    { name: "ProgressivePolitics", subs: 58000, weight: 0.5, tone: "progressive" },
-    { name: "Anti_Eviction", subs: 12000, weight: 0.25, tone: "housing" },
+    { name: "DemocraticSocialism", subs: 158000, weight: 0.5, tone: "progressive" },
+    { name: "LandlordLove", subs: 97000, weight: 0.25, tone: "housing" },
     { name: "publichealth", subs: 74000, weight: 0.35, tone: "healthcare" },
   ];
 
