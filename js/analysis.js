@@ -497,6 +497,164 @@
   };
 
   /* ============================================================
+     6a. POSTING TIMES, PER SUBREDDIT
+     ------------------------------------------------------------
+     Pooling every loaded post into one 24-hour histogram produces a
+     "best hour" that is true of no community in particular. r/politics
+     and a state organising sub keep different hours, and averaging
+     them lands somewhere neither audience is awake.
+
+     So the timing model is per subreddit from the start. Each row is
+     one community's own peak, measured against that community's own
+     average — a lift of +40% in a small sub is a real finding even if
+     its absolute scores never approach the big sub's floor.
+
+     The cross-sub summary only exists to answer "do these communities
+     actually agree?", and it reports the spread rather than hiding it
+     behind a single number.
+     ============================================================ */
+
+  /* Circular distance between two hours, in hours (0..12). 23:00 and
+     01:00 are two hours apart, not twenty-two. */
+  function hourDistance(a, b) {
+    const d = Math.abs(a - b) % 24;
+    return Math.min(d, 24 - d);
+  }
+
+  /* Longest run of consecutive hours with no posts at all, wrapping
+     midnight. Reported as a window because "quiet 02:00–07:00" reads
+     better than a list of six hour numbers. */
+  function quietWindow(byHour) {
+    let bestStart = -1, bestLen = 0, start = -1, len = 0;
+    for (let i = 0; i < 48; i++) {
+      const h = i % 24;
+      if (!byHour[h]) {
+        if (len === 0) start = h;
+        len++;
+        if (len > bestLen && len <= 24) { bestLen = len; bestStart = start; }
+      } else {
+        len = 0;
+      }
+    }
+    if (bestLen < 3 || bestLen >= 24) return null;
+    return { start: bestStart, end: (bestStart + bestLen) % 24, length: bestLen };
+  }
+
+  /* opts.minSample — posts a sub needs before its peak is reported at
+     all (default 4). Below that a single lucky post decides the hour. */
+  Analysis.postingTimes = function (posts, opts) {
+    opts = opts || {};
+    const minSample = opts.minSample == null ? 4 : opts.minSample;
+    const solidSample = opts.solidSample == null ? 12 : opts.solidSample;
+
+    const groups = new Map();
+    for (const p of posts || []) {
+      const key = (p.subreddit || "").toLowerCase();
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { name: p.subreddit, posts: [] });
+      groups.get(key).posts.push(p);
+    }
+
+    const rows = [];
+    for (const [key, group] of groups.entries()) {
+      const agg = Analysis.aggregate(group.posts);
+      const mean = agg.avgScore || 0;
+
+      /* Twenty posts spread over 24 hours leaves most hours holding a
+         single post, and the raw maximum of avg-score-per-hour is then
+         just "which lone post got lucky". Each hour is shrunk toward
+         the sub's own mean by PRIOR_POSTS imaginary average posts, so
+         an hour has to be either busy or emphatically better than
+         normal before it wins. */
+      const PRIOR_POSTS = 3;
+      let bestHour = -1, bestHourScore = -Infinity;
+      for (let h = 0; h < 24; h++) {
+        if (!agg.byHour[h]) continue;
+        const total = agg.avgScoreByHour[h] * agg.byHour[h] + PRIOR_POSTS * mean;
+        const shrunk = total / (agg.byHour[h] + PRIOR_POSTS);
+        if (shrunk > bestHourScore) {
+          bestHourScore = shrunk;
+          bestHour = h;
+        }
+      }
+
+      let busiestHour = -1, busiestCount = -1;
+      for (let h = 0; h < 24; h++) {
+        if (agg.byHour[h] > busiestCount) { busiestCount = agg.byHour[h]; busiestHour = h; }
+      }
+
+      let velocityHour = -1, velocityVal = -Infinity;
+      for (let h = 0; h < 24; h++) {
+        if (agg.byHour[h] >= 2 && agg.avgVelocityByHour[h] > velocityVal) {
+          velocityVal = agg.avgVelocityByHour[h];
+          velocityHour = h;
+        }
+      }
+
+      let bestDow = -1, bestDowCount = -1;
+      for (let d = 0; d < 7; d++) {
+        if (agg.byDow[d] > bestDowCount) { bestDowCount = agg.byDow[d]; bestDow = d; }
+      }
+
+      rows.push({
+        key: key,
+        subreddit: group.name,
+        count: group.posts.length,
+        agg: agg,
+        bestHour: bestHour,
+        bestHourScore: bestHour >= 0 ? bestHourScore : null,
+        bestHourSample: bestHour >= 0 ? agg.byHour[bestHour] : 0,
+        /* Lift is against the sub's own average, never a global one,
+           and off the shrunk estimate so it survives a small sample. */
+        lift: bestHour >= 0 && mean > 0 ? Math.round((bestHourScore - mean) / mean * 100) : 0,
+        busiestHour: busiestHour,
+        velocityHour: velocityHour,
+        bestDow: bestDow,
+        quiet: quietWindow(agg.byHour),
+        enough: group.posts.length >= minSample && bestHour >= 0,
+        confidence: group.posts.length >= solidSample ? "solid"
+          : group.posts.length >= minSample ? "thin"
+          : "insufficient",
+      });
+    }
+
+    rows.sort((a, b) => b.count - a.count);
+    return Analysis.summarizePostingTimes(rows, { minSample: minSample });
+  };
+
+  /* Wrap a set of per-sub timing rows in the cross-sub summary. Kept
+     separate so callers can assemble rows from more than one source —
+     the campaign workspace mixes a campaign's own posts with the
+     subreddit's ambient rhythm where the campaign is too thin. */
+  Analysis.summarizePostingTimes = function (rows, opts) {
+    opts = opts || {};
+    const ranked = rows.filter((r) => r.enough);
+
+    /* How far apart are the communities that gave us enough to go on?
+       Spread is the widest circular gap between any two peaks. */
+    let spread = 0;
+    for (let i = 0; i < ranked.length; i++) {
+      for (let j = i + 1; j < ranked.length; j++) {
+        spread = Math.max(spread, hourDistance(ranked[i].bestHour, ranked[j].bestHour));
+      }
+    }
+
+    return {
+      rows: rows,
+      ranked: ranked,
+      skipped: rows.filter((r) => !r.enough),
+      spread: spread,
+      /* Two hours of slack: Reddit's own hour buckets are noisy enough
+         that anything tighter would be reporting rounding error. */
+      agree: ranked.length > 1 && spread <= 2,
+      minSample: opts.minSample == null ? 4 : opts.minSample,
+      tz: window.Util && Util.getTzLabel ? Util.getTzLabel() : "",
+    };
+  };
+
+  Analysis.hourDistance = hourDistance;
+
+  /* ============================================================
      6b. DASHBOARD BUNDLE
      ------------------------------------------------------------
      Every chart-ready derivation for an arbitrary set of posts, in
@@ -1029,20 +1187,31 @@
       return out;
     }
 
-    let bestHour = 0, bestVal = -Infinity;
-    for (let h = 0; h < 24; h++) {
-      if (agg.avgScoreByHour[h] > bestVal && agg.byHour[h] > 0) {
-        bestVal = agg.avgScoreByHour[h];
-        bestHour = h;
-      }
+    /* Timing advice is per community. A pooled "best hour" across a
+       dozen subs is an average of audiences that never overlap, so the
+       bullet names the subs it applies to and says outright when they
+       disagree. */
+    const timing = Analysis.postingTimes(posts || [], { minSample: 4 });
+    const tz = Util.escapeHtml(Util.getTzLabel());
+    if (!timing.ranked.length) {
+      out.push(`No single community has ${timing.minSample} posts loaded yet, so posting-time advice would be guesswork. Load more posts per subreddit for a peak hour you can trust.`);
+    } else if (timing.agree) {
+      const hours = timing.ranked.map((r) => r.bestHour).sort((a, b) => a - b);
+      out.push(`All ${timing.ranked.length} measured communities peak within ${timing.spread} hour${timing.spread === 1 ? "" : "s"} of each other, around <strong>${pad2(hours[Math.floor(hours.length / 2)])}:00 ${tz}</strong> — a rare case where one posting slot serves everyone.`);
+    } else {
+      const lead = timing.ranked.slice(0, 3)
+        .map((r) => `<strong>r/${Util.escapeHtml(r.subreddit)}</strong> at ${pad2(r.bestHour)}:00${r.lift > 0 ? ` (+${r.lift}%)` : ""}`)
+        .join(", ");
+      const rest = timing.ranked.length > 3 ? ` and ${timing.ranked.length - 3} more below` : "";
+      out.push(`Peak hours differ by up to <strong>${timing.spread} hours</strong> across your communities: ${lead}${rest}. Times are local (${tz}); each lift is against that sub's own average, not a pooled one.`);
     }
-    out.push(`Posts published around <strong>${pad2(bestHour)}:00 ${Util.escapeHtml(Util.getTzLabel())}</strong> show the highest average score (${Util.fmtNum(bestVal)} avg). <span class="meta">All times in your local timezone.</span>`);
 
-    let bestDow = 0, bestDowVal = -1;
-    for (let d = 0; d < 7; d++) {
-      if (agg.byDow[d] > bestDowVal) { bestDowVal = agg.byDow[d]; bestDow = d; }
+    const dowLead = timing.ranked.slice(0, 2).filter((r) => r.bestDow >= 0);
+    if (dowLead.length) {
+      out.push(dowLead
+        .map((r) => `<strong>r/${Util.escapeHtml(r.subreddit)}</strong> posts most on ${DAY_NAMES[r.bestDow]}`)
+        .join("; ") + ".");
     }
-    out.push(`<strong>${DAY_NAMES[bestDow]}</strong> is the most active submission day (${bestDowVal} posts).`);
 
     if (agg.avgUpvoteRatio != null) {
       const r = agg.avgUpvoteRatio;

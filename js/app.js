@@ -294,7 +294,7 @@
   function rerenderLight() {
     const posts = filteredPosts();
     const agg = Analysis.aggregate(posts);
-    UI.renderKpis(agg);
+    UI.renderKpis(agg, Analysis.postingTimes(posts));
     renderPostsView();
   }
 

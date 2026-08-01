@@ -280,9 +280,27 @@
     });
   };
 
-  Charts.hourHeat = function (id, agg) {
+  /* opts.compact drops the legend and the axis titles. Used for the
+   * per-subreddit small multiples, where a dozen copies of the same
+   * legend crowd out the bars they are labelling. */
+  Charts.hourHeat = function (id, agg, opts) {
+    opts = opts || {};
     const t = theme();
+    const base = commonOpts();
     const labels = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+    const axisTitle = (text) => (opts.compact ? { display: false } : { display: true, text: text, color: t.mute });
+    const options = Object.assign(base, {
+      scales: {
+        x: Object.assign({}, base.scales.x, opts.compact ? { ticks: Object.assign({}, base.scales.x.ticks, { maxTicksLimit: 8 }) } : {}),
+        y: { ...base.scales.y, position: "left", title: axisTitle("avg score") },
+        y2: { ...base.scales.y, position: "right", grid: { display: false }, title: axisTitle("post count") },
+      },
+    });
+    if (opts.compact) {
+      options.plugins = Object.assign({}, options.plugins, {
+        legend: Object.assign({}, (options.plugins || {}).legend, { display: false }),
+      });
+    }
     return render(id, {
       type: "bar",
       data: {
@@ -292,13 +310,7 @@
           { label: "Posts", data: agg.byHour, backgroundColor: hexA(t.info, 0.5), borderColor: t.info, type: "line", tension: 0.3, yAxisID: "y2", pointRadius: 0 },
         ],
       },
-      options: Object.assign(commonOpts(), {
-        scales: {
-          x: commonOpts().scales.x,
-          y: { ...commonOpts().scales.y, position: "left", title: { display: true, text: "avg score", color: t.mute } },
-          y2: { ...commonOpts().scales.y, position: "right", grid: { display: false }, title: { display: true, text: "post count", color: t.mute } },
-        },
-      }),
+      options: options,
     });
   };
 

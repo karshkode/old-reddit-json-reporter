@@ -32,7 +32,7 @@
 
   /* ---------- KPI row ---------- */
 
-  UI.renderKpis = function (agg) {
+  UI.renderKpis = function (agg, timing) {
     const row = document.getElementById("kpi-row");
     if (!row) return;
     const kpis = [
@@ -41,30 +41,32 @@
       { label: "Total comments", value: Util.fmtNum(agg.totalComments), sub: `avg ${Util.fmtNum(agg.avgComments)} per post` },
       { label: "Avg upvote ratio", value: agg.avgUpvoteRatio == null ? "—" : Util.fmtPct(agg.avgUpvoteRatio), sub: "Reddit-reported sentiment" },
       (function () {
-        /* "Best posting hour" — replaces the dead Awards KPI (Reddit
-         * removed awards in 2023; the field is always 0). Picks the
-         * hour with the highest avg score across the loaded posts.
-         * `agg.avgScoreByHour` is in local time and `agg.byHour` tells
-         * us how many posts seeded each bucket so we can avoid
-         * picking a 1-post hour as "best". */
-        let best = -1, bestVal = -Infinity;
-        const overall = agg.avgScore || 0;
-        for (let h = 0; h < 24; h++) {
-          if ((agg.byHour && agg.byHour[h] >= 1) && agg.avgScoreByHour[h] > bestVal) {
-            bestVal = agg.avgScoreByHour[h];
-            best = h;
-          }
-        }
-        if (best < 0) {
-          return { label: "Best posting hour", value: "—", sub: "needs more posts" };
-        }
-        const lift = overall ? Math.round((bestVal - overall) / overall * 100) : 0;
+        /* Best posting hour, scoped to a real community rather than to
+         * the pool. Pooling every loaded sub into one histogram used to
+         * produce an hour that suited none of them, so this tile now
+         * reports the busiest sub's own peak and says plainly when the
+         * other subs peak somewhere else. The full breakdown lives in
+         * the per-subreddit timing card. */
         const tz = (typeof Util.getTzLabel === "function") ? Util.getTzLabel() : "";
-        return {
-          label: "Best posting hour",
-          value: String(best).padStart(2, "0") + ":00" + (tz ? " " + tz : ""),
-          sub: lift > 0 ? `+${lift}% above avg score` : `picked from avg score per hour`,
-        };
+        const ranked = (timing && timing.ranked) || [];
+        if (!ranked.length) {
+          return {
+            label: "Best hour to post",
+            value: "—",
+            sub: timing ? `needs ${timing.minSample}+ posts in one sub` : "needs more posts",
+          };
+        }
+        const lead = ranked[0];
+        const hour = String(lead.bestHour).padStart(2, "0") + ":00" + (tz ? " " + tz : "");
+        let sub;
+        if (ranked.length === 1) {
+          sub = `r/${Util.escapeHtml(lead.subreddit)}${lead.lift > 0 ? ` · +${lead.lift}% vs its own avg` : ""}`;
+        } else if (timing.agree) {
+          sub = `all ${ranked.length} subs peak within ${timing.spread}h`;
+        } else {
+          sub = `r/${Util.escapeHtml(lead.subreddit)} · ${ranked.length - 1} sub${ranked.length === 2 ? "" : "s"} peak elsewhere`;
+        }
+        return { label: "Best hour to post", value: hour, sub: sub };
       })(),
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
     ];
@@ -76,6 +78,129 @@
       </div>
     `).join("");
   };
+
+  /* ---------- Posting times, per subreddit ---------- */
+
+  const DOW_SHORT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  function hhmm(h) {
+    return String(h).padStart(2, "0") + ":00";
+  }
+
+  /* Small multiples, one community per panel. The alternative — a
+   * single chart with a line per sub — was unreadable past four subs,
+   * and the whole point of this card is that the subs differ. */
+  UI.renderPostingTimes = function (model, opts) {
+    const host = document.getElementById("posting-times");
+    if (!host) return;
+    opts = opts || {};
+    if (window.Charts && Charts.destroyIn) Charts.destroyIn(host);
+
+    if (!model || !model.rows.length) {
+      host.innerHTML = Dom.emptyState({
+        icon: "◔",
+        title: "No posting times yet",
+        body: "Load some posts and each community gets its own hour-by-hour panel here.",
+      });
+      return;
+    }
+
+    const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
+    const ranked = model.ranked;
+    const limit = opts.limit === "all" ? ranked.length : (opts.limit || 6);
+    const shown = ranked.slice(0, limit);
+    const hidden = ranked.length - shown.length;
+
+    let lead;
+    if (!ranked.length) {
+      lead = `None of your ${model.rows.length} communities has ${model.minSample} posts loaded yet — that is the floor for calling an hour a peak rather than a coincidence.`;
+    } else if (ranked.length === 1) {
+      lead = `<strong>r/${Util.escapeHtml(ranked[0].subreddit)}</strong> peaks at <strong>${hhmm(ranked[0].bestHour)}${tz}</strong>. Load a second community to compare.`;
+    } else if (model.agree) {
+      lead = `Unusually, all ${ranked.length} communities peak within <strong>${model.spread} hour${model.spread === 1 ? "" : "s"}</strong> of each other — one posting slot will serve all of them.`;
+    } else {
+      lead = `These ${ranked.length} communities peak up to <strong>${model.spread} hours</strong> apart, so there is no single best time. Post into each one on its own clock.`;
+    }
+
+    host.innerHTML = `
+      <p class="timing-lead">${lead}</p>
+      <div class="timing-grid">
+        ${shown.map((r) => timingPanel(r, tz)).join("")}
+      </div>
+      ${hidden > 0 ? `<div class="timing-more"><button class="btn small ghost" type="button" data-action="show-all-timing">Show ${hidden} more communit${hidden === 1 ? "y" : "ies"}</button></div>` : ""}
+      ${model.skipped.length ? `
+        <p class="timing-skipped">
+          Not enough posts to call a peak in
+          ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}
+          — needs ${model.minSample}.
+        </p>` : ""}
+    `;
+
+    if (!window.Charts || !window.Chart) return;
+    for (const row of shown) {
+      const slot = host.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
+      if (!slot) continue;
+      try {
+        Charts.mount(slot, { kind: "hourHeat", data: row.agg, opts: { compact: true } });
+      } catch (err) {
+        console.warn(`[timing] r/${row.subreddit}:`, err && err.message);
+      }
+    }
+  };
+
+  /* Text-only version, for places that already draw an hour chart per
+   * subreddit further down the page and only need the headline. */
+  UI.postingTimesSummaryHtml = function (model, opts) {
+    opts = opts || {};
+    if (!model || !model.ranked.length) {
+      return `<p class="timing-lead">No community here has ${model ? model.minSample : 4} posts yet, so a peak hour would be a coin flip. Add more of the campaign's posts, or load the subreddit itself to borrow its ambient rhythm.</p>`;
+    }
+    const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
+    const rows = model.ranked.slice(0, opts.limit || 6);
+    const borrowed = rows.filter((r) => r.ambient).length;
+    const lead = (model.agree
+      ? `All ${model.ranked.length} communities peak within ${model.spread} hour${model.spread === 1 ? "" : "s"} of each other.`
+      : model.ranked.length === 1
+        ? `Only one community has enough posts to call a peak.`
+        : `Peaks are up to <strong>${model.spread} hours</strong> apart — there is no one time that serves all of these.`)
+      + (borrowed ? ` ${borrowed} of these ${borrowed === 1 ? "is" : "are"} read from the subreddit's own traffic rather than your posts.` : "");
+
+    return `
+      <p class="timing-lead">${lead}</p>
+      <ul class="timing-summary">
+        ${rows.map((r) => `
+          <li>
+            <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}</span>
+            <span class="timing-peak">${hhmm(r.bestHour)}${tz}</span>
+            <span class="timing-facts">${r.ambient
+              ? `read from the sub's own ${Util.fmtNum(r.count)} loaded posts — your ${r.campaignCount} campaign post${r.campaignCount === 1 ? "" : "s"} there ${r.campaignCount === 1 ? "is" : "are"} too few to measure`
+              : `${r.lift > 0 ? `+${r.lift}% vs its own average · ` : ""}${r.bestHourSample} of ${Util.fmtNum(r.count)} campaign posts${r.bestDow >= 0 ? ` · busiest on ${DOW_SHORT[r.bestDow]}` : ""}`}</span>
+          </li>`).join("")}
+      </ul>
+      ${model.skipped.length ? `<p class="timing-skipped">Too few posts to measure: ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}</p>` : ""}`;
+  };
+
+  function timingPanel(r, tz) {
+    const facts = [];
+    if (r.lift > 0) facts.push(`<strong>+${r.lift}%</strong> vs its own average`);
+    facts.push(`${r.bestHourSample} of ${Util.fmtNum(r.count)} posts landed in that hour`);
+    if (r.bestDow >= 0) facts.push(`busiest on ${DOW_SHORT[r.bestDow]}`);
+    if (r.velocityHour >= 0 && r.velocityHour !== r.bestHour) {
+      facts.push(`fastest early traction at ${hhmm(r.velocityHour)}`);
+    }
+    if (r.quiet) facts.push(`dead ${hhmm(r.quiet.start)}–${hhmm(r.quiet.end)}`);
+
+    return `
+      <div class="timing-panel" data-sub="${Util.escapeHtml(r.key)}">
+        <div class="timing-panel-head">
+          <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}</span>
+          <span class="timing-peak">${hhmm(r.bestHour)}${tz}</span>
+        </div>
+        ${r.confidence === "thin" ? `<span class="badge warn timing-thin">thin sample — ${r.count} posts</span>` : ""}
+        <div class="chart-wrap short" data-timing-chart="${Util.escapeHtml(r.key)}"><canvas></canvas></div>
+        <div class="timing-facts">${facts.join(" · ")}</div>
+      </div>`;
+  }
 
   /* ---------- Posts table ---------- */
 

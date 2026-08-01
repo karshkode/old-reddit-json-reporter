@@ -203,15 +203,15 @@
               <div class="chart-wrap tall"><canvas id="chart-timeline"></canvas></div>
             </div>
 
-            <div class="grid two" style="margin-top:var(--s-4)">
-              <div class="card">
-                <header class="card-header"><div><h2>Best hours to post</h2><span class="hint">Average upvotes per hour, in your local time</span></div></header>
-                <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
-              </div>
-              <div class="card">
-                <header class="card-header"><div><h2>Busiest days</h2><span class="hint">Posts published per weekday</span></div></header>
-                <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
-              </div>
+            <div class="card" id="posting-times-card" style="margin-top:var(--s-4)">
+              <header class="card-header">
+                <div>
+                  <h2>Best hours to post, per subreddit</h2>
+                  <span class="hint">One panel per community, on its own clock — bars are average upvotes by hour, the line is how many posts landed in that hour</span>
+                </div>
+                <button class="card-help" type="button" aria-label="How to read this card" data-help="Every community keeps its own hours, so this card never averages them together. Each panel scores a subreddit against its own baseline: a peak marked +40% means posts in that hour beat that sub's own average by 40%, not anyone else's. Subs with fewer posts than the minimum are listed at the bottom rather than given a peak they haven't earned.">?</button>
+              </header>
+              <div id="posting-times"></div>
             </div>
           </div>
 
@@ -232,6 +232,10 @@
               <div class="card">
                 <header class="card-header"><div><h2>Are titles upbeat or critical?</h2><span class="hint">Lexicon scored, tuned for civic vocabulary</span></div></header>
                 <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>Busiest days</h2><span class="hint">Posts per weekday, all loaded subs combined</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
               </div>
               <div class="card span-2">
                 <header class="card-header"><div><h2>How recent posts are doing</h2><span class="hint">Score and comment velocity on the latest posts</span></div></header>

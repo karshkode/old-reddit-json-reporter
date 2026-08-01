@@ -583,6 +583,114 @@
 }
 
 /* =====================================================================
+   POSTING TIMES, PER SUBREDDIT
+   ---------------------------------------------------------------------
+   Small multiples. Each community gets its own panel because their
+   peaks genuinely disagree and a shared chart hid that.
+   ===================================================================== */
+
+.timing-lead {
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.timing-lead strong {
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+.timing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--s-4);
+}
+
+.timing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-elev-2);
+  min-width: 0;
+}
+
+.timing-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.timing-sub {
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timing-peak {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent-2);
+  flex-shrink: 0;
+}
+
+.timing-thin {
+  align-self: flex-start;
+}
+
+.timing-facts {
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+.timing-facts strong {
+  color: var(--text-dim);
+  font-weight: var(--fw-medium);
+}
+
+.timing-more {
+  margin-top: var(--s-4);
+}
+
+/* Text-only variant, used where hour charts already appear further
+   down the page. */
+.timing-summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.timing-summary li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-1);
+  background: var(--bg-elev-2);
+}
+.timing-summary .timing-facts {
+  grid-column: 1 / -1;
+}
+
+.timing-skipped {
+  margin: var(--s-4) 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.9;
+  color: var(--text-mute);
+}
+.timing-skipped .tag em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+/* =====================================================================
    MISC
    ===================================================================== */
 

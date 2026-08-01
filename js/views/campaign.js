@@ -300,8 +300,10 @@
           <div class="chart-wrap" data-chart="sentiment"><canvas></canvas></div>
         </div>
         <div class="card">
-          <header class="card-header"><div><h2>Best hours for this campaign</h2><span class="hint">Average upvotes by hour, your local time</span></div></header>
-          <div class="chart-wrap" data-chart="hour"><canvas></canvas></div>
+          <header class="card-header">
+            <div><h2>When to post, community by community</h2><span class="hint">Each peak is against that sub's own average — never a figure pooled across them</span></div>
+          </header>
+          ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: 6 })}
         </div>
         <div class="card">
           <header class="card-header"><div><h2>Score spread</h2><span class="hint">How evenly the campaign performed</span></div></header>
@@ -320,8 +322,32 @@
     mount("timeline", "timeline", Analysis.bucketByTimePerSub(posts, { window: "all" }), { mode: "lines" });
     mount("scatter", "scatter", posts);
     mount("sentiment", "sentiment", bundle.sentiment);
-    mount("hour", "hourHeat", bundle.agg);
     mount("hist", "histogram", bundle.histogram);
+  }
+
+  /* A campaign is usually one or two posts per community, which is
+   * never enough to call that community's peak hour from the campaign
+   * alone. Where the campaign is too thin, borrow the subreddit's own
+   * loaded posts instead — excluding the campaign's, so the answer is
+   * "when is this room busy" and not a restatement of when you posted. */
+  function campaignTiming(posts) {
+    const own = Analysis.postingTimes(posts, { minSample: 3 });
+    const rows = own.ranked.slice();
+
+    for (const thin of own.skipped) {
+      const mine = new Set(posts.filter((p) => (p.subreddit || "").toLowerCase() === thin.key).map((p) => p.id));
+      const ambient = AppState.postsForSub(thin.subreddit).filter((p) => !mine.has(p.id));
+      if (ambient.length < 5) { rows.push(thin); continue; }
+
+      const borrowed = Analysis.postingTimes(ambient, { minSample: 5 }).ranked[0];
+      if (!borrowed) { rows.push(thin); continue; }
+      borrowed.ambient = true;
+      borrowed.campaignCount = thin.count;
+      rows.push(borrowed);
+    }
+
+    rows.sort((a, b) => b.count - a.count);
+    return Analysis.summarizePostingTimes(rows, { minSample: 3 });
   }
 
   function renderComparison(cmp) {
@@ -349,7 +375,7 @@
           <div><div class="stat-label">Median score</div><div class="stat-value">${num(bundle.agg.medianScore)}</div></div>
           <div><div class="stat-label">Avg comments</div><div class="stat-value">${num(Math.round(bundle.agg.avgComments || 0))}</div></div>
           <div><div class="stat-label">Avg upvote ratio</div><div class="stat-value">${bundle.agg.avgUpvoteRatio != null ? Util.fmtPct(bundle.agg.avgUpvoteRatio) : "—"}</div></div>
-          <div><div class="stat-label">Peak hour</div><div class="stat-value">${p.peakHour != null ? p.peakHour + ":00" : "—"}</div></div>
+          <div><div class="stat-label">Communities</div><div class="stat-value">${num((p.subreddits || []).length)}</div></div>
         </div>
         ${kw.length ? `<div class="keyword-cloud" style="margin-top:var(--s-3)">${kw.map((k) => `<span class="kw">${esc(k.word)}<span class="count">${k.count}</span></span>`).join("")}</div>` : ""}
       </div>`;
