@@ -1022,16 +1022,74 @@
       paging: state.recommend.targeting[surfaceKey] || { page: 0, pageSize: 25 },
     }));
   }
+  /* Everything the discovery panel shows comes from one stashed result,
+   * so one function paints all of it. A fresh run, a Relevant/All toggle
+   * and a page change all land here, which is what keeps the candidate
+   * lists, the status line and the sphere chips describing the same set
+   * of numbers instead of drifting apart. */
   function rerenderDiscovery() {
-    if (!state.lastDiscoverResult) return;
-    const discoverResults = document.getElementById("discover-results");
-    if (!discoverResults) return;
-    UI.renderDiscoveryCandidates(state.lastDiscoverResult, discoverResults, Object.assign({}, state.lastDiscoverCtx || {}, {
+    const result = state.lastDiscoverResult;
+    const out = document.getElementById("discover-results");
+    if (!result || !out) return;
+    UI.renderDiscoveryCandidates(result, out, Object.assign({}, state.lastDiscoverCtx || {}, {
       paging: {
         new:     state.recommend.discover.new,
         already: state.recommend.discover.already,
       },
     }));
+    renderSphereSuggestions(result);
+    updateSphereChipScores(result);
+    renderDiscoverStatus(result);
+  }
+
+  function renderDiscoverStatus(result) {
+    const el = document.getElementById("discover-status");
+    if (!el) return;
+    const f = result.filtered || {};
+    const dropped = (f.offtopic || 0) + (f.weak || 0) + (f.mega || 0);
+    const sub = (n) => (n === 1 ? "subreddit" : "subreddits");
+
+    const parts = [];
+    parts.push(result.candidates.length
+      ? `Found <strong>${result.candidates.length}</strong> new ${sub(result.candidates.length)} out of ${result.totalScanned} scanned`
+      : `Scanned ${result.totalScanned} ${sub(result.totalScanned)} — nothing new cleared the bar`);
+    if (result.alreadyLoaded.length) {
+      parts.push(`${result.alreadyLoaded.length} of your loaded subs also ranked`);
+    }
+    if (dropped) {
+      parts.push(`${dropped} off-topic or over-broad ${dropped === 1 ? "match" : "matches"} filtered out — switch to <em>All</em> to see them`);
+    }
+    const terms = (result.topTerms || []).slice(0, 6).map((t) => `<code>${Util.escapeHtml(t)}</code>`);
+    if (terms.length) parts.push(`matched on ${terms.join(" ")}`);
+
+    el.hidden = false;
+    el.className = "meta " + (result.candidates.length ? "ok" : "warn");
+    el.innerHTML = parts.join(" · ") + ".";
+  }
+
+  /* The spheres the campaign's own vocabulary scored against, with the
+   * words that earned each one. Clicking pins a sphere so its whole
+   * catalog seeds the next run even if the campaign's own text never
+   * mentions it — the manual override for "I know I want Texas too". */
+  function renderSphereSuggestions(result) {
+    const el = document.getElementById("sphere-suggestions");
+    if (!el) return;
+    const auto = (result && result.autoSpheres) || [];
+    if (!auto.length) {
+      el.innerHTML = '<span class="meta">Run Discover and the issue spheres your campaign reads as will appear here.</span>';
+      return;
+    }
+    el.innerHTML = auto.map((s) => {
+      const pinned = state.activeSpheres.includes(s.key);
+      const terms = (s.terms || []).slice(0, 4).join(", ");
+      const tip = terms
+        ? `Matched on ${terms}${pinned ? " · already pinned" : " · click to pin"}`
+        : (pinned ? "Already pinned" : "Click to pin");
+      return `<button type="button" class="chip sphere-suggestion${pinned ? " active" : ""}"
+        data-action="pin-sphere" data-sphere-key="${Util.escapeHtml(s.key)}"
+        title="${Util.escapeHtml(tip)}" aria-pressed="${pinned}">
+        ${Util.escapeHtml(s.label)}<span class="chip-meta">${s.confidence}%</span></button>`;
+    }).join("");
   }
 
   /* ---------- Wire UI ---------- */
@@ -1110,7 +1168,7 @@
     if (typeof Seeds === "undefined") return;
     const all = [].concat(result.candidates || [], result.alreadyLoaded || []);
     const byCanonical = new Map();
-    for (const c of all) byCanonical.set(c.canonical, c);
+    for (const c of all) byCanonical.set(c.key, c);
 
     document.querySelectorAll(".sphere-chip").forEach((chip) => {
       const key = chip.dataset.sphereKey;
@@ -2031,7 +2089,11 @@
       });
     });
 
-    /* Discovery strictness toggle */
+    /* Discovery strictness toggle. Filtering is a pure function of the
+     * already-scored list, so the switch re-derives the two sections
+     * from the stashed run instead of waiting for the next search — the
+     * previous build only applied it on the following run, which read
+     * as the toggle doing nothing. */
     document.querySelectorAll("#discover-card .discover-mode button").forEach((btn) => {
       btn.addEventListener("click", () => {
         const s = btn.dataset.strict === "1";
@@ -2041,6 +2103,12 @@
           b.classList.toggle("active", b === btn);
           b.setAttribute("aria-selected", b === btn ? "true" : "false");
         });
+        if (state.lastDiscoverResult) {
+          state.lastDiscoverResult = Discovery.refilter(state.lastDiscoverResult, s);
+          state.recommend.discover.new.page = 0;
+          state.recommend.discover.already.page = 0;
+          rerenderDiscovery();
+        }
       });
     });
 
@@ -2829,6 +2897,22 @@
         removeSphere(x.dataset.sphereKey);
       });
     }
+    /* Auto-detected spheres are already folded into the run that
+     * produced them; pinning one carries it forward to every later run,
+     * including ones whose campaign text no longer mentions the issue. */
+    const sphereSuggestions = document.getElementById("sphere-suggestions");
+    if (sphereSuggestions) {
+      sphereSuggestions.addEventListener("click", (e) => {
+        const chip = e.target && e.target.closest && e.target.closest('[data-action="pin-sphere"]');
+        if (!chip) return;
+        e.preventDefault();
+        const key = chip.dataset.sphereKey;
+        if (state.activeSpheres.includes(key)) removeSphere(key);
+        else addSphere(key);
+        renderSphereSuggestions(state.lastDiscoverResult);
+      });
+    }
+    renderSphereSuggestions(null);
 
     /* ------ Discover similar subreddits ------ */
     const discoverBtn = document.getElementById("discover-run");
@@ -2838,244 +2922,83 @@
 
     function setDiscoverStatus(text, kind) {
       if (!discoverStatus) return;
-      discoverStatus.style.display = text ? "block" : "none";
+      discoverStatus.hidden = !text;
       discoverStatus.className = "meta " + (kind || "");
       discoverStatus.textContent = text || "";
     }
 
+    /* The panel is a thin shell over Discovery.run: pick the inputs out
+     * of app state, forward progress to the bar, stash the result so the
+     * strictness toggle and the pagers can repaint from it without
+     * re-running a multi-second search. */
     async function runDiscover() {
-      try {
-        if (!discoverSel || !discoverSel.value) {
-          setDiscoverStatus("Pick a campaign first.", "err");
-          return;
-        }
-        const campaign = Campaigns.get(discoverSel.value);
-        if (!campaign) { setDiscoverStatus("Campaign not found.", "err"); return; }
+      if (!discoverSel || !discoverSel.value) {
+        setDiscoverStatus("Pick a campaign first.", "err");
+        return;
+      }
+      const campaign = Campaigns.get(discoverSel.value);
+      if (!campaign) { setDiscoverStatus("Campaign not found.", "err"); return; }
 
-        const summary = state.campaignSummaries[campaign.id];
-        if (!summary || !summary.posts || !summary.posts.length) {
-          setDiscoverStatus(`"${campaign.name}" has no resolved posts. Open it on the Campaigns tab and tap Refresh first.`, "err");
-          discoverResults.innerHTML = "";
-          return;
-        }
-        const profile = Analysis.campaignProfile(summary.posts, campaign);
-        const queries = Analysis.buildDiscoveryQuerySet(profile, 6);
-        if (!queries.length) {
-          setDiscoverStatus("Not enough campaign content to derive search queries.", "err");
-          return;
-        }
+      const summary = state.campaignSummaries[campaign.id];
+      if (!summary || !summary.posts || !summary.posts.length) {
+        setDiscoverStatus(`"${campaign.name}" has no resolved posts yet. Open it and tap Refresh first.`, "err");
+        if (discoverResults) discoverResults.innerHTML = "";
+        return;
+      }
 
-        if (discoverBtn) { discoverBtn.disabled = true; discoverBtn.textContent = "Searching…"; }
-        setDiscoverStatus(`Running ${queries.length} angle${queries.length === 1 ? "" : "s"}: ${queries.join(" · ").slice(0, 100)}…`);
+      const profile = Analysis.campaignProfile(summary.posts, campaign);
+      if (discoverBtn) { discoverBtn.disabled = true; discoverBtn.textContent = "Searching…"; }
+      setDiscoverStatus(`Reading what "${campaign.name}" is about…`);
+      if (discoverResults) {
         discoverResults.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
-        /* 4 phases: subreddit search, post mining, catalog seeding, scoring.
-         * Allocate weights so the bar feels natural. */
-        const PHASE_WEIGHTS = { search: 0.40, posts: 0.25, catalog: 0.25, score: 0.10 };
-        let progressPct = 2;
-        Util.setProgress(progressPct, `Searching Reddit · 0 / ${queries.length} angles`);
+      }
 
-        const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
-
-        /* 1. Multi-query subreddit search — each top phrase / keyword is
-         *    its own query. We tally how many queries each sub appeared
-         *    in so the recommender can boost cross-query matches. */
-        const subResults = new Map();   // canonical -> { candidate, hits }
-        const queryHitsByName = {};
-        let queriesDone = 0;
-        await Util.pmap(queries, 2, async (q) => {
-          try {
-            const r = await Reddit.searchSubreddits(q, { limit: 12 });
-            for (const sr of r) {
-              const k = (sr.display_name || "").toLowerCase();
-              if (!k) continue;
-              if (!subResults.has(k)) subResults.set(k, { candidate: sr, hits: 0 });
-              subResults.get(k).hits++;
-              queryHitsByName[k] = (queryHitsByName[k] || 0) + 1;
-            }
-          } catch (e) {
-            console.warn(`[discover] sub-search "${q}" failed:`, e && e.message);
-          } finally {
-            queriesDone++;
-            progressPct = 2 + PHASE_WEIGHTS.search * 100 * (queriesDone / queries.length);
-            Util.setProgress(progressPct, `Searching Reddit · ${queriesDone} / ${queries.length} angles · ${subResults.size} subs found`);
-          }
+      const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      try {
+        const result = await Discovery.run({
+          posts: summary.posts,
+          profile: profile,
+          spheres: state.activeSpheres,
+          /* Subs the campaign already posted in, plus everything loaded
+           * in the dashboard: still ranked, but shown separately as
+           * confirmation rather than offered as something to add. */
+          exclude: [].concat(profile.subreddits || [], Array.from(state.activeSubs)),
+          strict: state.discoverStrict !== false,
+          subProfiles: state.subProfiles || {},
+          onProgress: (pct, message) => Util.setProgress(pct, message),
         });
 
-        /* 2. Post mining — search /search.json for posts that mention the
-         *    campaign keywords, then collect distinct subreddits those
-         *    posts live in. This finds niche / active communities the
-         *    /subreddits/search endpoint never surfaces. */
-        const postQuery = (profile.keywords || []).slice(0, 4).map((k) => k.word).join(" ");
-        const postHitsByName = {};
-        let postHitsTotal = 0;
-        progressPct = 2 + PHASE_WEIGHTS.search * 100;
-        Util.setProgress(progressPct, `Mining recent hot posts for sub mentions…`);
-        if (postQuery) {
-          try {
-            const posts = await Reddit.searchPosts(postQuery, { limit: 75, sort: "top", t: "month" });
-            postHitsTotal = posts.length;
-            const subFromPosts = new Map();
-            for (const p of posts) {
-              const k = (p.subreddit || "").toLowerCase();
-              if (!k) continue;
-              subFromPosts.set(k, (subFromPosts.get(k) || 0) + 1);
-            }
-            for (const [k, v] of subFromPosts.entries()) postHitsByName[k] = v;
-
-            /* Fetch about info for sub names that didn't show up in
-             * /subreddits/search but were mined from posts. Concurrency 3,
-             * skip when we already have it. */
-            const newSubs = Array.from(subFromPosts.keys())
-              .filter((k) => !subResults.has(k))
-              .sort((a, b) => (subFromPosts.get(b) || 0) - (subFromPosts.get(a) || 0))
-              .slice(0, 12);
-            let aboutDone = 0;
-            const aboutTotal = newSubs.length || 1;
-            await Util.pmap(newSubs, 3, async (sub) => {
-              try {
-                const about = await Reddit.fetchSubredditAbout(sub);
-                if (about && about.display_name) {
-                  const k = about.display_name.toLowerCase();
-                  if (!subResults.has(k)) subResults.set(k, { candidate: about, hits: 0 });
-                }
-              } catch (_) {}
-              finally {
-                aboutDone++;
-                progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100 * 0.5 + PHASE_WEIGHTS.posts * 100 * 0.5 * (aboutDone / aboutTotal);
-                Util.setProgress(progressPct, `Looked up r/${sub} · ${aboutDone} / ${aboutTotal} subs from posts`);
-              }
-            });
-          } catch (e) {
-            console.warn(`[discover] post-search failed:`, e && e.message);
-          }
-        }
-
-        /* 3. Catalog seeding. Auto-detect issue / demographic spheres from
-         *    the campaign keywords and pull their curated sub-list into
-         *    the candidate pool. This guarantees that a healthcare
-         *    campaign always considers r/MedicareForAll / r/healthcare
-         *    even when Reddit's /subreddits/search misses them, and
-         *    that strict mode never drops a known-good catalog member. */
-        const autoSpheres = (window.Seeds && Seeds.detectSpheres(profile)) || [];
-        /* Combine auto-detected with the user's manually picked ones. */
-        const detectedSpheres = Array.from(new Set([...autoSpheres, ...(state.activeSpheres || [])]));
-        let sphereSeedAttempted = 0, sphereSeedFetched = 0;
-        progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100;
-        Util.setProgress(progressPct, detectedSpheres.length
-          ? `Loading sphere catalog · ${detectedSpheres.length} sphere${detectedSpheres.length === 1 ? "" : "s"} detected (${detectedSpheres.slice(0, 3).join(", ")})`
-          : `No matching spheres detected · skipping catalog`);
-        if (detectedSpheres.length && window.Seeds) {
-          const seedNames = Seeds.expand(detectedSpheres)
-            .filter((sub) => !subResults.has(String(sub).toLowerCase()))
-            .slice(0, 24);
-          sphereSeedAttempted = seedNames.length;
-          let seedDone = 0;
-          await Util.pmap(seedNames, 3, async (sub) => {
-            try {
-              const about = await Reddit.fetchSubredditAbout(sub);
-              if (about && about.display_name) {
-                const k = about.display_name.toLowerCase();
-                if (!subResults.has(k)) {
-                  subResults.set(k, { candidate: about, hits: 0 });
-                  sphereSeedFetched++;
-                }
-              }
-            } catch (_) { /* ignore — sub may be private or proxy fail */ }
-            finally {
-              seedDone++;
-              progressPct = 2 + (PHASE_WEIGHTS.search + PHASE_WEIGHTS.posts) * 100 + PHASE_WEIGHTS.catalog * 100 * (seedDone / Math.max(1, sphereSeedAttempted));
-              Util.setProgress(progressPct, `Loading catalog · ${seedDone} / ${sphereSeedAttempted} seed sub${sphereSeedAttempted === 1 ? "" : "s"} (${sphereSeedFetched} new)`);
-            }
-          });
-        }
-
-        /* 4. Score & split into "new" vs "already in dashboard". */
-        const exclude = new Set([
-          ...(profile.subreddits || []),
-          ...Array.from(state.activeSubs),
-        ].map((s) => String(s).toLowerCase()));
-
-        Util.setProgress(null, `Scoring ${subResults.size} candidate sub${subResults.size === 1 ? "" : "s"}…`);
-        const result = Analysis.discoverCandidates(
-          Array.from(subResults.values()).map((v) => v.candidate),
-          profile,
-          {
-            excludeNames: Array.from(exclude),
-            minSubs: 25,
-            /* Was 20. Returning the full ranked tail (cap 200) lets
-             * the renderer paginate so the user can browse deep
-             * into the list — useful for civic campaigns that
-             * legitimately have 50-100+ relevant communities once
-             * geographic + topical hits accumulate. */
-            limit: 200,
-            alreadyLimit: 100,
-            queryHitsByName,
-            postHitsByName,
-            /* Pass through state.subProfiles so candidates that
-             * are already in the dashboard's loaded data get
-             * scored on real comments-per-post + post-frequency
-             * signals instead of Reddit's frequently-zero
-             * active_user_count metadata. Fixes the "Activity"
-             * bar always reading 0. */
-            subProfiles: state.subProfiles || {},
-            strict: state.discoverStrict !== false,
-          }
-        );
-
-        const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
-        const f = result.filtered || { offtopic: 0, weak: 0, mega: 0 };
-        const droppedTotal = f.offtopic + f.weak + f.mega;
-        console.log(`[discover] ${campaign.name}: ${queries.length} queries · ${detectedSpheres.length} spheres (${sphereSeedFetched}/${sphereSeedAttempted} seeds fetched) · ${subResults.size} unique subs (${postHitsTotal} hot posts mined) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · ${droppedTotal} dropped by ${result.strict ? "strict" : "loose"} filter (offtopic=${f.offtopic} weak=${f.weak} mega=${f.mega}) · spheres=${detectedSpheres.join(",") || "—"} (${dur}ms)`);
-
-const bestCampaignPost = (summary.posts || [])
+        const bestCampaignPost = (summary.posts || [])
           .slice()
           .sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
-        const campaignSubs = new Set((profile.subreddits || []).map((s) => String(s).toLowerCase()));
-        /* Stash the full ranked result so paginator clicks can re-
-         * render against it without re-running the whole discovery
-         * search (which is multi-second and burns Reddit calls). */
+
         state.lastDiscoverResult = result;
-        state.lastDiscoverCtx = { campaign, bestCampaignPost, campaignSubs };
-        /* Reset to page 0 on a fresh discovery run so the user sees
-         * the top of the new list instead of being stranded on page
-         * 5 of the previous campaign's results. */
+        state.lastDiscoverCtx = {
+          campaign: campaign,
+          bestCampaignPost: bestCampaignPost,
+          campaignSubs: new Set((profile.subreddits || []).map((s) => String(s).toLowerCase())),
+        };
+        /* A fresh run is a new ranking, so start at the top of it rather
+         * than stranding the user on page 5 of the previous campaign. */
         state.recommend.discover.new.page = 0;
         state.recommend.discover.already.page = 0;
-        UI.renderDiscoveryCandidates(result, discoverResults, {
-          campaign,
-          bestCampaignPost,
-          campaignSubs,
-          paging: {
-            new:     state.recommend.discover.new,
-            already: state.recommend.discover.already,
-          },
-        });
-        updateSphereChipScores(result);
-        Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
+        rerenderDiscovery();
 
-        const sphereTail = detectedSpheres.length
-          ? ` · detected sphere${detectedSpheres.length === 1 ? "" : "s"}: <em>${detectedSpheres.slice(0, 4).map(Util.escapeHtml).join(", ")}</em>${detectedSpheres.length > 4 ? ` +${detectedSpheres.length - 4} more` : ""}`
-          : "";
-        const filterTail = result.strict && droppedTotal
-          ? ` · filtered ${droppedTotal} off-topic / generic sub${droppedTotal === 1 ? "" : "s"} (toggle All to see them)`
-          : "";
-        const status = result.candidates.length
-          ? `Found <strong>${result.candidates.length}</strong> new sub${result.candidates.length === 1 ? "" : "s"} matching this campaign — plus ${result.alreadyLoaded.length} of your existing subs that also rank highly${sphereTail}${filterTail}.`
-          : `Scanned ${result.totalScanned} sub${result.totalScanned === 1 ? "" : "s"} — every topical match is already in your dashboard${filterTail}${sphereTail}. Try toggling All, removing a filter chip, or running Discover on a campaign with broader themes.`;
-        if (discoverStatus) {
-          discoverStatus.style.display = "block";
-          discoverStatus.className = "meta " + (result.candidates.length ? "ok" : "warn");
-          discoverStatus.innerHTML = status;
-        }
+        const dur = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
+        const f = result.filtered || {};
+        const spheres = (result.autoSpheres || []).map((s) => `${s.key}:${s.confidence}%`).join(" ") || "—";
+        console.log(`[discover] ${campaign.name}: ${result.queries.length} queries · spheres ${spheres} · ${result.totalScanned} scored (${result.postsMined} subs mined from posts) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · dropped offtopic=${f.offtopic || 0} weak=${f.weak || 0} mega=${f.mega || 0} · ${dur}ms`);
+        Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
       } catch (err) {
         console.warn("[discover] failed:", err && err.message);
         setDiscoverStatus(`Discovery failed: ${(err && err.message) || err}`, "err");
         Util.hideProgress();
-        discoverResults.innerHTML = "";
+        if (discoverResults) discoverResults.innerHTML = "";
       } finally {
         if (discoverBtn) { discoverBtn.disabled = false; discoverBtn.textContent = "Find subreddits"; }
       }
     }
+
     if (discoverBtn) discoverBtn.addEventListener("click", runDiscover);
     /* Hoist runDiscover up to the IIFE scope so other handlers (e.g.
      * the new Posts-tab → Make Campaign flow) can call it without

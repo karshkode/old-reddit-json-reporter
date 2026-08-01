@@ -540,8 +540,33 @@
 }
 .sphere-suggestions {
   display: flex;
+  align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+.sphere-suggestions .meta {
+  font-size: var(--fs-xs);
+}
+.chip.sphere-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The confidence reads as a measurement, not a label, so it sits in its
+ * own pill rather than running on from the sphere name. */
+.chip.sphere-suggestion .chip-meta {
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.2px;
+  color: var(--text-mute);
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.chip.sphere-suggestion.active .chip-meta {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
 }
 
 /* Cross-post submit link on discovery candidates. Info-blue so it reads

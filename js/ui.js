@@ -1140,7 +1140,7 @@
       const cls = t.score >= 70 ? "good" : t.score >= 50 ? "info" : t.score >= 30 ? "warn" : "bad";
       const reasonsHtml = t.reasons.map((r) => `<li>${r}</li>`).join("");
       const segments = `
-        <div class="meter">
+        <div class="meter-list">
           ${meterRow("Themes", t.themeJaccard, "var(--accent)")}
           ${meterRow("Sentiment", t.sentMatch, "var(--info)")}
           ${meterRow("Reception", t.reception, "var(--good)")}
@@ -1198,28 +1198,19 @@
     el.innerHTML = head + sizeRow + cards + pagerHtml;
   };
 
-  /* Render new-subreddit candidates discovered via Reddit search.
+  /* Render subreddit candidates from a Discovery.run result.
    *
-   * `result` shape:
-   *   { candidates:[...], alreadyLoaded:[...], totalScanned: N }
-   * (for back-compat we still accept a plain array). */
+   * Each candidate is a Discovery.scoreCandidate output:
+   *   { key, name, record, score, signals:{…}, overlapTerms, reasons } */
   UI.renderDiscoveryCandidates = function (result, container, ctx) {
     const el = typeof container === "string" ? document.getElementById(container) : container;
     if (!el) return;
     ctx = ctx || {};
-    let candidates, alreadyLoaded, totalScanned;
-    if (Array.isArray(result)) {
-      candidates = result; alreadyLoaded = []; totalScanned = result.length;
-    } else if (result) {
-      candidates = result.candidates || [];
-      alreadyLoaded = result.alreadyLoaded || [];
-      totalScanned = result.totalScanned || (candidates.length + alreadyLoaded.length);
-    } else {
-      candidates = []; alreadyLoaded = []; totalScanned = 0;
-    }
+    const candidates = (result && result.candidates) || [];
+    const alreadyLoaded = (result && result.alreadyLoaded) || [];
 
     if (!candidates.length && !alreadyLoaded.length) {
-      el.innerHTML = '<div class="empty">No candidate subreddits found. Try opening a campaign with richer post content first.</div>';
+      el.innerHTML = '<div class="empty">No candidate subreddits cleared the bar. Switch to <strong>All</strong> to see what was filtered out, or add more posts to the campaign so there is more vocabulary to match on.</div>';
       return;
     }
 
@@ -1238,18 +1229,27 @@
 
     function renderCard(c, i, isAlready) {
       const cls = c.score >= 70 ? "good" : c.score >= 50 ? "info" : c.score >= 30 ? "warn" : "bad";
-      const reasons = c.reasons.map((r) => `<li>${r}</li>`).join("");
-      const desc = c.candidate.public_description ? `<div class="cand-desc">${Util.escapeHtml(c.candidate.public_description.slice(0, 220))}${c.candidate.public_description.length > 220 ? "…" : ""}</div>` : "";
+      const s = c.signals || {};
+      const record = c.record || {};
+      const reasons = (c.reasons || []).map((r) => `<li>${r}</li>`).join("");
+      const blurb = record.public_description || record.title || "";
+      const desc = blurb ? `<div class="cand-desc">${Util.escapeHtml(blurb.slice(0, 220))}${blurb.length > 220 ? "…" : ""}</div>` : "";
+      /* Theme and sphere are the two the score actually turns on, so they
+       * lead; reach and activity are context for whether the match is
+       * worth acting on. Which sphere the bar refers to is named in the
+       * reasons directly below, so the label stays short here and keeps
+       * the rows aligned. */
       const meters = `
-        <div class="meter">
-          ${meterRow("Theme", c.themeMatch, "var(--accent)")}
-          ${meterRow("Popularity", c.popularity, "var(--info)")}
-          ${meterRow("Activity", c.engagement, "var(--good)")}
+        <div class="meter-list">
+          ${meterRow("Theme", s.theme, "var(--accent)", "Vocabulary overlap with your campaign's posts")}
+          ${meterRow("Sphere", s.sphere, "var(--accent-2)", s.sphereLabel ? `Fit with the ${s.sphereLabel} sphere` : "No sphere matched")}
+          ${meterRow("Reach", s.popularity, "var(--info)", "Subscriber count, log-scaled")}
+          ${meterRow("Activity", s.engagement, "var(--good)", "How much discussion a post here tends to get")}
         </div>
       `;
       const action = isAlready
         ? `<span class="badge info">already in your dashboard</span>`
-        : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>`;
+        : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.key)}">＋ Add to dashboard</button>`;
 
       /* Submit-to-Reddit link (only when we have a campaign post template
        * AND the candidate sub doesn't already host it). The button is
@@ -1258,15 +1258,15 @@
        * here and we'll add it to the campaign so its stats start
        * tracking immediately. */
       let submitBlock = "";
-      if (bestPost && !campaignSubs.has(c.canonical)) {
-        const submitUrl = Util.buildSubmitUrl(c.canonical, bestPost);
+      if (bestPost && !campaignSubs.has(c.key)) {
+        const submitUrl = Util.buildSubmitUrl(c.key, bestPost);
         if (submitUrl) {
           const titleHint = String(bestPost.title || "").slice(0, 120);
-          const tip = `Open Reddit's compose page in r/${c.canonical} pre-filled with "${titleHint}"${campaignName ? ` from "${campaignName}"` : ""}`;
+          const tip = `Open Reddit's compose page in r/${c.key} pre-filled with "${titleHint}"${campaignName ? ` from "${campaignName}"` : ""}`;
           submitBlock = `
             <a class="btn small submit-link"
                data-action="open-submit"
-               data-canonical="${Util.escapeHtml(c.canonical)}"
+               data-canonical="${Util.escapeHtml(c.key)}"
                href="${Util.escapeHtml(submitUrl)}"
                target="_blank" rel="noopener"
                title="${Util.escapeHtml(tip)}">↪ Cross-post here</a>`;
@@ -1279,15 +1279,15 @@
        * see app.js delegated handler). The user can also click the
        * "I posted it" button manually if they already cross-posted in a
        * separate tab. */
-      const trackerBlock = (campaignName && bestPost && !campaignSubs.has(c.canonical)) ? `
-        <details class="cand-tracker" data-canonical="${Util.escapeHtml(c.canonical)}">
-          <summary>↪ I posted to r/${Util.escapeHtml(c.canonical)} — track it in this campaign</summary>
+      const trackerBlock = (campaignName && bestPost && !campaignSubs.has(c.key)) ? `
+        <details class="cand-tracker" data-canonical="${Util.escapeHtml(c.key)}">
+          <summary>↪ I posted to r/${Util.escapeHtml(c.key)} — track it in this campaign</summary>
           <div class="cand-tracker-body">
             <label class="group-label">Paste your new Reddit post URL — auto-adds on paste</label>
             <div class="cand-tracker-row">
               <input type="text"
                      data-action="track-post-url"
-                     placeholder="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/comments/..."
+                     placeholder="https://www.reddit.com/r/${Util.escapeHtml(c.key)}/comments/..."
                      autocomplete="off"
                      spellcheck="false" />
               <button type="button" class="btn small ghost" data-action="track-post-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
@@ -1299,14 +1299,14 @@
       ` : "";
 
       return `
-        <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.canonical)}">
+        <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.key)}">
           <div class="target-head">
             <div>
               <span class="rank">#${i + 1}</span>
               <strong>r/${Util.escapeHtml(c.name)}</strong>
               <span class="badge ${cls}">fit ${c.score}</span>
             </div>
-            <div class="target-meta">${Util.fmtNum(c.candidate.subscribers)} subs${c.candidate.active_user_count ? ` · ${Util.fmtNum(c.candidate.active_user_count)} online` : ""}</div>
+            <div class="target-meta">${Util.fmtNum(record.subscribers)} subs${record.active_user_count ? ` · ${Util.fmtNum(record.active_user_count)} online` : ""}</div>
           </div>
           ${desc}
           ${meters}
@@ -1314,7 +1314,7 @@
           <div class="cand-actions">
             ${action}
             ${submitBlock}
-            <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
+            <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.key)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
           </div>
           ${trackerBlock}
         </div>
@@ -1408,9 +1408,10 @@
     el.innerHTML = newSection + alreadySection;
   };
 
-  function meterRow(label, value, color) {
-    const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
-    return `<div class="meter-row"><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
+  function meterRow(label, value, color, tip) {
+    const pct = Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * 100);
+    const t = tip ? ` title="${Util.escapeHtml(tip)}"` : "";
+    return `<div class="meter-row"${t}><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
   }
 
 
