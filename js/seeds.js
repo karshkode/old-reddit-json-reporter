@@ -324,33 +324,14 @@
     return Seeds.spheresOf(subName).length > 0;
   };
 
-  /* Detect issue + demographic spheres from a campaign profile.
-   * Triggers are matched against the campaign's top keywords + bigrams
-   * (case-insensitive substring). Returns ordered array of detected
-   * sphere keys, most-confident first. */
-  Seeds.detectSpheres = function (campaignProfile) {
-    if (!campaignProfile) return [];
-    const text = (
-      (campaignProfile.keywords || []).map((k) => k.word).join(" ") + " " +
-      (campaignProfile.bigrams || []).map((b) => b.phrase).join(" ")
-    ).toLowerCase();
-    if (!text.trim()) return [];
-
-    const score = {};
-    function tally(triggerMap) {
-      for (const [sphere, triggers] of Object.entries(triggerMap)) {
-        for (const t of triggers) {
-          if (text.indexOf(t) >= 0) score[sphere] = (score[sphere] || 0) + 1;
-        }
-      }
-    }
-    tally(Seeds.SPHERE_TRIGGERS);
-    tally(Seeds.DEMOGRAPHIC_TRIGGERS);
-
-    return Object.entries(score)
-      .sort((a, b) => b[1] - a[1])
-      .map(([k]) => k);
-  };
+  /* Spheres used to be "detected" here by testing whether a trigger word
+   * appeared verbatim in the campaign's keywords, which made a sphere
+   * either on or off with nothing in between and left it invisible when
+   * the campaign said "renters" and the table said "tenant". The trigger
+   * lists survive as vocabulary — Discovery.sphereProfiles folds them
+   * into each sphere's term vector — but the ranking now happens in
+   * Discovery.rankSpheres, which scores every sphere with a confidence
+   * instead of picking the ones that happened to be spelled right. */
 
   /* ---------- Starter bundles ----------
    * Cross-sphere combinations that make a sensible first load. The old
