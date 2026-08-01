@@ -118,18 +118,17 @@
       </button>
     </div>
 
-    <!-- Shown when every public CORS proxy is failing and no custom
-         worker is configured. Reddit periodically blocks datacenter IPs
-         en masse, which breaks all of them at once. -->
+    <!-- Shown when every CORS proxy in the chain is failing. Reddit
+         refuses unauthenticated requests from datacenter IPs, which is
+         every proxy at once — including a Cloudflare Worker of your
+         own, so the way out is the archive, not a better proxy. -->
     <div id="proxy-down-banner" class="alert-banner" hidden role="alert" aria-live="assertive">
       <div class="alert-banner-text">
-        <strong>Reddit is blocking the public proxies.</strong>
-        Deploy your own free Cloudflare Worker (about three minutes, no credit card) and paste the URL into <em>Settings → Data source → Custom</em>.
+        <strong>Reddit is refusing every proxy.</strong>
+        It blocks unauthenticated requests from datacenter IPs, which covers all of these — and a Cloudflare Worker of your own too. The <em>Reddit archive</em> is a public mirror your browser can read directly, with nothing to deploy.
       </div>
       <div class="alert-banner-actions">
-        <a id="proxy-down-banner-guide" class="btn primary small"
-           href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md"
-           target="_blank" rel="noopener">Setup guide ↗</a>
+        <button id="proxy-down-banner-switch" class="btn primary small" type="button">Switch to the archive</button>
         <button id="proxy-down-banner-dismiss" class="btn ghost small" type="button">Dismiss</button>
       </div>
     </div>

@@ -1610,6 +1610,21 @@
     if (proxyDownDismiss) {
       proxyDownDismiss.addEventListener("click", dismissProxyDownBanner);
     }
+    /* The banner's one-tap fix. Pinning the archive explicitly, rather
+     * than leaving it on auto, stops the chain from spending seconds on
+     * the proxies we just told the user are refused. */
+    const proxyDownSwitch = document.getElementById("proxy-down-banner-switch");
+    if (proxyDownSwitch) {
+      proxyDownSwitch.addEventListener("click", () => {
+        Reddit.setTransport("archive");
+        if (transportSelect) transportSelect.value = "archive";
+        syncCustomInputVisibility();
+        Reddit.clearCache();
+        dismissProxyDownBanner();
+        Util.toast("Reading from the Reddit archive", "ok");
+        refreshData(true);
+      });
+    }
 
     function onTransportChange(e) {
       const v = e.target.value;
