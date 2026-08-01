@@ -314,6 +314,109 @@
     });
   };
 
+  /* The fitted posting-time curve against the posts it was fitted to.
+   *
+   * The hour-by-hour bar chart this replaces plotted mean score per
+   * hour, which is precisely the quantity the estimator was rewritten
+   * to stop trusting: one breakout post produced a bar four times the
+   * height of every honest hour. A reader comparing that chart with
+   * the recommendation underneath would reasonably conclude the
+   * recommendation was wrong.
+   *
+   * So the chart now shows what the model actually claims — a smooth
+   * curve of the typical post through the day — over a scatter of
+   * every post on a log scale. The breakout is still visible, sitting
+   * far above a curve that barely acknowledges it, which is the whole
+   * argument in one picture. The recommended window is the segment
+   * drawn in accent colour. */
+  Charts.timingCurve = function (id, row, opts) {
+    opts = opts || {};
+    const t = theme();
+    const fit = row && row.fit;
+    if (!fit || !fit.curveScores) return Charts.hourHeat(id, row.agg, opts);
+
+    const slots = fit.curveScores.length;
+    const curve = fit.curveScores.map((v, i) => ({ x: (i * 24) / slots, y: Math.max(0.5, v) }));
+    /* Close the loop so the line does not stop short of midnight. */
+    curve.push({ x: 24, y: Math.max(0.5, fit.curveScores[0]) });
+
+    const baseline = Math.max(0.5, Math.expm1(fit.grandLog));
+    const winStart = fit.window.start / 60;
+    const winEnd = fit.window.end / 60;
+    const wraps = winEnd <= winStart;
+    const inWindow = (h) => (wraps ? (h >= winStart || h <= winEnd) : (h >= winStart && h <= winEnd));
+
+    const points = fit.points.map((p) => ({ x: p.x, y: p.y }));
+    const capped = fit.points.some((p) => p.capped);
+
+    const base = commonOpts();
+    return render(id, {
+      type: "scatter",
+      data: {
+        datasets: [
+          {
+            label: capped ? "Posts (extremes capped in the fit)" : "Posts",
+            data: points,
+            showLine: false,
+            pointRadius: 2,
+            pointHoverRadius: 4,
+            backgroundColor: hexA(t.info, 0.45),
+            borderColor: "transparent",
+          },
+          {
+            label: "Typical post",
+            data: curve,
+            showLine: true,
+            pointRadius: 0,
+            borderWidth: 2,
+            tension: 0.3,
+            borderColor: t.mute,
+            segment: {
+              borderColor: (ctx) => (inWindow(ctx.p0.parsed.x) && inWindow(ctx.p1.parsed.x) ? t.accent : t.mute),
+              borderWidth: (ctx) => (inWindow(ctx.p0.parsed.x) && inWindow(ctx.p1.parsed.x) ? 3 : 2),
+            },
+          },
+          {
+            label: "This community's baseline",
+            data: [{ x: 0, y: baseline }, { x: 24, y: baseline }],
+            showLine: true,
+            pointRadius: 0,
+            borderWidth: 1,
+            borderDash: [4, 4],
+            borderColor: hexA(t.dim, 0.7),
+          },
+        ],
+      },
+      options: Object.assign(base, {
+        plugins: Object.assign({}, base.plugins, {
+          legend: { display: !opts.compact, labels: { color: t.dim, font: { size: 10 }, boxWidth: 10 } },
+          tooltip: Object.assign({}, base.plugins.tooltip, {
+            callbacks: {
+              label: (c) => {
+                const h = Math.floor(c.parsed.x);
+                const m = Math.round((c.parsed.x - h) * 60);
+                return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} — ${Math.round(c.parsed.y)}`;
+              },
+            },
+          }),
+        }),
+        scales: {
+          x: Object.assign({}, base.scales.x, {
+            type: "linear", min: 0, max: 24,
+            ticks: Object.assign({}, base.scales.x.ticks, {
+              stepSize: opts.compact ? 6 : 3,
+              callback: (v) => String(v).padStart(2, "0"),
+            }),
+          }),
+          y: Object.assign({}, base.scales.y, {
+            type: "logarithmic",
+            title: opts.compact ? { display: false } : { display: true, text: "score", color: t.mute },
+          }),
+        },
+      }),
+    });
+  };
+
   Charts.dow = function (id, agg) {
     const t = theme();
     const labels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];

@@ -141,15 +141,17 @@
     };
   }
 
+  /* Order-independent by construction. The same posts listed in a
+     different order are the same evidence, and a recommendation that
+     changed when the posts table was re-sorted would be indefensible
+     however small the change. */
   function seedFrom(obs) {
     let h = 2166136261;
     for (let i = 0; i < obs.length; i++) {
-      h ^= Math.round(obs[i].minute * 60) + i;
-      h = Math.imul(h, 16777619);
-      h ^= Math.round(obs[i].y * 1000);
-      h = Math.imul(h, 16777619);
+      h = (h + Math.imul(Math.round(obs[i].minute * 60) + 1, 2654435761)) >>> 0;
+      h = (h + Math.imul(Math.round(obs[i].y * 1000) + 1, 40503)) >>> 0;
     }
-    return h >>> 0;
+    return (h ^ obs.length) >>> 0;
   }
 
   /* ---------- observations ---------- */
@@ -169,10 +171,12 @@
       if (p.stickied || p.removed) { excluded++; continue; }
       if (p.score_confirmed === false) provisional++;
       const d = new Date(p.created_utc * 1000);
+      const y = Math.log1p(Math.max(0, p.score || 0));
       obs.push({
         minute: d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60,
         dow: d.getDay(),
-        y: Math.log1p(Math.max(0, p.score || 0)),
+        y: y,
+        raw: y,
         ratio: (p.upvote_ratio != null && p.upvote_ratio > 0 && p.upvote_ratio <= 1) ? p.upvote_ratio : null,
       });
     }
@@ -386,6 +390,10 @@
     const minSample = opts.minSample == null ? 4 : opts.minSample;
     if (n < Math.max(4, minSample)) return null;
 
+    /* Canonical order, so the shuffles below draw the same sequence
+       whatever order the posts arrived in. */
+    obs.sort((a, b) => (a.minute - b.minute) || (a.y - b.y));
+
     const clipped = winsorise(obs);
 
     let total = 0;
@@ -548,7 +556,7 @@
        when the shuffle says the days really differ. */
     const dow = dayOfWeekEffect(obs, grand, rand);
 
-    const signal = classify(p, liftPct, liftLow, scale.neff[bestIdx], n);
+    const signal = classify(p, liftPct, liftLow, scale.neff[bestIdx], n, runLength * SLOT_MIN);
 
     /* Busiest slot is an activity measure, not a performance one.
        Kept as an explicit fallback for communities with no timing
@@ -581,6 +589,16 @@
       curve: mu,
       curveVariance: variance(mu),
       ratioCurve: ratioCurve,
+      /* The fitted curve and the posts behind it, both on the score
+         scale, so the panel chart can show the estimate against the
+         data it came from — including the breakout the estimate is
+         deliberately not chasing. */
+      curveScores: Array.from(mu, (v) => Math.expm1(v)),
+      points: obs.map((o) => ({
+        x: o.minute / 60,
+        y: Math.max(1, Math.expm1(o.raw)),
+        capped: o.raw !== o.y,
+      })),
 
       slot: bestIdx * SLOT_MIN,
       slotLabel: Timing.formatSlot(bestIdx * SLOT_MIN),
@@ -630,11 +648,26 @@
      whatever the arithmetic says. */
   const HARD_FLOOR = 8;
 
-  function classify(p, liftPct, liftLow, effN, n) {
-    if (n < HARD_FLOOR || !(effN >= 2)) return "none";
-    if (p <= 0.05 && liftLow > 0) return "strong";
-    if (p <= 0.15 && liftPct > 0) return "likely";
-    if (p <= 0.25 && liftPct >= 10) return "weak";
+  /* Effect size gates alongside the p-values. A slot can be
+     statistically distinguishable from the community's baseline and
+     still not be worth waiting for: five percent on a typical post is
+     a finding about the data, not a reason to schedule anything. The
+     weaker the evidence, the larger the effect has to be to earn a
+     mention at all.
+
+     The window gate is the other half of the same idea. When the
+     slots that are statistically tied with the peak span half the
+     day, the model has found that afternoons beat nights, not a time
+     to post, and naming a quarter hour inside that would be
+     precision the fit does not have. */
+  function classify(p, liftPct, liftLow, effN, n, windowMinutes) {
+    if (n < HARD_FLOOR || !(effN >= 3)) return "none";
+    if (windowMinutes > 720) return "none";
+    /* Calling something strong off three posts is a contradiction in
+       terms whatever the arithmetic says. */
+    if (p <= 0.05 && liftLow > 0 && effN >= 5) return "strong";
+    if (p <= 0.15 && liftPct >= 15) return "likely";
+    if (p <= 0.25 && liftPct >= 25) return "weak";
     return "none";
   }
 
@@ -781,14 +814,18 @@
   const FIT_CACHE_MAX = 96;
 
   function fitSignature(key, posts, minSample) {
-    let h = 2166136261;
+    /* Summed rather than folded, so re-sorting the posts table does
+       not miss the cache and recompute an identical answer. */
+    let h = 0;
     for (const p of posts) {
+      let one = 2166136261;
       const id = p.id || "";
-      for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619); }
-      h ^= (p.score || 0); h = Math.imul(h, 16777619);
-      h ^= Math.round(p.created_utc || 0); h = Math.imul(h, 16777619);
+      for (let i = 0; i < id.length; i++) { one ^= id.charCodeAt(i); one = Math.imul(one, 16777619); }
+      one ^= (p.score || 0); one = Math.imul(one, 16777619);
+      one ^= Math.round(p.created_utc || 0); one = Math.imul(one, 16777619);
+      h = (h + (one >>> 0)) >>> 0;
     }
-    return `${key}|${posts.length}|${minSample}|${h >>> 0}`;
+    return `${key}|${posts.length}|${minSample}|${h}`;
   }
 
   function cachedFit(key, posts, minSample) {
@@ -841,9 +878,13 @@
     row.slot = fit.slot;
     row.slotLabel = fit.slotLabel;
     row.window = fit.window;
-    row.lift = Math.round(fit.lift);
-    row.liftLow = Math.round(fit.liftLow);
-    row.liftHigh = Math.round(fit.liftHigh);
+    /* Unrounded. An interval whose lower bound is +0.4% is the
+       difference between a finding and a coincidence, and rounding it
+       here would print "+0%" beside a claim that it clears zero. The
+       renderers decide how many digits to show. */
+    row.lift = fit.lift;
+    row.liftLow = fit.liftLow;
+    row.liftHigh = fit.liftHigh;
     row.effectiveN = fit.effectiveN;
     row.typicalScore = fit.typicalScore;
     row.baselineScore = fit.baselineScore;

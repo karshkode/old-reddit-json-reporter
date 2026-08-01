@@ -63,7 +63,7 @@
         const when = (lead.slotLabel || "—") + (tz ? " " + tz : "");
         const bits = [`r/${Util.escapeHtml(lead.subreddit)}`];
         if (lead.next) bits.push(lead.next.inLabel.replace(/^in /, ""));
-        if (lead.lift > 0) bits.push(`+${lead.lift}%`);
+        if (lead.lift > 0) bits.push(signed(lead.lift));
         return { label: "Next posting slot", value: when, sub: bits.join(" · ") };
       })(),
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
@@ -85,8 +85,12 @@
     return String(h).padStart(2, "0") + ":00";
   }
 
+  /* One decimal below a whole point, so an interval that only just
+   * clears zero does not render as "+0%" next to a claim that it
+   * does. */
   function signed(v) {
-    return (v > 0 ? "+" : "") + Math.round(v) + "%";
+    const n = Math.abs(v) < 1 ? v.toFixed(1) : String(Math.round(v));
+    return (v > 0 ? "+" : "") + n + "%";
   }
 
   /* The clock time a row recommends. Falls back to the hour label for
@@ -147,15 +151,21 @@
        * as easily be -8% is a different instruction from a "+50%"
        * that bottoms out at +20%, and only one of them is worth
        * rearranging an afternoon for. */
-      bits.push(`<strong>${signed(r.lift)}</strong> on a typical post`
+      bits.push(`<strong>${signed(r.lift)}</strong>`
         + (r.liftLow != null ? ` <span class="timing-ci">(${signed(r.liftLow)} to ${signed(r.liftHigh)})</span>` : ""));
     }
-    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts nearby`);
+    /* Anything inside the tied window is as good, and those windows
+     * are often hours wide. Showing only the quarter hour would read
+     * as an instruction to be at a desk at 22:45 exactly. */
+    if (r.window && r.window.minutes > 60 && r.window.slots < Timing.SLOTS) {
+      bits.push(`${Util.escapeHtml(Timing.windowLabel(r))} window`);
+    }
+    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts near it`);
     if (r.p != null) bits.push(Util.escapeHtml(Timing.pLabel(r.p)));
     if (r.ratioAt != null && r.ratioBase != null && Math.abs(r.ratioAt - r.ratioBase) >= 0.01) {
-      bits.push(`${Util.fmtPct(r.ratioAt)} ratio ${r.ratioAt > r.ratioBase ? "up from" : "down from"} ${Util.fmtPct(r.ratioBase)}`);
+      bits.push(`ratio ${Util.fmtPct(r.ratioAt)} vs ${Util.fmtPct(r.ratioBase)}`);
     }
-    if (r.dowName) bits.push(`best on ${Util.escapeHtml(r.dowName)}`);
+    if (r.dowName) bits.push(`${Util.escapeHtml(r.dowName)}s`);
     if (r.next) bits.push(Util.escapeHtml(r.next.inLabel));
     return bits.join(" · ");
   }
@@ -247,7 +257,7 @@
       const slot = host.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
       if (!slot) continue;
       try {
-        Charts.mount(slot, { kind: "hourHeat", data: row.agg, opts: { compact: true } });
+        Charts.mount(slot, { kind: "timingCurve", data: row, opts: { compact: true } });
       } catch (err) {
         console.warn(`[timing] r/${row.subreddit}:`, err && err.message);
       }
