@@ -359,7 +359,7 @@ tbody td .title-text {
 /* Subreddit profiles list */
 .profile-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 12px;
 }
 .profile-card {
@@ -592,7 +592,7 @@ tbody td .title-text {
 .mini-table tr:last-child td { border-bottom: 0; }
 .compare-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -2245,7 +2245,7 @@ body.modal-open { overflow: hidden; }
 }
 .starter-packs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 8px;
 }
 .starter-pack {
@@ -2530,7 +2530,7 @@ body.modal-open { overflow: hidden; }
 .ab-vs { color: var(--text-mute); font-size: 11px; }
 .ab-insights { margin: 6px 0 14px; padding-left: 18px; color: var(--text-dim); font-size: 12px; }
 .ab-insights li { margin: 3px 0; }
-.ab-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
+.ab-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 6px; }
 .ab-tile { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .ab-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-mute); margin-bottom: 4px; }
 .ab-values { display: flex; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }
@@ -3489,7 +3489,7 @@ body.sidebar-open {
  * ==================================================================== */
 .campaign-hub {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 10px;
   margin-top: 14px;
 }
@@ -3534,7 +3534,7 @@ body.sidebar-open {
  * the same numbers are repeated in the Overview section. */
 .campaign-hub-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   gap: 8px;
   margin-top: 10px;
   padding: 10px 12px;
