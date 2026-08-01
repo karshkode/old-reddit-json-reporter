@@ -678,15 +678,69 @@
     body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
     try {
       let data = state.detailCache.get(post.id);
+      if (!data && window.Demo && Demo.isActive()) {
+        data = Demo.detailFor(post);
+        if (data) state.detailCache.set(post.id, data);
+      }
       if (!data) {
         data = await Reddit.fetchPostWithComments(post.id, { commentLimit: 50 });
         if (data) state.detailCache.set(post.id, data);
       }
       if (!data) throw new Error("post not found");
       UI.renderPostDetail(data.post, data.comments);
+      renderRelatedForDetail(data.post);
     } catch (err) {
       body.innerHTML = `<div class="empty">Failed to load post: ${Util.escapeHtml(err.message)}</div>`;
     }
+  }
+
+  /* ---------- One post → spheres → related communities ---------- */
+
+  /* Cached because a match costs a few dozen about.json reads and the
+   * user will flip between posts. */
+  function relatedForPost(post, opts) {
+    const cached = state.postRelated.get(post.id);
+    if (cached && !(opts && opts.force)) return Promise.resolve(cached);
+    /* Loaded subs stay in the list rather than being excluded — "you
+     * are already in the three rooms that matter" is an answer too. */
+    return Discovery.forPost(post, {
+      limit: 12,
+      onPartial: opts && opts.onPartial,
+      /* Demo mode is offline by contract. */
+      live: !(window.Demo && Demo.isActive()),
+    }).then((result) => {
+      state.postRelated.set(post.id, result);
+      return result;
+    });
+  }
+
+  function renderRelatedForDetail(post) {
+    const host = document.getElementById("post-related-body");
+    if (!host) return;
+    host.dataset.postId = post.id;
+
+    function paint(result) {
+      /* The panel is rebuilt on every post, so a slow match arriving
+       * after the user moved on must not overwrite the new one. */
+      if (!host.isConnected || host.dataset.postId !== post.id) return;
+      UI.renderPostRelated(host, result);
+    }
+
+    UI.renderPostRelated(host, null);
+    relatedForPost(post, { onPartial: paint })
+      .then(paint)
+      .catch((err) => {
+        if (!host.isConnected || host.dataset.postId !== post.id) return;
+        host.innerHTML = `<p class="post-related-status">Couldn't match communities: ${Util.escapeHtml(err.message || String(err))}</p>`;
+      });
+  }
+
+  /* Every checked community inside a related panel. */
+  function checkedRelatedSubs(scope) {
+    const root = scope || document;
+    return Array.from(root.querySelectorAll("input[data-related-sub]:checked:not(:disabled)"))
+      .map((el) => el.dataset.relatedSub)
+      .filter(Boolean);
   }
 
   /* ---------- Campaigns ---------- */
@@ -2404,47 +2458,115 @@
      *        "Cross-post here" links + paste-back trackers populate
      *        without an extra click.
      */
-    const postsTbodyEl = document.getElementById("posts-tbody");
-    if (postsTbodyEl) {
-      postsTbodyEl.addEventListener("click", (e) => {
-        const makeBtn = e.target.closest && e.target.closest('[data-action="make-campaign-from-post"]');
-        if (makeBtn) {
-          e.preventDefault();
-          e.stopPropagation();
-          const tr = makeBtn.closest("tr");
-          const postId = makeBtn.dataset.postId;
-          const post = (state.posts || []).find((p) => p.id === postId);
-          if (!post || !tr) {
-            Util.toast("Post data not available — try refreshing.", "error");
-            return;
-          }
-          /* Close any other open form so only one is in-flight at a time. */
-          postsTbodyEl.querySelectorAll(".post-make-form-row").forEach((r) => {
-            const prev = r.previousElementSibling;
-            if (prev && prev !== tr) UI.dismissPostMakeCampaignForm(prev);
-          });
-          UI.renderPostMakeCampaignForm(tr, post);
+    /* Delegated from document rather than from #posts-tbody, because
+     * the very same form is now also opened from the post detail panel,
+     * which lives outside the table. */
+    document.addEventListener("click", (e) => {
+      const makeBtn = e.target.closest && e.target.closest('[data-action="make-campaign-from-post"]');
+      if (makeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const tr = makeBtn.closest("tr");
+        const postId = makeBtn.dataset.postId;
+        const post = (state.posts || []).find((p) => p.id === postId);
+        if (!post || !tr) {
+          Util.toast("Post data not available — try refreshing.", "error");
           return;
         }
+        /* Close any other open form so only one is in-flight at a time. */
+        document.querySelectorAll(".post-make-form-row").forEach((r) => {
+          const prev = r.previousElementSibling;
+          if (prev && prev !== tr) UI.dismissPostMakeCampaignForm(prev);
+        });
+        UI.renderPostMakeCampaignForm(tr, post);
+        primeRelatedPreview(tr.nextElementSibling, post);
+        return;
+      }
 
-        const cancelBtn = e.target.closest && e.target.closest('[data-action="cancel-make-campaign-from-post"]');
-        if (cancelBtn) {
-          e.preventDefault();
-          e.stopPropagation();
-          const formRow = cancelBtn.closest(".post-make-form-row");
-          const tr = formRow && formRow.previousElementSibling;
+      const cancelBtn = e.target.closest && e.target.closest('[data-action="cancel-make-campaign-from-post"]');
+      if (cancelBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const formRow = cancelBtn.closest(".post-make-form-row");
+        if (formRow) {
+          const tr = formRow.previousElementSibling;
           if (tr) UI.dismissPostMakeCampaignForm(tr);
           return;
         }
-      });
+        const host = Dom.byId("post-related-form");
+        if (host) { host.hidden = true; host.innerHTML = ""; }
+      }
+    });
 
-      postsTbodyEl.addEventListener("submit", async (e) => {
-        const form = e.target.closest && e.target.closest(".post-make-form");
-        if (!form) return;
-        e.preventDefault();
-        e.stopPropagation();
-        await handleMakeCampaignFromPost(form);
-      });
+    document.addEventListener("submit", async (e) => {
+      const form = e.target.closest && e.target.closest(".post-make-form");
+      if (!form) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await handleMakeCampaignFromPost(form);
+    });
+
+    /* Related-communities panel inside the post detail card. */
+    Dom.delegate(document, "click", '[data-action="load-related-subs"]', (e, btn) => {
+      const picked = checkedRelatedSubs(Dom.byId("post-related-body"));
+      if (!picked.length) {
+        Util.toast("Check at least one community first.", "error");
+        return;
+      }
+      const added = AppState.addSubs(picked);
+      renderChips();
+      btn.disabled = true;
+      btn.textContent = added.length ? `Loading ${added.length}…` : "Already loaded";
+      if (!added.length) return;
+      Util.toast(`Added ${added.length} communit${added.length === 1 ? "y" : "ies"} — pulling their posts.`, "ok");
+      refreshData().catch((err) => console.warn("[post-related] load failed:", err && err.message));
+    });
+
+    Dom.delegate(document, "click", '[data-action="load-sphere-from-post"]', (e, btn) => {
+      const key = btn.dataset.sphere;
+      const subs = Seeds.expand([key]);
+      if (!subs.length) return;
+      const added = AppState.addSubs(subs);
+      renderChips();
+      Util.toast(added.length
+        ? `Added ${added.length} of ${subs.length} communities from ${Seeds.labelOf(String(key).replace(/^(state|demo):/, ""))}.`
+        : `Every community in that sphere is already loaded.`, "ok");
+      if (added.length) refreshData().catch((err) => console.warn("[post-related] sphere load failed:", err && err.message));
+    });
+
+    Dom.delegate(document, "click", '[data-action="campaign-from-detail"]', (e, btn) => {
+      const post = (state.posts || []).find((p) => p.id === btn.dataset.postId);
+      if (!post) {
+        Util.toast("Post data not available — try refreshing.", "error");
+        return;
+      }
+      const host = Dom.byId("post-related-form");
+      if (!host) return;
+      UI.renderPostMakeCampaignInline(host, post);
+      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+
+    /* Drop the cached sphere match into the form so the user can see
+     * (and deselect) the communities before committing. */
+    function primeRelatedPreview(container, post) {
+      const host = container && container.querySelector('[data-role="pmf-related"]');
+      if (!host) return;
+      const cached = state.postRelated.get(post.id);
+      if (cached) {
+        UI.renderPostRelated(host, cached, { compact: true, actions: false, limit: 6 });
+        return;
+      }
+      function paint(result) {
+        if (!host.isConnected) return;
+        UI.renderPostRelated(host, result, { compact: true, actions: false, limit: 6 });
+      }
+
+      UI.renderPostRelated(host, null);
+      relatedForPost(post, { onPartial: paint })
+        .then(paint)
+        .catch((err) => {
+          if (host.isConnected) host.innerHTML = `<p class="post-related-status">Couldn't match communities: ${Util.escapeHtml(err.message || String(err))}</p>`;
+        });
     }
 
     async function handleMakeCampaignFromPost(form) {
@@ -2477,6 +2599,27 @@
           Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
         } else {
           Util.toast(`Created "${name}" — finding recommended subreddits…`, "ok");
+        }
+
+        /* Loading the matched communities is what makes the rest of the
+         * app useful for this post: once their posts are in, each one
+         * gets its own posting-time panel and its own benchmark on the
+         * campaign's subreddit cards. */
+        const wantsRelated = form.querySelector('input[data-field="loadRelated"]');
+        if (!wantsRelated || wantsRelated.checked) {
+          /* Opened from the detail panel, the form has no list of its
+           * own — it inherits whatever is ticked in the panel above. */
+          const picked = form.closest("#post-related-form")
+            ? checkedRelatedSubs(Dom.byId("post-related-body"))
+            : checkedRelatedSubs(form);
+          if (picked.length) {
+            const added = AppState.addSubs(picked);
+            renderChips();
+            if (added.length) {
+              Util.toast(`Loading ${added.length} matched communit${added.length === 1 ? "y" : "ies"} alongside the campaign…`, "ok");
+              refreshData().catch((err) => console.warn("[post->campaign] sub load failed:", err && err.message));
+            }
+          }
         }
 
         /* Mark the original action button as Created ✓ for visible

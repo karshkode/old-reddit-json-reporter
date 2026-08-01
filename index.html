@@ -592,8 +592,10 @@
           <header class="card-header">
             <div>
               <h2>Posts (<span id="posts-count">0</span>)</h2>
-              <span class="hint">Tap a row for comments, sentiment and a title-quality breakdown</span>
+              <span class="hint">Tap a row for comments, sentiment, a title-quality breakdown and the communities this post belongs in</span>
             </div>
+            <button class="card-help" type="button" aria-label="What you can do from a post"
+                    data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first.">?</button>
           </header>
 
           <div class="posts-controls">

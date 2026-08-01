@@ -373,6 +373,7 @@
         bestSphere: bestSphere, queryHits: queryHits, postHits: postHits,
         catalogSpheres: catalogSpheres, offtopic: offtopic,
         megaGeneric: megaGeneric, engagement: engagement,
+        subject: ctx.subject,
       }),
     };
   };
@@ -384,8 +385,11 @@
     const out = [];
 
     if (overlap.length) {
-      const words = overlap.slice(0, 5).map((t) => `<code>${esc(t.term)}</code>`).join(" ");
-      out.push(`Shares ${overlap.length === 1 ? "the term" : "vocabulary"} ${words} with your campaign`);
+      /* Comma-separated: the overlap list mixes single words and
+         bigrams, and space-separated they ran together into phrases
+         nobody wrote ("healthcare policy policy single single payer"). */
+      const words = overlap.slice(0, 5).map((t) => `<code>${esc(t.term)}</code>`).join(", ");
+      out.push(`Shares ${overlap.length === 1 ? "the term" : "vocabulary"} ${words} with your ${esc(s.subject || "campaign")}`);
     } else {
       out.push("No direct vocabulary overlap — surfaced by sphere or activity signals");
     }
@@ -908,6 +912,204 @@
 
     results.sort((a, b) => b.rank - a.rank);
     return results.slice(0, opts.limit || 25);
+  };
+
+  /* ==================================================================
+   * ONE POST → ITS SPHERES → THE COMMUNITIES THEY IMPLY
+   * ------------------------------------------------------------------
+   * Discovery.run needs a campaign. But the moment a user is looking
+   * at a single interesting post, the same question already applies:
+   * what is this about, and where else would it land? This is the
+   * cheap single-post version — no site-wide search, no post mining,
+   * just the catalog, the local index and a bounded about.json fill.
+   *
+   * It reports twice. The first pass scores whatever is already
+   * cached, so the panel paints immediately; the second pass fills in
+   * real descriptions and re-scores. Waiting on the network before
+   * showing anything made the affordance feel broken on a slow proxy.
+   * ================================================================== */
+
+  /* The term vector for one post. Title carries the message, flair
+   * carries the framing the community itself applied, and the body is
+   * folded in at low weight and truncated — a long self-post otherwise
+   * swamps its own headline. */
+  Discovery.postVector = function (post) {
+    const vec = {};
+    if (!post) return vec;
+    SubIndex.addText(vec, post.title || "", 3);
+    if (post.flair) SubIndex.addText(vec, post.flair, 2);
+    if (post.selftext) SubIndex.addText(vec, String(post.selftext).slice(0, 1500), 0.8);
+    if (post.subreddit) {
+      SubIndex.addText(vec, post.subreddit, 1.5);
+      const record = SubIndex.get(post.subreddit);
+      if (record) {
+        SubIndex.addText(vec, record.title || "", 1);
+        SubIndex.addText(vec, record.public_description || "", 0.8);
+      }
+    }
+    return vec;
+  };
+
+  /*   opts.limit        communities to return (default 12)
+   *   opts.exclude      names to mark as already loaded
+   *   opts.live         false to stay entirely offline
+   *   opts.aboutBudget  how many about.json reads the live pass may do
+   *   opts.onPartial    called with the offline result before the fill
+   */
+  Discovery.forPost = async function (post, opts) {
+    opts = opts || {};
+    await SubIndex.load();
+
+    const vector = Discovery.postVector(post);
+    if (!Object.keys(vector).length) {
+      throw new Error("This post has no readable text to match communities against.");
+    }
+
+    const home = String(post.subreddit || "").toLowerCase();
+    const excludeSet = new Set([home].concat((opts.exclude || []).map((s) => String(s).toLowerCase())));
+    excludeSet.delete("");
+
+    /* Candidate names come from three offline sources: the spheres the
+     * post text matches, the spheres the home sub is catalogued under
+     * (a labour post in a labour sub should surface labour siblings
+     * even when the title is too short to rank a sphere), and the
+     * nearest descriptions in whatever the index has already cached. */
+    function gatherNames(spheres) {
+      const names = new Map(); /* lowercase key -> display name */
+      const via = new Map();   /* lowercase key -> sphere label */
+
+      function add(name, sphereLabel) {
+        const key = String(name || "").toLowerCase();
+        if (!key || excludeSet.has(key)) return;
+        if (!names.has(key)) names.set(key, name);
+        if (sphereLabel && !via.has(key)) via.set(key, sphereLabel);
+      }
+
+      for (const sphere of spheres) {
+        for (const name of sphere.subs || []) add(name, sphere.label);
+      }
+      if (window.Seeds && post.subreddit) {
+        for (const key of Seeds.spheresOf(post.subreddit) || []) {
+          const label = Seeds.labelOf(String(key).replace(/^(state|demo):/, ""));
+          for (const name of Seeds.expand([key]) || []) add(name, label);
+        }
+      }
+      for (const hit of SubIndex.nearest(vector, { exclude: [home], limit: 20 })) {
+        add(hit.record.display_name, null);
+      }
+      return { names: names, via: via };
+    }
+
+    function build(spheres) {
+      const gathered = gatherNames(spheres);
+      const sphereByKey = new Map(Discovery.sphereProfiles().map((s) => [s.key, s]));
+      const withVectors = spheres.map((s) =>
+        Object.assign({}, s, { vector: (sphereByKey.get(s.key) || {}).vector }));
+
+      /* Catalog members we have never fetched still deserve a row. They
+       * were curated for this issue by hand, and telling the user
+       * "nothing matched" because about.json has not been read yet
+       * would be the index's problem presented as an answer. They get
+       * a name-only record and are exempt from the subscriber floor,
+       * since we do not know their size to check it against. */
+      const records = [];
+      const stubs = new Set();
+      for (const [key, display] of gathered.names.entries()) {
+        const record = SubIndex.get(key);
+        if (record) {
+          if (record.over18) continue;
+          if ((record.subscribers || 0) < (opts.minSubs == null ? 25 : opts.minSubs)) continue;
+          records.push(record);
+          continue;
+        }
+        if (!gathered.via.has(key)) continue;
+        const stub = SubIndex.makeRecord({ display_name: display }, { partial: true });
+        if (!stub) continue;
+        stubs.add(key);
+        records.push(stub);
+      }
+
+      const idf = SubIndex.buildIdf(records.map((r) => r.vector).concat([vector]));
+      const ctx = {
+        vector: vector,
+        idf: idf,
+        spheres: withVectors,
+        subProfiles: (window.AppState && AppState.subProfiles) || {},
+        subject: "post",
+      };
+
+      const scored = records.map((r) => {
+        const c = Discovery.scoreCandidate(r, ctx);
+        c.viaSphere = gathered.via.get(r.key) || (c.signals.sphereLabel || null);
+        c.loaded = !!(window.AppState && AppState.hasSub && AppState.hasSub(r.display_name));
+        c.stub = stubs.has(r.key);
+        /* A name-only match is a weaker claim than one backed by the
+         * community's own description, so it never outranks one. */
+        if (c.stub) {
+          c.composite *= 0.9;
+          c.score = Math.round(c.composite * 100);
+        }
+        return c;
+      });
+      scored.sort((a, b) => b.composite - a.composite);
+
+      return {
+        post: post,
+        vector: vector,
+        terms: Discovery.topTerms(vector, 8),
+        spheres: spheres,
+        home: SubIndex.get(home) || null,
+        communities: scored.slice(0, opts.limit || 12),
+        pool: gathered.names.size,
+        resolved: records.length - stubs.size,
+      };
+    }
+
+    const minConfidence = opts.minConfidence == null ? 40 : opts.minConfidence;
+    let spheres = Discovery.rankSpheres(vector, {
+      limit: opts.sphereLimit || 4,
+      minConfidence: minConfidence,
+    });
+
+    const partial = build(spheres);
+    if (typeof opts.onPartial === "function") {
+      try { opts.onPartial(partial); } catch (err) { console.warn("[forPost] onPartial:", err && err.message); }
+    }
+    if (opts.live === false) return partial;
+
+    /* Live pass: resolve descriptions for the shortlist so scoring is
+     * based on what the communities actually say about themselves.
+     *
+     * Bounded by a deadline rather than run to completion. When every
+     * public proxy is refusing — which is the normal state of affairs
+     * for unauthenticated Reddit now — SubIndex.ensure takes as long as
+     * the slowest failure chain, and the user is left staring at a
+     * panel that already had a usable offline answer. Whatever landed
+     * inside the deadline is in the index by then, so the re-score
+     * picks it up either way. */
+    const shortlist = Array.from(gatherNames(spheres).names.values());
+    if (shortlist.length) {
+      const fill = SubIndex.ensure(shortlist, {
+        limit: opts.aboutBudget == null ? 40 : opts.aboutBudget,
+        concurrency: 4,
+        onProgress: opts.onProgress,
+      }).catch((err) => console.warn("[forPost] description fill:", err && err.message));
+
+      const budget = opts.liveTimeout == null ? 12000 : opts.liveTimeout;
+      let timer;
+      await Promise.race([fill, new Promise((resolve) => { timer = setTimeout(resolve, budget); })]);
+      clearTimeout(timer);
+    }
+
+    /* Descriptions sharpen the sphere vectors, so the ranking is worth
+     * redoing rather than reusing the offline guess. */
+    Discovery.invalidateSpheres();
+    spheres = Discovery.rankSpheres(vector, {
+      limit: opts.sphereLimit || 4,
+      minConfidence: minConfidence,
+    });
+
+    return build(spheres);
   };
 
   window.Discovery = Discovery;

@@ -207,6 +207,42 @@
     return posts;
   };
 
+  /* Synthetic comments for the detail pane. Demo mode makes no network
+   * calls, so without these the detail pane — and the sphere match that
+   * hangs off it — is the one surface a demo visitor cannot see. Seeded
+   * off the post id so the same post always reads the same way. */
+  Demo.detailFor = function (post) {
+    if (!post) return null;
+    const bodies = [
+      "This is exactly the kind of organizing that works. Sharing with my local chapter tonight.",
+      "Genuine question — how did you handle the pushback from management? We hit a wall at that stage.",
+      "The numbers here are the part people miss. Turnout is downstream of contact, every time.",
+      "I would be careful about the framing. It reads well here but it will not travel to a general audience.",
+      "We ran something close to this two counties over and got about half the response rate. Location matters.",
+      "Saved. If anyone has a template for the outreach script I would take it.",
+      "Not convinced this scales, but I would rather be wrong about that than not try.",
+      "Cross-posted to a couple of related subs — hope that is alright.",
+    ];
+    let seed = 0;
+    for (const ch of String(post.id)) seed = (seed * 31 + ch.charCodeAt(0)) % 100003;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+
+    const count = 4 + Math.floor(rand() * 5);
+    const comments = [];
+    for (let i = 0; i < count; i++) {
+      comments.push({
+        id: `${post.id}-c${i}`,
+        author: `demo_user_${Math.floor(rand() * 900) + 100}`,
+        body: bodies[Math.floor(rand() * bodies.length)],
+        score: Math.max(1, Math.round(post.score * (0.002 + rand() * 0.03))),
+        replies: Math.floor(rand() * 4),
+        created_utc: post.created_utc + Math.floor(rand() * 7200) + 600,
+      });
+    }
+    comments.sort((a, b) => b.score - a.score);
+    return { post: post, comments: comments };
+  };
+
   Demo.isActive = function () {
     try {
       return new URLSearchParams(window.location.search).get("demo") === "1";

@@ -340,6 +340,81 @@
     tbody.appendChild(frag);
   };
 
+  /* ---------- One post → its spheres → related communities ---------- */
+
+  /* Rendered in two places from one function: the post detail panel
+   * (full, with per-row add buttons) and the make-campaign form
+   * (compact, as a preview of what the campaign will inherit). */
+  UI.renderPostRelated = function (host, result, opts) {
+    if (!host) return;
+    opts = opts || {};
+    if (!result) {
+      host.innerHTML = `<div class="post-related-status">${Dom.skeleton(3)}</div>`;
+      return;
+    }
+
+    const spheres = result.spheres || [];
+    const communities = (result.communities || []).filter((c) => opts.includeLoaded !== false || !c.loaded);
+    const shown = communities.slice(0, opts.limit || (opts.compact ? 6 : 10));
+
+    if (!spheres.length && !shown.length) {
+      host.innerHTML = `<p class="post-related-status">Nothing in the catalog reads like this post. Try the Communities search, or add the post to a campaign and run full discovery — that reaches Reddit's own search as well.</p>`;
+      return;
+    }
+
+    const sphereChips = spheres.map((s) => `
+      <button class="chip sphere-suggestion" type="button" data-action="load-sphere-from-post" data-sphere="${Util.escapeHtml(s.key)}"
+              title="Load every community in this sphere">
+        ${Util.escapeHtml(s.label)}<span class="chip-meta">${s.confidence}%</span>
+      </button>`).join("");
+
+    host.innerHTML = `
+      ${spheres.length ? `
+        <div class="post-related-block">
+          <div class="post-related-label">Reads as</div>
+          <div class="sphere-suggestions">${sphereChips}</div>
+        </div>` : ""}
+      ${shown.length ? `
+        <div class="post-related-block">
+          <div class="post-related-label">
+            ${spheres.length ? "Communities those spheres reach" : "Related communities"}
+            <span class="hint">${result.resolved} of ${result.pool} candidates had a description to read</span>
+          </div>
+          <ul class="post-related-list">
+            ${shown.map((c) => relatedRow(c, opts)).join("")}
+          </ul>
+        </div>` : ""}
+      ${opts.actions === false ? "" : `
+        <div class="post-related-actions">
+          <button class="btn small" type="button" data-action="load-related-subs">Load the checked communities</button>
+          <button class="btn small primary" type="button" data-action="campaign-from-detail" data-post-id="${Util.escapeHtml(result.post.id)}">Make a campaign from this post</button>
+        </div>`}
+    `;
+  };
+
+  function relatedRow(c, opts) {
+    const rec = c.record || {};
+    const size = c.stub
+      ? "catalog entry, description not read yet"
+      : rec.subscribers ? `${Util.fmtNum(rec.subscribers)} members` : "size unknown";
+    const via = c.viaSphere ? ` · via ${Util.escapeHtml(c.viaSphere)}` : "";
+    const reason = (c.reasons && c.reasons[0]) || "";
+    /* Pre-check only the rows that share actual vocabulary with the
+     * post. A sphere sibling with no overlap is worth showing but not
+     * worth loading on the user's behalf. */
+    const checked = !c.loaded && c.overlapTerms && c.overlapTerms.length > 0;
+    return `
+      <li class="post-related-row${c.loaded ? " is-loaded" : ""}">
+        <label class="post-related-pick">
+          <input type="checkbox" data-related-sub="${Util.escapeHtml(c.name)}" ${c.loaded ? "disabled" : ""} ${checked ? "checked" : ""} />
+          <span class="post-related-name">r/${Util.escapeHtml(c.name)}</span>
+        </label>
+        <span class="post-related-score" title="Match score out of 100">${c.score}</span>
+        <span class="post-related-meta">${size}${via}${c.loaded ? " · already loaded" : ""}</span>
+        ${opts.compact ? "" : `<span class="post-related-reason">${reason}</span>`}
+      </li>`;
+  }
+
   /* Insert an inline form-row below `rowEl` (the post's <tr>) so the
    * user can name a campaign + set goals before saving. The form-row
    * is itself a <tr><td colspan="9"> so the table layout stays sane.
@@ -349,6 +424,41 @@
     opts = opts || {};
     UI.dismissPostMakeCampaignForm(rowEl);
 
+    const formRow = document.createElement("tr");
+    formRow.className = "post-make-form-row";
+    formRow.dataset.forPost = post.id;
+    const cell = document.createElement("td");
+    cell.colSpan = 9;
+    cell.innerHTML = UI.postMakeCampaignFormHtml(post);
+    formRow.appendChild(cell);
+
+    rowEl.classList.add("editing");
+    rowEl.parentNode.insertBefore(formRow, rowEl.nextSibling);
+
+    if (opts.focus !== false) {
+      const nameInput = formRow.querySelector('input[data-field="name"]');
+      if (nameInput) {
+        try { nameInput.focus(); nameInput.select(); } catch (_) {}
+      }
+    }
+    return formRow;
+  };
+
+  /* The same form outside a table, for the post detail panel. */
+  UI.renderPostMakeCampaignInline = function (host, post, opts) {
+    if (!host || !post) return null;
+    opts = opts || {};
+    host.hidden = false;
+    host.innerHTML = UI.postMakeCampaignFormHtml(post, { inheritRelated: true });
+    const nameInput = host.querySelector('input[data-field="name"]');
+    if (opts.focus !== false && nameInput) {
+      try { nameInput.focus(); nameInput.select(); } catch (_) {}
+    }
+    return host.querySelector(".post-make-form");
+  };
+
+  UI.postMakeCampaignFormHtml = function (post, opts) {
+    opts = opts || {};
     const titleSrc = String(post.title || "Untitled").trim();
     const trimmed = titleSrc.slice(0, 60);
     const defaultName = `From r/${post.subreddit}: ${trimmed}${titleSrc.length > 60 ? "…" : ""}`;
@@ -362,52 +472,41 @@
     const suggestedScore = niceCeil(post.score || 0);
     const suggestedComments = niceCeil(post.num_comments || 0);
 
-    const formRow = document.createElement("tr");
-    formRow.className = "post-make-form-row";
-    formRow.dataset.forPost = post.id;
-    formRow.innerHTML = `
-      <td colspan="9">
-        <form class="post-make-form" data-post-id="${Util.escapeHtml(post.id)}">
-          <div class="pmf-headline">
-            <strong>Make a campaign from this post</strong>
-            <span class="meta">We'll create the campaign, switch to the Campaigns tab, and immediately search for subreddits that match this post's themes — each will get a one-tap link to cross-post.</span>
-          </div>
-          <div class="pmf-row">
-            <label class="full">
-              <span class="group-label">Campaign name</span>
-              <input type="text" data-field="name" value="${Util.escapeHtml(defaultName)}" required maxlength="120" />
-            </label>
-          </div>
-          <div class="pmf-row">
-            <label>
-              <span class="group-label">Goal upvotes</span>
-              <input type="number" data-field="goalScore" min="0" inputmode="numeric" placeholder="optional" value="${suggestedScore || ""}" />
-            </label>
-            <label>
-              <span class="group-label">Goal comments</span>
-              <input type="number" data-field="goalComments" min="0" inputmode="numeric" placeholder="optional" value="${suggestedComments || ""}" />
-            </label>
-          </div>
-          <div class="pmf-meta">
-            Tracking <strong>1</strong> post · current: <strong>${Util.fmtNum(post.score)}</strong> pts · <strong>${Util.fmtNum(post.num_comments)}</strong> comments · in r/${Util.escapeHtml(post.subreddit)}
-          </div>
-          <div class="pmf-actions">
-            <button type="button" class="btn small ghost" data-action="cancel-make-campaign-from-post">Cancel</button>
-            <button type="submit" class="btn small primary" data-action="confirm-make-campaign-from-post">Save &amp; find subreddits</button>
-          </div>
-        </form>
-      </td>
-    `;
-    rowEl.classList.add("editing");
-    rowEl.parentNode.insertBefore(formRow, rowEl.nextSibling);
-
-    if (opts.focus !== false) {
-      const nameInput = formRow.querySelector('input[data-field="name"]');
-      if (nameInput) {
-        try { nameInput.focus(); nameInput.select(); } catch (_) {}
-      }
-    }
-    return formRow;
+    return `
+      <form class="post-make-form" data-post-id="${Util.escapeHtml(post.id)}">
+        <div class="pmf-headline">
+          <strong>Make a campaign from this post</strong>
+          <span class="meta">The campaign tracks this post, opens its workspace, and runs full discovery against Reddit's own search — wider than the catalog-only match below.</span>
+        </div>
+        <div class="pmf-row">
+          <label class="full">
+            <span class="group-label">Campaign name</span>
+            <input type="text" data-field="name" value="${Util.escapeHtml(defaultName)}" required maxlength="120" />
+          </label>
+        </div>
+        <div class="pmf-row">
+          <label>
+            <span class="group-label">Goal upvotes</span>
+            <input type="number" data-field="goalScore" min="0" inputmode="numeric" placeholder="optional" value="${suggestedScore || ""}" />
+          </label>
+          <label>
+            <span class="group-label">Goal comments</span>
+            <input type="number" data-field="goalComments" min="0" inputmode="numeric" placeholder="optional" value="${suggestedComments || ""}" />
+          </label>
+        </div>
+        ${opts.inheritRelated ? "" : `<div class="pmf-related" data-role="pmf-related"></div>`}
+        <label class="pmf-check">
+          <input type="checkbox" data-field="loadRelated" checked />
+          <span>Also load the communities checked ${opts.inheritRelated ? "above" : "here"}, so the dashboard shows each one's own posting times</span>
+        </label>
+        <div class="pmf-meta">
+          Tracking <strong>1</strong> post · current: <strong>${Util.fmtNum(post.score)}</strong> pts · <strong>${Util.fmtNum(post.num_comments)}</strong> comments · in r/${Util.escapeHtml(post.subreddit)}
+        </div>
+        <div class="pmf-actions">
+          <button type="button" class="btn small ghost" data-action="cancel-make-campaign-from-post">Cancel</button>
+          <button type="submit" class="btn small primary" data-action="confirm-make-campaign-from-post">Save &amp; find subreddits</button>
+        </div>
+      </form>`;
   };
 
   UI.dismissPostMakeCampaignForm = function (rowEl) {
@@ -485,6 +584,24 @@
           </dl>
         </div>
       </div>
+
+      <section class="post-related-card" id="post-related">
+        <header class="post-related-header">
+          <div>
+            <h4>Where else this post could go</h4>
+            <span class="hint">Matched against the issue-sphere catalog and every community description already cached — no campaign needed</span>
+          </div>
+          <button class="card-help" type="button" aria-label="How this works"
+                  data-help="The post's title, flair and body become a term vector, which is ranked against every issue sphere in the catalog. The winning spheres bring their member communities, the home subreddit's own spheres bring their siblings, and anything with a similar cached description is added too. Each community is then scored on shared vocabulary, sphere fit, civic language and activity. Check the ones you want and load them, or turn the whole thing into a campaign.">?</button>
+        </header>
+        <ol class="post-related-howto">
+          <li>Check the communities worth reaching — the score is out of 100, and every row says why it matched.</li>
+          <li><strong>Load the checked communities</strong> pulls their posts, which is what gives each one its own posting-time panel on the Dashboard.</li>
+          <li><strong>Make a campaign from this post</strong> does that and tracks the post, then runs full discovery against Reddit's search for communities the catalog does not know.</li>
+        </ol>
+        <div id="post-related-body"></div>
+        <div id="post-related-form" hidden></div>
+      </section>
     `;
   };
 

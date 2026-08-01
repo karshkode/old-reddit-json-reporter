@@ -31,6 +31,10 @@
     /* ---- Loaded data ---- */
     posts: [],
     detailCache: new Map(),
+    /* post id -> Discovery.forPost result. Matching one post is a few
+     * dozen about.json reads, so the answer is worth keeping for as
+     * long as the tab lives. */
+    postRelated: new Map(),
     subProfiles: {},
     crossPosts: [],
     campaignSummaries: {},
