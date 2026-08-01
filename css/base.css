@@ -362,7 +362,7 @@ textarea:disabled {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: var(--s-2);
 }
 
@@ -702,15 +702,22 @@ table.data .num {
 
 /* --------------------------------------------------------------- Grid */
 
+/* Every responsive grid here is written `minmax(min(Npx, 100%), 1fr)`
+ * rather than `minmax(Npx, 1fr)`. A bare minmax floor is a hard floor:
+ * auto-fit will not take a track below it even when the container is
+ * narrower, so on a 320px screen a 340px card simply hung over the edge
+ * — and since that widens the layout viewport, it dragged the fixed tab
+ * bar out with it. The inner min() lets the track collapse to the
+ * container when there is no room for the preferred width. */
 .grid {
   display: grid;
   gap: var(--s-4);
 }
 .grid.two {
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
 }
 .grid.three {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
 }
 .span-2 {
   grid-column: 1 / -1;
