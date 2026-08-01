@@ -1058,18 +1058,6 @@ tbody td .title-text {
 }
 /* Compact two-up campaigns row — saved + new side by side */
 .campaigns-row { margin-top: 14px; }
-/* Narrative card on Overview is full-bleed and lighter than the hero */
-.narrative-card {
-  margin-bottom: 14px;
-  background: var(--bg-elev-2);
-  border-style: dashed;
-  border-color: var(--border-strong);
-}
-.narrative-card .card-header h2 {
-  font-size: 14px;
-  color: var(--accent-2);
-}
-.narrative-card .prose p:last-child { margin-bottom: 0; }
 @media (max-width: 720px) {  .hero-card { padding: 14px; }
   .hero-card .card-header h2 { font-size: 15px; }
   .hero-card .targeting-picker { padding: 10px; }
@@ -1125,6 +1113,13 @@ tbody td .title-text {
 /* =====================================================================
    "?" help-tooltips on card headers
    ===================================================================== */
+
+/* The header wraps so that a card's action controls can take their own
+ * row on a phone. A 22px "?" is not those controls: without this it
+ * would be pushed onto a line of its own below the hint. */
+.card-header:has(> .card-help) > div:first-child {
+  flex: 1 1 0;
+}
 
 .card-help {
   appearance: none;
@@ -1788,23 +1783,9 @@ select { max-width: 100%; min-width: 0; }
   }
 }
 /* =====================================================================
-   UX REFINEMENT — denser Discover hero, 2-col Trends, narrative card
+   UX REFINEMENT — denser Discover hero, 2-col Trends
    ===================================================================== */
 
-/* Narrative card on Overview, no longer collapsible. Compact callout. */
-.narrative-card {
-  padding: 12px 14px;
-  background: linear-gradient(180deg,
-    rgba(255, 87, 34, 0.04) 0%,
-    var(--bg-elev) 80%);
-  border-color: var(--border);
-}
-.narrative-card .card-header {
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-}
-.narrative-card .card-header h2 { font-size: 13px; }
-.narrative-card .prose { font-size: 13px; line-height: 1.5; }
 /* Discover hero: tighter on mobile so picker + filter + CTA fit without
  * a full screen of scrolling. */
 .hero-card .card-header { margin-bottom: 8px; padding-bottom: 6px; }

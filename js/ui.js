@@ -1183,15 +1183,23 @@
     if (actions) actions.classList.remove("hidden-during-edit");
   };
 
-  UI.renderRecommendations = function (lines) {
-    const el = document.getElementById("recommendations");
+  /* The dashboard summary: one labelled row per finding, so the card is
+   * read by scanning the left column rather than by reading prose. */
+  UI.renderBriefing = function (rows) {
+    const el = document.getElementById("dash-briefing");
     if (!el) return;
-    el.innerHTML = lines.map((l) => `<li>${l}</li>`).join("");
-  };
-
-  UI.renderNarrative = function (html) {
-    const el = document.getElementById("ai-summary");
-    if (el) el.innerHTML = html;
+    if (!rows || !rows.length) {
+      el.innerHTML = `<p class="hint">Nothing to summarise yet.</p>`;
+      return;
+    }
+    el.innerHTML = rows.map((r) => `
+      <li>
+        <span class="briefing-label">${Util.escapeHtml(r.label)}</span>
+        <span class="briefing-body">
+          <span class="briefing-value">${r.value}</span>
+          ${r.note ? `<span class="briefing-note">${r.note}</span>` : ""}
+        </span>
+      </li>`).join("");
   };
 
   /* ---------- Themes ---------- */

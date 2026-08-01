@@ -207,6 +207,67 @@
   animation: view-in var(--dur) var(--ease-out);
 }
 
+/* =====================================================================
+   POSTING BRIEFING
+   =====================================================================
+   The dashboard summary. Its predecessor was four paragraphs of prose
+   restating the KPI row above it; this is a labelled list so the card
+   is read by scanning the left column instead. */
+
+.briefing {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.briefing > li {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: baseline;
+}
+.briefing > li + li {
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--s-3);
+}
+.briefing-label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--fw-bold);
+  color: var(--text-mute);
+}
+.briefing-body {
+  min-width: 0;
+}
+.briefing-value {
+  display: block;
+  font-size: var(--fs-base);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.briefing-value strong {
+  font-variant-numeric: tabular-nums;
+}
+.briefing-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text-mute);
+}
+
+/* Below roughly a phone's width the two columns leave the value about
+ * 24 characters, so the label goes above its row instead. */
+@media (max-width: 560px) {
+  .briefing > li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
 /* A tab that ends without an obvious next move is a dead end, so the
  * short prose sections close with links onward to the heavier ones. */
 .section-jump {
