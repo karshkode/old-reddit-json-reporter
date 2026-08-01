@@ -800,9 +800,38 @@
   padding: var(--s-2) var(--s-3);
   border-radius: var(--radius-1);
   background: var(--bg-elev-2);
+  /* A left edge keyed to how much the evidence supports the slot, so
+     strength is readable before any of the numbers are. */
+  border-left: 2px solid transparent;
 }
+.timing-summary li[data-signal="strong"] { border-left-color: var(--good); }
+.timing-summary li[data-signal="likely"] { border-left-color: var(--accent-2); }
+.timing-summary li[data-signal="weak"]   { border-left-color: var(--warn); }
 .timing-summary .timing-facts {
   grid-column: 1 / -1;
+}
+.timing-summary .timing-sub {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  white-space: normal;
+}
+
+.timing-signal {
+  flex-shrink: 0;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.timing-ci {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* The dashboard briefing embeds the same list under its When row. */
+.briefing-timing {
+  display: block;
+  margin-top: var(--s-2);
 }
 
 .timing-skipped {
