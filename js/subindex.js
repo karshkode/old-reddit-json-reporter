@@ -463,7 +463,7 @@
           const about = await Reddit.fetchSubredditAbout(name);
           if (about && about.display_name) SubIndex.put(about);
         } catch (_) {
-          /* Private, banned, or the proxy blinked. Leave it out rather
+          /* Private, banned, or not in the archive. Leave it out rather
            * than caching a hole. */
         } finally {
           done++;

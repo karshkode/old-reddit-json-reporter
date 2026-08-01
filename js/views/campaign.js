@@ -218,7 +218,7 @@
     if (!agg.missing || !agg.missing.length) return "";
     const allMissing = agg.posts.length === 0;
     const reason = allMissing && agg.networkError
-      ? `<div class="meta err"><strong>Couldn't reach Reddit:</strong> ${esc(agg.networkError)}. Try Refresh, or switch the proxy in Settings.</div>`
+      ? `<div class="meta err"><strong>Couldn't reach the archive:</strong> ${esc(agg.networkError)}. Try Refresh.</div>`
       : "";
     const chips = agg.missing.map((id) => `
       <span class="unresolved-chip" data-id="${esc(id)}">
@@ -266,7 +266,7 @@
       host.innerHTML = `<div class="card">${Dom.emptyState({
         icon: "◆",
         title: "No posts resolved yet",
-        body: "Add the Reddit URLs of the posts in this campaign and they will be fetched and analysed. Mobile share links work too.",
+        body: "Add the Reddit URLs of the posts in this campaign and they will be fetched and analysed.",
         action: '<button class="btn primary" type="button" data-campaign-goto="posts">Add posts</button>',
       })}</div>`;
       return;
@@ -633,10 +633,10 @@
     host.innerHTML = `
       <div class="card">
         <header class="card-header">
-          <div><h2>Add posts</h2><span class="hint">Paste Reddit URLs, mobile share links, or bare IDs — anything from your phone works</span></div>
+          <div><h2>Add posts</h2><span class="hint">Paste Reddit post URLs or bare IDs, one per line</span></div>
         </header>
         <div class="add-posts-form" data-campaign-id="${esc(campaign.id)}">
-          <textarea data-role="add-posts-textarea" rows="2" placeholder="https://www.reddit.com/r/…/comments/abc123/title/&#10;https://www.reddit.com/r/…/s/AbCdEf1234"></textarea>
+          <textarea data-role="add-posts-textarea" rows="2" placeholder="https://www.reddit.com/r/…/comments/abc123/title/&#10;abc123"></textarea>
           <div class="paste-preview" data-role="add-posts-preview" hidden></div>
           <div class="add-posts-status" data-role="add-posts-status" hidden></div>
           <div class="add-posts-row">

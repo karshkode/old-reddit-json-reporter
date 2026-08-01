@@ -97,8 +97,10 @@
     pendingChanges: true,
     fetchToken: 0,
     rendering: { light: false },
-    lastTransport: null,
     lastErrors: [],
+    /* Campaigns already warned about unresolvable share links, so the
+     * notice fires once per session rather than on every open. */
+    shareWarnedCampaigns: new Set(),
     cache: {
       hasCache: false,
       savedAt: 0,

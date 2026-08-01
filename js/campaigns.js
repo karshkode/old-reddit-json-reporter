@@ -283,11 +283,11 @@
     let networkError = null;
     if (!options.skipNetwork && idsToFetch.length) {
       fetched = await Reddit.fetchPostsByIds(idsToFetch);
-      /* fetchPostsByIds attaches the last transport error as a
+      /* fetchPostsByIds attaches the last network error as a
        * non-enumerable _lastError when EVERY ID failed to resolve.
-       * Surface it so the campaign-detail UI can show
-       * 'all proxies down: codetabs(empty body) · ...' rather than
-       * just an opaque 'Could not resolve' list. */
+       * Surface it so the campaign-detail UI can name the actual
+       * failure rather than showing an opaque 'Could not resolve'
+       * list. */
       if (fetched.length === 0 && fetched._lastError) {
         networkError = fetched._lastError.message || String(fetched._lastError);
       }

@@ -91,18 +91,18 @@
 
     /* Two passes. The first is offline — the local index plus the
      * curated catalog — and paints immediately, so typing feels
-     * instant and the box still returns something useful when every
-     * proxy is down. The second adds whatever Reddit has to say. */
+     * instant and the box still returns something useful when the
+     * archive is unreachable. The second adds what the archive knows. */
     if (opts.instant !== false) {
       const offline = await Discovery.searchSubreddits(q, { limit: 12, live: false });
       if (token !== searchToken) return;
       if (offline.length) {
         AppState.communitiesResults = offline;
         host.innerHTML = offline.map((r) => subRow(r.record)).join("");
-        setSearchStatus(`${offline.length} from your local index and the catalog · asking Reddit for more…`);
+        setSearchStatus(`${offline.length} from your local index and the catalog · asking the archive for more…`);
       } else {
         host.innerHTML = Dom.skeleton(4);
-        setSearchStatus("Searching Reddit…");
+        setSearchStatus("Searching the archive…");
       }
     }
 
@@ -111,7 +111,7 @@
       results = await Discovery.searchSubreddits(q, { limit: 30 });
     } catch (err) {
       if (token !== searchToken) return;
-      setSearchStatus(`Reddit search failed: ${esc((err && err.message) || err)}. Results above are from your local index and the catalog — switch proxy in Settings to search Reddit itself.`, "err");
+      setSearchStatus(`The archive didn't answer: ${esc((err && err.message) || err)}. Results above are from your local index and the catalog.`, "err");
       return;
     }
     if (token !== searchToken) return;

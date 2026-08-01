@@ -4,8 +4,8 @@
  *
  * Without this, the user's "I just opened the tab" experience is:
  *   reload -> empty dashboard -> tap Go -> wait 5-30 seconds for
- *   100 * N subs of Reddit JSON to round-trip through the proxy
- *   chain -> finally see anything.
+ *   100 * N subs of Reddit JSON to come back from the archive ->
+ *   finally see anything.
  *
  * With this:
  *   reload -> instant cached view (last refresh was N min ago)

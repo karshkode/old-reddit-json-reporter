@@ -912,8 +912,8 @@ tbody td .title-text {
 /* Removable chip used for "Could not resolve: …" IDs. Until this
  * shipped, those IDs were rendered as plain `<code>` text with no
  * affordance to remove them — meaning a stuck unresolved post
- * (e.g. one Reddit deleted, or one whose proxy chain stayed
- * 429ing) was permanently un-deletable from the campaign. */
+ * (one Reddit deleted, or one the archive never ingested) was
+ * permanently un-deletable from the campaign. */
 .unresolved-list {
   color: var(--warn);
   margin-top: 6px;
@@ -1208,49 +1208,6 @@ tbody td .title-text {
  * skips clicks on <button>, but to be safe we add `pointer-events:auto`
  * here. */
 .card[data-collapsible] .card-header .card-help { z-index: 5; }
-/* "Reddit is blocking the public proxies" banner. Sits below the
- * action-banner, styled in the negative-state palette so users
- * read it as urgent, not informational. Only appears when both
- * conditions are met:
- *   1. recent transport stats show the public proxies failing, AND
- *   2. the user has NOT configured a custom proxy URL. */
-.proxy-down-banner {
-  position: sticky;
-  top: calc(var(--topbar-h, 64px) + 60px);
-  z-index: 18;
-  background: linear-gradient(180deg, rgba(220, 53, 69, 0.16), rgba(220, 53, 69, 0.06));
-  border: 1px solid rgba(220, 53, 69, 0.45);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  margin: 8px max(16px, var(--safe-right)) 0 max(16px, var(--safe-left));
-  color: var(--text);
-}
-.proxy-down-banner-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.proxy-down-banner-text {
-  flex: 1 1 280px;
-  min-width: 240px;
-  font-size: 13px;
-  line-height: 1.4;
-}
-.proxy-down-banner-text em {
-  font-style: normal;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-.proxy-down-banner-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-@media (max-width: 720px) {  .proxy-down-banner { margin: 6px 0 0 0; border-radius: 0; border-left-width: 0; border-right-width: 0; }
-  .proxy-down-banner-text { font-size: 12px; }
-}
 @keyframes progress-sweep {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(285%); }
@@ -3476,10 +3433,9 @@ body.sidebar-open {
   /* Keep the body's scroll position visually pinned even though
    * overflow is hidden — Safari forgets it without position:fixed. */
 }
-@media (max-width: 720px) {  /* Mobile: also hide any sticky/fixed dashboard chrome (proxy
-   * banner, action banner) so they don't peek through the sidebar. */
+@media (max-width: 720px) {  /* Mobile: also hide the sticky dashboard chrome so it doesn't peek
+   * through the sidebar. */
   body.sidebar-open #action-banner,
-  body.sidebar-open #proxy-down-banner,
   body.sidebar-open .topbar { visibility: hidden; }
 }
 /* ====================================================================
