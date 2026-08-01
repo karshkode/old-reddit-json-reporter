@@ -936,7 +936,16 @@
    * is the truth: it still has subreddit search and the curated catalog
    * to work with. */
   Reddit.searchPostsSupported = function () {
-    return transportsToTry().some((t) => t && t.build);
+    if (!transportsToTry().some((t) => t && t.build)) return false;
+    /* Supported is not the same as worth attempting. In auto mode the
+     * archive answers first and cannot serve this query, so the request
+     * falls through to the proxies below it — and if the archive is what
+     * is currently working, those proxies are being refused by Reddit.
+     * Asking anyway costs twenty seconds of timeouts to arrive at the
+     * empty list we already know is coming. */
+    const last = getTransportByName(Reddit._lastTransport);
+    if (last && !last.build) return false;
+    return true;
   };
 
   Reddit.searchPosts = async function (query, opts) {
