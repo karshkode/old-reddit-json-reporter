@@ -358,12 +358,93 @@ textarea:disabled {
   box-shadow: var(--shadow-sm);
 }
 
+/* --------------------------------------------------- Overflow menu */
+
+/* A row of secondary actions that stays a row while there is width for
+ * it and folds into one "⋯" button when there is not. The markup is the
+ * same either way, so nothing is duplicated and no ids are cloned; only
+ * the presentation changes. */
+.action-menu {
+  position: relative;
+}
+.action-menu-toggle {
+  display: none;
+}
+.action-menu-list {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .action-menu-toggle {
+    display: inline-flex;
+  }
+  .action-menu-list {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + var(--s-1));
+    z-index: 30;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    min-width: 190px;
+    padding: var(--s-2);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.28));
+  }
+  .action-menu.open .action-menu-list {
+    display: flex;
+  }
+  .action-menu-list > .btn,
+  .action-menu-list > * > .btn {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .action-menu-list > .watch-toggle-slot {
+    display: flex;
+  }
+}
+
 /* --------------------------------------------------------------- Stats */
 
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: var(--s-2);
+}
+
+/* Six headline tiles stack two-by-three on a phone, which spent a third
+ * of the viewport before the first card — and it does that above every
+ * tab. One swipeable row instead: same tiles, a fifth of the height. */
+@media (max-width: 720px) {
+  .stat-grid {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(148px, 60%);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    margin-inline: calc(var(--s-3) * -1);
+    padding-inline: var(--s-3);
+    scroll-padding-inline: var(--s-3);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .stat-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .stat-grid > .stat {
+    scroll-snap-align: start;
+    padding: var(--s-2) var(--s-3);
+  }
+  .stat-grid > .stat .stat-value,
+  .stat-grid > .stat .value {
+    font-size: var(--fs-lg);
+  }
 }
 
 .stat {

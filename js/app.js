@@ -2724,19 +2724,6 @@
     }
 
 
-    /* Section rail: pill links that smooth-scroll to a section inside
-     * the current view. */
-    Dom.delegate(document, "click", ".section-rail a[data-jump]", (e, link) => {
-      e.preventDefault();
-      const key = link.dataset.jump;
-      const target = document.getElementById(key) || document.querySelector(`[data-anchor="${key}"]`);
-      if (!target) return;
-      for (const sib of link.parentElement.children) sib.classList.toggle("active", sib === link);
-      try { target.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) { target.scrollIntoView(); }
-      target.classList.add("just-jumped");
-      setTimeout(() => target.classList.remove("just-jumped"), 900);
-    });
-
     /* Cross-posts — search + sub filter + min-spread
      * chips + per-page. The list of cross-post groups can grow into
      * the hundreds on a busy dashboard, so all four controls feed
@@ -3718,6 +3705,7 @@
     safeRun("loadPersisted", loadPersisted);
     safeRun("registerRoutes", () => Router.wireNav());
     safeRun("bind", bind);
+    safeRun("actionMenus", () => Dom.wireActionMenus());
     safeRun("wireTopbarHeightVar", wireTopbarHeightVar);
     safeRun("subIndex", () => {
       /* Warm the local subreddit index so the catalog can show real

@@ -109,7 +109,7 @@
 
   const Workspace = {};
 
-  const SECTIONS = ["overview", "subreddits", "posts", "targeting", "plan", "settings"];
+  const SECTIONS = ["overview", "trends", "subreddits", "posts", "targeting", "plan", "settings"];
 
   Workspace.render = function (params) {
     const id = (params && params.id) || AppState.openCampaignId;
@@ -235,17 +235,13 @@
 
   function paintSectionRail() {
     const active = AppState.campaignSection || "overview";
-    for (const btn of Dom.$$("#campaign-section-rail [data-campaign-tab]")) {
-      btn.classList.toggle("active", btn.dataset.campaignTab === active);
-    }
-    for (const sec of Dom.$$("#view-campaign .campaign-section")) {
-      sec.classList.toggle("active", sec.id === "camp-sec-" + active);
-    }
+    Dom.paintRail("campaign-section-rail", "campaign-tab", active, "camp-sec-", "#view-campaign .campaign-section");
   }
 
   function renderSection(section, campaign, agg) {
     paintSectionRail();
     if (section === "overview") return renderOverview(campaign, agg);
+    if (section === "trends") return renderTrends(campaign, agg);
     if (section === "subreddits") return renderSubreddits(campaign, agg);
     if (section === "posts") return renderPosts(campaign, agg);
     if (section === "targeting") return renderTargeting(campaign, agg);
@@ -254,8 +250,22 @@
   }
 
   /* ------------------------------------------------------------------
-   * OVERVIEW — the campaign as one dataset
+   * OVERVIEW — what the campaign amounts to, in words
+   * ------------------------------------------------------------------
+   * Deliberately prose and numbers only. The chart gallery that used to
+   * sit here pushed this tab past four phone screens, so it moved to
+   * Trends and the per-community timing card moved to Subreddits, where
+   * the rest of the per-community analysis already lives.
    * ------------------------------------------------------------------ */
+
+  function noPostsCard() {
+    return `<div class="card">${Dom.emptyState({
+      icon: "◆",
+      title: "No posts resolved yet",
+      body: "Add the Reddit URLs of the posts in this campaign and they will be fetched and analysed.",
+      action: '<button class="btn primary" type="button" data-campaign-goto="posts">Add posts</button>',
+    })}</div>`;
+  }
 
   function renderOverview(campaign, agg) {
     const host = Dom.byId("camp-sec-overview");
@@ -263,16 +273,9 @@
     const posts = agg.posts || [];
 
     if (!posts.length) {
-      host.innerHTML = `<div class="card">${Dom.emptyState({
-        icon: "◆",
-        title: "No posts resolved yet",
-        body: "Add the Reddit URLs of the posts in this campaign and they will be fetched and analysed.",
-        action: '<button class="btn primary" type="button" data-campaign-goto="posts">Add posts</button>',
-      })}</div>`;
+      host.innerHTML = noPostsCard();
       return;
     }
-
-    Charts.destroyIn(host);
 
     const deep = AppState.campaignDeep;
     const bundle = Analysis.dashboard(posts, { window: "all", label: campaign.name });
@@ -283,8 +286,33 @@
           <header class="card-header"><div><h2>How this campaign is doing</h2><span class="hint">Read from your campaign's own posts</span></div></header>
           <div class="prose">${deep.narrative}</div>
         </div>` : ""}
+      ${deep && deep.comparison ? renderComparison(deep.comparison) : ""}
+      ${bundle.profile ? renderProfileCard(bundle) : ""}
+      <div class="section-jump">
+        <button class="btn small" type="button" data-campaign-goto="trends">See the charts</button>
+        <button class="btn small" type="button" data-campaign-goto="subreddits">Per-subreddit breakdown</button>
+      </div>`;
+  }
 
-      <div class="grid two" style="margin-top:var(--s-4)">
+  /* ------------------------------------------------------------------
+   * TRENDS — the campaign's chart gallery
+   * ------------------------------------------------------------------ */
+
+  function renderTrends(campaign, agg) {
+    const host = Dom.byId("camp-sec-trends");
+    if (!host) return;
+    const posts = agg.posts || [];
+
+    if (!posts.length) {
+      host.innerHTML = noPostsCard();
+      return;
+    }
+
+    Charts.destroyIn(host);
+    const bundle = Analysis.dashboard(posts, { window: "all", themes: false, profile: false });
+
+    host.innerHTML = `
+      <div class="grid two">
         <div class="card span-2">
           <header class="card-header">
             <div><h2>Campaign activity over time</h2><span class="hint">One line per subreddit this campaign posted into</span></div>
@@ -299,20 +327,11 @@
           <header class="card-header"><div><h2>Tone of your titles</h2><span class="hint">Lexicon-scored across the campaign</span></div></header>
           <div class="chart-wrap" data-chart="sentiment"><canvas></canvas></div>
         </div>
-        <div class="card">
-          <header class="card-header">
-            <div><h2>When to post, community by community</h2><span class="hint">Each peak is against that sub's own average — never a figure pooled across them</span></div>
-          </header>
-          ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: 6 })}
-        </div>
-        <div class="card">
+        <div class="card span-2">
           <header class="card-header"><div><h2>Score spread</h2><span class="hint">How evenly the campaign performed</span></div></header>
           <div class="chart-wrap" data-chart="hist"><canvas></canvas></div>
         </div>
-      </div>
-
-      ${deep && deep.comparison ? renderComparison(deep.comparison) : ""}
-      ${bundle.profile ? renderProfileCard(bundle) : ""}`;
+      </div>`;
 
     const mount = (sel, kind, data, opts) => {
       const wrap = host.querySelector(`[data-chart="${sel}"]`);
@@ -390,6 +409,17 @@
     const cardHost = Dom.byId("campaign-sub-cards");
     const tableHost = Dom.byId("campaign-sub-table");
     const compareWrap = Dom.byId("campaign-sub-compare-wrap");
+    const timingHost = Dom.byId("campaign-posting-times");
+
+    if (timingHost) {
+      timingHost.innerHTML = !posts.length ? "" : `
+        <div class="card">
+          <header class="card-header">
+            <div><h2>When to post, community by community</h2><span class="hint">Each peak is against that sub's own average — never a figure pooled across them</span></div>
+          </header>
+          ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: 6 })}
+        </div>`;
+    }
 
     if (!posts.length) {
       if (cardHost) cardHost.innerHTML = "";
@@ -739,9 +769,7 @@
    * ------------------------------------------------------------------ */
 
   Workspace.mount = function () {
-    Dom.delegate(document, "click", "#campaign-section-rail [data-campaign-tab]", (e, btn) => {
-      Workspace.goToSection(btn.dataset.campaignTab);
-    });
+    Dom.wireRail("campaign-section-rail", "campaign-tab", Workspace.goToSection);
     Dom.delegate(document, "click", "[data-campaign-goto]", (e, btn) => {
       Workspace.goToSection(btn.dataset.campaignGoto);
     });
@@ -774,6 +802,11 @@
     const campaign = Campaigns.get(AppState.openCampaignId);
     if (campaign && AppState.campaignAgg) renderSection(section, campaign, AppState.campaignAgg);
     else paintSectionRail();
+    Dom.revealRailTab("campaign-section-rail", "campaign-tab", section);
+    /* Jumping between sections from a button further down the page
+     * should not leave the reader mid-way into the new one. */
+    const head = Dom.$("#view-campaign .campaign-workspace-head");
+    if (head) window.scrollTo({ top: Math.max(0, head.offsetTop - 8), behavior: "auto" });
   };
 
   Workspace.title = function (params) {

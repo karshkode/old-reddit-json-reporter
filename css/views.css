@@ -155,17 +155,26 @@
  * for a desktop column and four buttons across one 366px row. The
  * buttons could not wrap out of it, so Delete fell off the right edge —
  * and because the overflow widened the layout viewport, it dragged the
- * fixed tab bar out with it. Each part gets its own row instead. */
+ * fixed tab bar out with it.
+ *
+ * Now the back link and the actions menu share the top row and the
+ * title sits under them, which is a third less header above every
+ * single tab. */
 @media (max-width: 900px) {
   .campaign-workspace-head {
     gap: var(--s-2);
   }
   .campaign-workspace-head > .btn {
     order: -1;
-    flex: 0 0 100%;
+    flex: 1 1 auto;
     justify-content: flex-start;
     margin-top: 0;
     padding-left: 0;
+  }
+  .campaign-workspace-head .card-actions {
+    order: -1;
+    flex: 0 0 auto;
+    margin-top: 0;
   }
   .campaign-workspace-title {
     flex: 1 1 100%;
@@ -180,22 +189,31 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .campaign-workspace-head .card-actions {
-    flex: 1 1 100%;
-    margin-top: 0;
-  }
 }
 
 /* Only the selected section is in the document flow; the rail above
- * switches between them. */
+ * switches between them. Keeping the rest out of the flow is what stops
+ * these views turning into a ten-screen scroll on a phone, and it means
+ * Chart.js only ever sizes canvases that are actually on screen. */
+.dash-section,
 .campaign-section,
 .communities-section {
   display: none;
 }
+.dash-section.active,
 .campaign-section.active,
 .communities-section.active {
   display: block;
   animation: view-in var(--dur) var(--ease-out);
+}
+
+/* A tab that ends without an obvious next move is a dead end, so the
+ * short prose sections close with links onward to the heavier ones. */
+.section-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
 }
 
 /* ------------------------------------------------- Per-subreddit cards */

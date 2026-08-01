@@ -135,33 +135,39 @@
            DASHBOARD — audience overview across every loaded subreddit
            ============================================================ -->
       <section id="view-dashboard" class="view" role="region" aria-label="Dashboard">
-        <nav class="section-rail" aria-label="Dashboard sections">
-          <a href="#dash-summary" data-jump="dash-summary">Summary</a>
-          <a href="#dash-timeline" data-jump="dash-timeline">Timing</a>
-          <a href="#dash-charts" data-jump="dash-charts">Charts</a>
-          <a href="#dash-themes" data-jump="dash-themes">Themes</a>
-          <a href="#dash-communities" data-jump="dash-communities">Communities</a>
-          <a href="#dash-crossposts" data-jump="dash-crossposts">Cross-posts</a>
-        </nav>
-
         <div id="dashboard-empty" hidden></div>
 
         <div id="dashboard-content">
           <section class="stat-grid" id="kpi-row" aria-label="Headline metrics"></section>
 
-          <div class="view-section" id="dash-summary">
-            <div class="card narrative-card">
-              <header class="card-header">
-                <div>
-                  <h2>What this data is telling you</h2>
-                  <span class="hint">Plain-English summary, generated locally from your data</span>
-                </div>
-              </header>
-              <div id="ai-summary" class="prose"></div>
+          <nav class="section-rail" id="dashboard-section-rail" role="tablist" aria-label="Dashboard sections">
+            <button type="button" role="tab" data-dash-tab="summary" class="active" aria-selected="true" aria-controls="dash-summary">Summary</button>
+            <button type="button" role="tab" data-dash-tab="timing" aria-selected="false" aria-controls="dash-timing" tabindex="-1">Timing</button>
+            <button type="button" role="tab" data-dash-tab="charts" aria-selected="false" aria-controls="dash-charts" tabindex="-1">Charts</button>
+            <button type="button" role="tab" data-dash-tab="themes" aria-selected="false" aria-controls="dash-themes" tabindex="-1">Themes</button>
+            <button type="button" role="tab" data-dash-tab="communities" aria-selected="false" aria-controls="dash-communities" tabindex="-1">Communities</button>
+            <button type="button" role="tab" data-dash-tab="crossposts" aria-selected="false" aria-controls="dash-crossposts" tabindex="-1">Cross-posts</button>
+          </nav>
+
+          <div class="dash-section active" id="dash-summary" role="tabpanel">
+            <div class="grid two">
+              <div class="card narrative-card span-2">
+                <header class="card-header">
+                  <div>
+                    <h2>What this data is telling you</h2>
+                    <span class="hint">Plain-English summary, generated locally from your data</span>
+                  </div>
+                </header>
+                <div id="ai-summary" class="prose"></div>
+              </div>
+              <div class="card span-2">
+                <header class="card-header"><div><h2>Quick takeaways</h2><span class="hint">Suggestions derived from your data</span></div></header>
+                <ul id="recommendations" class="reco-list"></ul>
+              </div>
             </div>
           </div>
 
-          <div class="view-section" id="dash-timeline">
+          <div class="dash-section" id="dash-timing" role="tabpanel">
             <div class="card" id="timeline-card">
               <header class="card-header">
                 <div>
@@ -200,7 +206,7 @@
             </div>
           </div>
 
-          <div class="view-section" id="dash-charts">
+          <div class="dash-section" id="dash-charts" role="tabpanel">
             <div class="grid two">
               <div class="card">
                 <header class="card-header"><div><h2>Score vs comments</h2><span class="hint">Each dot is a post — top-right is a breakout</span></div></header>
@@ -229,15 +235,11 @@
             </div>
           </div>
 
-          <div class="view-section" id="dash-themes">
+          <div class="dash-section" id="dash-themes" role="tabpanel">
             <div class="grid two">
-              <div class="card">
+              <div class="card span-2">
                 <header class="card-header"><div><h2>Words coming up most</h2><span class="hint">Filler words filtered out</span></div></header>
                 <div id="keywords" class="keyword-cloud"></div>
-              </div>
-              <div class="card">
-                <header class="card-header"><div><h2>Quick takeaways</h2><span class="hint">Suggestions derived from your data</span></div></header>
-                <ul id="recommendations" class="reco-list"></ul>
               </div>
               <div class="card span-2">
                 <header class="card-header"><div><h2>Topics that keep coming up</h2><span class="hint">Recurring themes with sentiment and engagement</span></div></header>
@@ -246,14 +248,14 @@
             </div>
           </div>
 
-          <div class="view-section" id="dash-communities">
+          <div class="dash-section" id="dash-communities" role="tabpanel">
             <div class="card">
               <header class="card-header"><div><h2>What each subreddit looks like</h2><span class="hint">Audience fingerprint per loaded sub</span></div></header>
               <div id="sub-profiles" class="profile-list"></div>
             </div>
           </div>
 
-          <div class="view-section" id="dash-crossposts">
+          <div class="dash-section" id="dash-crossposts" role="tabpanel">
             <div class="card" id="crossposts-card">
               <header class="card-header">
                 <div>
@@ -375,11 +377,14 @@
             <h2 id="campaign-detail-title">Campaign</h2>
             <div class="meta" id="campaign-workspace-meta"></div>
           </div>
-          <div class="card-actions">
-            <div id="watch-toggle-slot" class="watch-toggle-slot"></div>
-            <button id="campaign-refresh" class="btn small">↻ Refresh</button>
-            <button id="campaign-compose" class="btn small primary">✍ Compose</button>
-            <button id="campaign-delete" class="btn small danger">Delete</button>
+          <div class="card-actions action-menu">
+            <button type="button" class="btn small action-menu-toggle" aria-expanded="false" aria-haspopup="true">⋯ Actions</button>
+            <div class="action-menu-list">
+              <div id="watch-toggle-slot" class="watch-toggle-slot"></div>
+              <button id="campaign-refresh" class="btn small">↻ Refresh</button>
+              <button id="campaign-compose" class="btn small primary">✍ Compose</button>
+              <button id="campaign-delete" class="btn small danger">Delete</button>
+            </div>
           </div>
         </div>
 
@@ -387,19 +392,23 @@
         <div id="campaign-goals"></div>
         <div id="campaign-alerts"></div>
 
-        <nav class="section-rail" id="campaign-section-rail" aria-label="Campaign sections">
-          <button type="button" data-campaign-tab="overview" class="active">Overview</button>
-          <button type="button" data-campaign-tab="subreddits">Subreddits</button>
-          <button type="button" data-campaign-tab="posts">Posts</button>
-          <button type="button" data-campaign-tab="targeting">Targeting</button>
-          <button type="button" data-campaign-tab="plan">Plan</button>
-          <button type="button" data-campaign-tab="settings">Settings</button>
+        <nav class="section-rail" id="campaign-section-rail" role="tablist" aria-label="Campaign sections">
+          <button type="button" role="tab" data-campaign-tab="overview" class="active" aria-selected="true" aria-controls="camp-sec-overview">Overview</button>
+          <button type="button" role="tab" data-campaign-tab="trends" aria-selected="false" aria-controls="camp-sec-trends" tabindex="-1">Trends</button>
+          <button type="button" role="tab" data-campaign-tab="subreddits" aria-selected="false" aria-controls="camp-sec-subreddits" tabindex="-1">Subreddits</button>
+          <button type="button" role="tab" data-campaign-tab="posts" aria-selected="false" aria-controls="camp-sec-posts" tabindex="-1">Posts</button>
+          <button type="button" role="tab" data-campaign-tab="targeting" aria-selected="false" aria-controls="camp-sec-targeting" tabindex="-1">Targeting</button>
+          <button type="button" role="tab" data-campaign-tab="plan" aria-selected="false" aria-controls="camp-sec-plan" tabindex="-1">Plan</button>
+          <button type="button" role="tab" data-campaign-tab="settings" aria-selected="false" aria-controls="camp-sec-settings" tabindex="-1">Settings</button>
         </nav>
 
-        <div class="campaign-section active" id="camp-sec-overview"></div>
+        <div class="campaign-section active" id="camp-sec-overview" role="tabpanel"></div>
 
-        <div class="campaign-section" id="camp-sec-subreddits">
-          <div class="card">
+        <div class="campaign-section" id="camp-sec-trends" role="tabpanel"></div>
+
+        <div class="campaign-section" id="camp-sec-subreddits" role="tabpanel">
+          <div id="campaign-posting-times"></div>
+          <div class="card" style="margin-top:var(--s-4)">
             <header class="card-header">
               <div>
                 <h2>Per-subreddit trend analysis</h2>
@@ -422,9 +431,9 @@
           <div id="campaign-sub-cards" class="campaign-sub-cards"></div>
         </div>
 
-        <div class="campaign-section" id="camp-sec-posts"></div>
+        <div class="campaign-section" id="camp-sec-posts" role="tabpanel"></div>
 
-        <div class="campaign-section" id="camp-sec-targeting">
+        <div class="campaign-section" id="camp-sec-targeting" role="tabpanel">
           <div class="card" id="discover-card">
             <header class="card-header">
               <div>
@@ -468,7 +477,7 @@
           </div>
         </div>
 
-        <div class="campaign-section" id="camp-sec-plan">
+        <div class="campaign-section" id="camp-sec-plan" role="tabpanel">
           <div class="grid two">
             <div class="card" id="cascade-card">
               <header class="card-header"><div><h2>Cross-post cascade</h2><span class="hint">A staggered posting plan across a sub list</span></div></header>
@@ -495,7 +504,7 @@
           </div>
         </div>
 
-        <div class="campaign-section" id="camp-sec-settings"></div>
+        <div class="campaign-section" id="camp-sec-settings" role="tabpanel"></div>
       </section>
 
       <!-- ============================================================
@@ -509,13 +518,13 @@
           </div>
         </div>
 
-        <nav class="section-rail" id="communities-rail" aria-label="Communities sections">
-          <button type="button" data-communities-tab="search" class="active">Search</button>
-          <button type="button" data-communities-tab="catalog">Sphere catalog</button>
-          <button type="button" data-communities-tab="loaded">Loaded subs</button>
+        <nav class="section-rail" id="communities-rail" role="tablist" aria-label="Communities sections">
+          <button type="button" role="tab" data-communities-tab="search" class="active" aria-selected="true" aria-controls="comm-sec-search">Search</button>
+          <button type="button" role="tab" data-communities-tab="catalog" aria-selected="false" aria-controls="comm-sec-catalog" tabindex="-1">Sphere catalog</button>
+          <button type="button" role="tab" data-communities-tab="loaded" aria-selected="false" aria-controls="comm-sec-loaded" tabindex="-1">Loaded subs</button>
         </nav>
 
-        <div class="communities-section active" id="comm-sec-search">
+        <div class="communities-section active" id="comm-sec-search" role="tabpanel">
           <div class="card">
             <header class="card-header">
               <div>
@@ -532,7 +541,7 @@
           </div>
         </div>
 
-        <div class="communities-section" id="comm-sec-catalog">
+        <div class="communities-section" id="comm-sec-catalog" role="tabpanel">
           <div class="card">
             <header class="card-header">
               <div>
@@ -552,7 +561,7 @@
           </div>
         </div>
 
-        <div class="communities-section" id="comm-sec-loaded">
+        <div class="communities-section" id="comm-sec-loaded" role="tabpanel">
           <div class="card">
             <header class="card-header">
               <div>

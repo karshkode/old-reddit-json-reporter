@@ -110,6 +110,125 @@
       </div>`;
   };
 
+  /* ---------------------------------------------------------------
+   * Section rails
+   * ---------------------------------------------------------------
+   * The dashboard, the campaign workspace and the communities view all
+   * present the same widget: a strip of tabs where only the selected
+   * panel is in the document flow. Keeping that logic here means one
+   * implementation of the ARIA contract instead of three drifting
+   * copies, and it is what keeps these views to a screen or two on a
+   * phone rather than one continuous scroll.
+   *
+   * `rail` is the nav's id, `attr` the dataset key its buttons carry
+   * (e.g. "dash-tab"), and `panelPrefix` the id prefix of the panels,
+   * so a tab keyed `charts` drives the panel `dash-charts`.
+   * -------------------------------------------------------------- */
+
+  function railButtons(nav, attr) {
+    return Dom.$$("[data-" + attr + "]", nav);
+  }
+
+  Dom.paintRail = function (rail, attr, active, panelPrefix, panelSelector) {
+    const nav = Dom.byId(rail);
+    const key = camel(attr);
+    if (nav) {
+      for (const btn of railButtons(nav, attr)) {
+        const on = btn.dataset[key] === active;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+        /* Roving tabindex: one tab stop for the whole strip, arrow keys
+         * move between tabs. Dom.wireRail supplies the arrow keys. */
+        btn.tabIndex = on ? 0 : -1;
+      }
+    }
+    for (const panel of Dom.$$(panelSelector)) {
+      panel.classList.toggle("active", panel.id === panelPrefix + active);
+    }
+  };
+
+  /* Click and keyboard wiring for a rail. `onSelect` receives the tab
+   * key. Delegated from the document so it survives re-renders. */
+  Dom.wireRail = function (rail, attr, onSelect) {
+    const key = camel(attr);
+    const sel = "#" + rail + " [data-" + attr + "]";
+
+    Dom.delegate(document, "click", sel, (e, btn) => {
+      e.preventDefault();
+      onSelect(btn.dataset[key]);
+    });
+
+    Dom.delegate(document, "keydown", sel, (e, btn) => {
+      const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      const nav = btn.closest("#" + rail);
+      if (!nav) return;
+      const tabs = railButtons(nav, attr);
+      let next = null;
+      if (step) next = tabs[(tabs.indexOf(btn) + step + tabs.length) % tabs.length];
+      else if (e.key === "Home") next = tabs[0];
+      else if (e.key === "End") next = tabs[tabs.length - 1];
+      if (!next) return;
+      e.preventDefault();
+      onSelect(next.dataset[key]);
+      next.focus();
+    });
+  };
+
+  /* A rail scrolls horizontally on a phone, so the tab just selected can
+   * sit off screen — after a jump from a button elsewhere in the view,
+   * for instance. Bring it back without yanking the page vertically. */
+  Dom.revealRailTab = function (rail, attr, active) {
+    const nav = Dom.byId(rail);
+    if (!nav || nav.scrollWidth <= nav.clientWidth + 4) return;
+    const btn = Dom.$("[data-" + attr + '="' + active + '"]', nav);
+    if (btn && btn.scrollIntoView) {
+      btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    }
+  };
+
+  /* ---------------------------------------------------------------
+   * Overflow menus
+   * ---------------------------------------------------------------
+   * Secondary actions collapse behind a "⋯" toggle at narrow widths.
+   * Whether the list is a row or a popover is entirely a CSS decision;
+   * this only tracks which menu is open. Call once at startup.
+   * -------------------------------------------------------------- */
+  Dom.wireActionMenus = function () {
+    function closeAll(except) {
+      for (const menu of Dom.$$(".action-menu.open")) {
+        if (menu === except) continue;
+        menu.classList.remove("open");
+        const toggle = Dom.$(".action-menu-toggle", menu);
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    Dom.delegate(document, "click", ".action-menu-toggle", (e, btn) => {
+      e.preventDefault();
+      const menu = btn.closest(".action-menu");
+      if (!menu) return;
+      closeAll(menu);
+      const open = menu.classList.toggle("open");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+
+    /* Anything else closes: picking an action, or tapping away. Both
+     * listeners sit on document, so the toggle needs excluding by hand
+     * rather than by stopping propagation. */
+    document.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t && t.closest && t.closest(".action-menu-toggle")) return;
+      closeAll();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeAll();
+    });
+  };
+
+  function camel(s) {
+    return String(s).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  }
+
   /* requestAnimationFrame-batched callback, so a burst of state changes
    * repaints once. */
   Dom.raf = function (fn) {
