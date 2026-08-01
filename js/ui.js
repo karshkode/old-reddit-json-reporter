@@ -32,7 +32,7 @@
 
   /* ---------- KPI row ---------- */
 
-  UI.renderKpis = function (agg) {
+  UI.renderKpis = function (agg, timing) {
     const row = document.getElementById("kpi-row");
     if (!row) return;
     const kpis = [
@@ -41,30 +41,32 @@
       { label: "Total comments", value: Util.fmtNum(agg.totalComments), sub: `avg ${Util.fmtNum(agg.avgComments)} per post` },
       { label: "Avg upvote ratio", value: agg.avgUpvoteRatio == null ? "—" : Util.fmtPct(agg.avgUpvoteRatio), sub: "Reddit-reported sentiment" },
       (function () {
-        /* "Best posting hour" — replaces the dead Awards KPI (Reddit
-         * removed awards in 2023; the field is always 0). Picks the
-         * hour with the highest avg score across the loaded posts.
-         * `agg.avgScoreByHour` is in local time and `agg.byHour` tells
-         * us how many posts seeded each bucket so we can avoid
-         * picking a 1-post hour as "best". */
-        let best = -1, bestVal = -Infinity;
-        const overall = agg.avgScore || 0;
-        for (let h = 0; h < 24; h++) {
-          if ((agg.byHour && agg.byHour[h] >= 1) && agg.avgScoreByHour[h] > bestVal) {
-            bestVal = agg.avgScoreByHour[h];
-            best = h;
-          }
-        }
-        if (best < 0) {
-          return { label: "Best posting hour", value: "—", sub: "needs more posts" };
-        }
-        const lift = overall ? Math.round((bestVal - overall) / overall * 100) : 0;
+        /* Best posting hour, scoped to a real community rather than to
+         * the pool. Pooling every loaded sub into one histogram used to
+         * produce an hour that suited none of them, so this tile now
+         * reports the busiest sub's own peak and says plainly when the
+         * other subs peak somewhere else. The full breakdown lives in
+         * the per-subreddit timing card. */
         const tz = (typeof Util.getTzLabel === "function") ? Util.getTzLabel() : "";
-        return {
-          label: "Best posting hour",
-          value: String(best).padStart(2, "0") + ":00" + (tz ? " " + tz : ""),
-          sub: lift > 0 ? `+${lift}% above avg score` : `picked from avg score per hour`,
-        };
+        const ranked = (timing && timing.ranked) || [];
+        if (!ranked.length) {
+          return {
+            label: "Best hour to post",
+            value: "—",
+            sub: timing ? `needs ${timing.minSample}+ posts in one sub` : "needs more posts",
+          };
+        }
+        const lead = ranked[0];
+        const hour = String(lead.bestHour).padStart(2, "0") + ":00" + (tz ? " " + tz : "");
+        let sub;
+        if (ranked.length === 1) {
+          sub = `r/${Util.escapeHtml(lead.subreddit)}${lead.lift > 0 ? ` · +${lead.lift}% vs its own avg` : ""}`;
+        } else if (timing.agree) {
+          sub = `all ${ranked.length} subs peak within ${timing.spread}h`;
+        } else {
+          sub = `r/${Util.escapeHtml(lead.subreddit)} · ${ranked.length - 1} sub${ranked.length === 2 ? "" : "s"} peak elsewhere`;
+        }
+        return { label: "Best hour to post", value: hour, sub: sub };
       })(),
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
     ];
@@ -76,6 +78,129 @@
       </div>
     `).join("");
   };
+
+  /* ---------- Posting times, per subreddit ---------- */
+
+  const DOW_SHORT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  function hhmm(h) {
+    return String(h).padStart(2, "0") + ":00";
+  }
+
+  /* Small multiples, one community per panel. The alternative — a
+   * single chart with a line per sub — was unreadable past four subs,
+   * and the whole point of this card is that the subs differ. */
+  UI.renderPostingTimes = function (model, opts) {
+    const host = document.getElementById("posting-times");
+    if (!host) return;
+    opts = opts || {};
+    if (window.Charts && Charts.destroyIn) Charts.destroyIn(host);
+
+    if (!model || !model.rows.length) {
+      host.innerHTML = Dom.emptyState({
+        icon: "◔",
+        title: "No posting times yet",
+        body: "Load some posts and each community gets its own hour-by-hour panel here.",
+      });
+      return;
+    }
+
+    const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
+    const ranked = model.ranked;
+    const limit = opts.limit === "all" ? ranked.length : (opts.limit || 6);
+    const shown = ranked.slice(0, limit);
+    const hidden = ranked.length - shown.length;
+
+    let lead;
+    if (!ranked.length) {
+      lead = `None of your ${model.rows.length} communities has ${model.minSample} posts loaded yet — that is the floor for calling an hour a peak rather than a coincidence.`;
+    } else if (ranked.length === 1) {
+      lead = `<strong>r/${Util.escapeHtml(ranked[0].subreddit)}</strong> peaks at <strong>${hhmm(ranked[0].bestHour)}${tz}</strong>. Load a second community to compare.`;
+    } else if (model.agree) {
+      lead = `Unusually, all ${ranked.length} communities peak within <strong>${model.spread} hour${model.spread === 1 ? "" : "s"}</strong> of each other — one posting slot will serve all of them.`;
+    } else {
+      lead = `These ${ranked.length} communities peak up to <strong>${model.spread} hours</strong> apart, so there is no single best time. Post into each one on its own clock.`;
+    }
+
+    host.innerHTML = `
+      <p class="timing-lead">${lead}</p>
+      <div class="timing-grid">
+        ${shown.map((r) => timingPanel(r, tz)).join("")}
+      </div>
+      ${hidden > 0 ? `<div class="timing-more"><button class="btn small ghost" type="button" data-action="show-all-timing">Show ${hidden} more communit${hidden === 1 ? "y" : "ies"}</button></div>` : ""}
+      ${model.skipped.length ? `
+        <p class="timing-skipped">
+          Not enough posts to call a peak in
+          ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}
+          — needs ${model.minSample}.
+        </p>` : ""}
+    `;
+
+    if (!window.Charts || !window.Chart) return;
+    for (const row of shown) {
+      const slot = host.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
+      if (!slot) continue;
+      try {
+        Charts.mount(slot, { kind: "hourHeat", data: row.agg, opts: { compact: true } });
+      } catch (err) {
+        console.warn(`[timing] r/${row.subreddit}:`, err && err.message);
+      }
+    }
+  };
+
+  /* Text-only version, for places that already draw an hour chart per
+   * subreddit further down the page and only need the headline. */
+  UI.postingTimesSummaryHtml = function (model, opts) {
+    opts = opts || {};
+    if (!model || !model.ranked.length) {
+      return `<p class="timing-lead">No community here has ${model ? model.minSample : 4} posts yet, so a peak hour would be a coin flip. Add more of the campaign's posts, or load the subreddit itself to borrow its ambient rhythm.</p>`;
+    }
+    const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
+    const rows = model.ranked.slice(0, opts.limit || 6);
+    const borrowed = rows.filter((r) => r.ambient).length;
+    const lead = (model.agree
+      ? `All ${model.ranked.length} communities peak within ${model.spread} hour${model.spread === 1 ? "" : "s"} of each other.`
+      : model.ranked.length === 1
+        ? `Only one community has enough posts to call a peak.`
+        : `Peaks are up to <strong>${model.spread} hours</strong> apart — there is no one time that serves all of these.`)
+      + (borrowed ? ` ${borrowed} of these ${borrowed === 1 ? "is" : "are"} read from the subreddit's own traffic rather than your posts.` : "");
+
+    return `
+      <p class="timing-lead">${lead}</p>
+      <ul class="timing-summary">
+        ${rows.map((r) => `
+          <li>
+            <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}</span>
+            <span class="timing-peak">${hhmm(r.bestHour)}${tz}</span>
+            <span class="timing-facts">${r.ambient
+              ? `read from the sub's own ${Util.fmtNum(r.count)} loaded posts — your ${r.campaignCount} campaign post${r.campaignCount === 1 ? "" : "s"} there ${r.campaignCount === 1 ? "is" : "are"} too few to measure`
+              : `${r.lift > 0 ? `+${r.lift}% vs its own average · ` : ""}${r.bestHourSample} of ${Util.fmtNum(r.count)} campaign posts${r.bestDow >= 0 ? ` · busiest on ${DOW_SHORT[r.bestDow]}` : ""}`}</span>
+          </li>`).join("")}
+      </ul>
+      ${model.skipped.length ? `<p class="timing-skipped">Too few posts to measure: ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}</p>` : ""}`;
+  };
+
+  function timingPanel(r, tz) {
+    const facts = [];
+    if (r.lift > 0) facts.push(`<strong>+${r.lift}%</strong> vs its own average`);
+    facts.push(`${r.bestHourSample} of ${Util.fmtNum(r.count)} posts landed in that hour`);
+    if (r.bestDow >= 0) facts.push(`busiest on ${DOW_SHORT[r.bestDow]}`);
+    if (r.velocityHour >= 0 && r.velocityHour !== r.bestHour) {
+      facts.push(`fastest early traction at ${hhmm(r.velocityHour)}`);
+    }
+    if (r.quiet) facts.push(`dead ${hhmm(r.quiet.start)}–${hhmm(r.quiet.end)}`);
+
+    return `
+      <div class="timing-panel" data-sub="${Util.escapeHtml(r.key)}">
+        <div class="timing-panel-head">
+          <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}</span>
+          <span class="timing-peak">${hhmm(r.bestHour)}${tz}</span>
+        </div>
+        ${r.confidence === "thin" ? `<span class="badge warn timing-thin">thin sample — ${r.count} posts</span>` : ""}
+        <div class="chart-wrap short" data-timing-chart="${Util.escapeHtml(r.key)}"><canvas></canvas></div>
+        <div class="timing-facts">${facts.join(" · ")}</div>
+      </div>`;
+  }
 
   /* ---------- Posts table ---------- */
 
@@ -215,6 +340,81 @@
     tbody.appendChild(frag);
   };
 
+  /* ---------- One post → its spheres → related communities ---------- */
+
+  /* Rendered in two places from one function: the post detail panel
+   * (full, with per-row add buttons) and the make-campaign form
+   * (compact, as a preview of what the campaign will inherit). */
+  UI.renderPostRelated = function (host, result, opts) {
+    if (!host) return;
+    opts = opts || {};
+    if (!result) {
+      host.innerHTML = `<div class="post-related-status">${Dom.skeleton(3)}</div>`;
+      return;
+    }
+
+    const spheres = result.spheres || [];
+    const communities = (result.communities || []).filter((c) => opts.includeLoaded !== false || !c.loaded);
+    const shown = communities.slice(0, opts.limit || (opts.compact ? 6 : 10));
+
+    if (!spheres.length && !shown.length) {
+      host.innerHTML = `<p class="post-related-status">Nothing in the catalog reads like this post. Try the Communities search, or add the post to a campaign and run full discovery — that reaches Reddit's own search as well.</p>`;
+      return;
+    }
+
+    const sphereChips = spheres.map((s) => `
+      <button class="chip sphere-suggestion" type="button" data-action="load-sphere-from-post" data-sphere="${Util.escapeHtml(s.key)}"
+              title="Load every community in this sphere">
+        ${Util.escapeHtml(s.label)}<span class="chip-meta">${s.confidence}%</span>
+      </button>`).join("");
+
+    host.innerHTML = `
+      ${spheres.length ? `
+        <div class="post-related-block">
+          <div class="post-related-label">Reads as</div>
+          <div class="sphere-suggestions">${sphereChips}</div>
+        </div>` : ""}
+      ${shown.length ? `
+        <div class="post-related-block">
+          <div class="post-related-label">
+            ${spheres.length ? "Communities those spheres reach" : "Related communities"}
+            <span class="hint">${result.resolved} of ${result.pool} candidates had a description to read</span>
+          </div>
+          <ul class="post-related-list">
+            ${shown.map((c) => relatedRow(c, opts)).join("")}
+          </ul>
+        </div>` : ""}
+      ${opts.actions === false ? "" : `
+        <div class="post-related-actions">
+          <button class="btn small" type="button" data-action="load-related-subs">Load the checked communities</button>
+          <button class="btn small primary" type="button" data-action="campaign-from-detail" data-post-id="${Util.escapeHtml(result.post.id)}">Make a campaign from this post</button>
+        </div>`}
+    `;
+  };
+
+  function relatedRow(c, opts) {
+    const rec = c.record || {};
+    const size = c.stub
+      ? "catalog entry, description not read yet"
+      : rec.subscribers ? `${Util.fmtNum(rec.subscribers)} members` : "size unknown";
+    const via = c.viaSphere ? ` · via ${Util.escapeHtml(c.viaSphere)}` : "";
+    const reason = (c.reasons && c.reasons[0]) || "";
+    /* Pre-check only the rows that share actual vocabulary with the
+     * post. A sphere sibling with no overlap is worth showing but not
+     * worth loading on the user's behalf. */
+    const checked = !c.loaded && c.overlapTerms && c.overlapTerms.length > 0;
+    return `
+      <li class="post-related-row${c.loaded ? " is-loaded" : ""}">
+        <label class="post-related-pick">
+          <input type="checkbox" data-related-sub="${Util.escapeHtml(c.name)}" ${c.loaded ? "disabled" : ""} ${checked ? "checked" : ""} />
+          <span class="post-related-name">r/${Util.escapeHtml(c.name)}</span>
+        </label>
+        <span class="post-related-score" title="Match score out of 100">${c.score}</span>
+        <span class="post-related-meta">${size}${via}${c.loaded ? " · already loaded" : ""}</span>
+        ${opts.compact ? "" : `<span class="post-related-reason">${reason}</span>`}
+      </li>`;
+  }
+
   /* Insert an inline form-row below `rowEl` (the post's <tr>) so the
    * user can name a campaign + set goals before saving. The form-row
    * is itself a <tr><td colspan="9"> so the table layout stays sane.
@@ -224,6 +424,41 @@
     opts = opts || {};
     UI.dismissPostMakeCampaignForm(rowEl);
 
+    const formRow = document.createElement("tr");
+    formRow.className = "post-make-form-row";
+    formRow.dataset.forPost = post.id;
+    const cell = document.createElement("td");
+    cell.colSpan = 9;
+    cell.innerHTML = UI.postMakeCampaignFormHtml(post);
+    formRow.appendChild(cell);
+
+    rowEl.classList.add("editing");
+    rowEl.parentNode.insertBefore(formRow, rowEl.nextSibling);
+
+    if (opts.focus !== false) {
+      const nameInput = formRow.querySelector('input[data-field="name"]');
+      if (nameInput) {
+        try { nameInput.focus(); nameInput.select(); } catch (_) {}
+      }
+    }
+    return formRow;
+  };
+
+  /* The same form outside a table, for the post detail panel. */
+  UI.renderPostMakeCampaignInline = function (host, post, opts) {
+    if (!host || !post) return null;
+    opts = opts || {};
+    host.hidden = false;
+    host.innerHTML = UI.postMakeCampaignFormHtml(post, { inheritRelated: true });
+    const nameInput = host.querySelector('input[data-field="name"]');
+    if (opts.focus !== false && nameInput) {
+      try { nameInput.focus(); nameInput.select(); } catch (_) {}
+    }
+    return host.querySelector(".post-make-form");
+  };
+
+  UI.postMakeCampaignFormHtml = function (post, opts) {
+    opts = opts || {};
     const titleSrc = String(post.title || "Untitled").trim();
     const trimmed = titleSrc.slice(0, 60);
     const defaultName = `From r/${post.subreddit}: ${trimmed}${titleSrc.length > 60 ? "…" : ""}`;
@@ -237,52 +472,41 @@
     const suggestedScore = niceCeil(post.score || 0);
     const suggestedComments = niceCeil(post.num_comments || 0);
 
-    const formRow = document.createElement("tr");
-    formRow.className = "post-make-form-row";
-    formRow.dataset.forPost = post.id;
-    formRow.innerHTML = `
-      <td colspan="9">
-        <form class="post-make-form" data-post-id="${Util.escapeHtml(post.id)}">
-          <div class="pmf-headline">
-            <strong>Make a campaign from this post</strong>
-            <span class="meta">We'll create the campaign, switch to the Campaigns tab, and immediately search for subreddits that match this post's themes — each will get a one-tap link to cross-post.</span>
-          </div>
-          <div class="pmf-row">
-            <label class="full">
-              <span class="group-label">Campaign name</span>
-              <input type="text" data-field="name" value="${Util.escapeHtml(defaultName)}" required maxlength="120" />
-            </label>
-          </div>
-          <div class="pmf-row">
-            <label>
-              <span class="group-label">Goal upvotes</span>
-              <input type="number" data-field="goalScore" min="0" inputmode="numeric" placeholder="optional" value="${suggestedScore || ""}" />
-            </label>
-            <label>
-              <span class="group-label">Goal comments</span>
-              <input type="number" data-field="goalComments" min="0" inputmode="numeric" placeholder="optional" value="${suggestedComments || ""}" />
-            </label>
-          </div>
-          <div class="pmf-meta">
-            Tracking <strong>1</strong> post · current: <strong>${Util.fmtNum(post.score)}</strong> pts · <strong>${Util.fmtNum(post.num_comments)}</strong> comments · in r/${Util.escapeHtml(post.subreddit)}
-          </div>
-          <div class="pmf-actions">
-            <button type="button" class="btn small ghost" data-action="cancel-make-campaign-from-post">Cancel</button>
-            <button type="submit" class="btn small primary" data-action="confirm-make-campaign-from-post">Save &amp; find subreddits</button>
-          </div>
-        </form>
-      </td>
-    `;
-    rowEl.classList.add("editing");
-    rowEl.parentNode.insertBefore(formRow, rowEl.nextSibling);
-
-    if (opts.focus !== false) {
-      const nameInput = formRow.querySelector('input[data-field="name"]');
-      if (nameInput) {
-        try { nameInput.focus(); nameInput.select(); } catch (_) {}
-      }
-    }
-    return formRow;
+    return `
+      <form class="post-make-form" data-post-id="${Util.escapeHtml(post.id)}">
+        <div class="pmf-headline">
+          <strong>Make a campaign from this post</strong>
+          <span class="meta">The campaign tracks this post, opens its workspace, and runs full discovery against Reddit's own search — wider than the catalog-only match below.</span>
+        </div>
+        <div class="pmf-row">
+          <label class="full">
+            <span class="group-label">Campaign name</span>
+            <input type="text" data-field="name" value="${Util.escapeHtml(defaultName)}" required maxlength="120" />
+          </label>
+        </div>
+        <div class="pmf-row">
+          <label>
+            <span class="group-label">Goal upvotes</span>
+            <input type="number" data-field="goalScore" min="0" inputmode="numeric" placeholder="optional" value="${suggestedScore || ""}" />
+          </label>
+          <label>
+            <span class="group-label">Goal comments</span>
+            <input type="number" data-field="goalComments" min="0" inputmode="numeric" placeholder="optional" value="${suggestedComments || ""}" />
+          </label>
+        </div>
+        ${opts.inheritRelated ? "" : `<div class="pmf-related" data-role="pmf-related"></div>`}
+        <label class="pmf-check">
+          <input type="checkbox" data-field="loadRelated" checked />
+          <span>Also load the communities checked ${opts.inheritRelated ? "above" : "here"}, so the dashboard shows each one's own posting times</span>
+        </label>
+        <div class="pmf-meta">
+          Tracking <strong>1</strong> post · current: <strong>${Util.fmtNum(post.score)}</strong> pts · <strong>${Util.fmtNum(post.num_comments)}</strong> comments · in r/${Util.escapeHtml(post.subreddit)}
+        </div>
+        <div class="pmf-actions">
+          <button type="button" class="btn small ghost" data-action="cancel-make-campaign-from-post">Cancel</button>
+          <button type="submit" class="btn small primary" data-action="confirm-make-campaign-from-post">Save &amp; find subreddits</button>
+        </div>
+      </form>`;
   };
 
   UI.dismissPostMakeCampaignForm = function (rowEl) {
@@ -360,6 +584,24 @@
           </dl>
         </div>
       </div>
+
+      <section class="post-related-card" id="post-related">
+        <header class="post-related-header">
+          <div>
+            <h4>Where else this post could go</h4>
+            <span class="hint">Matched against the issue-sphere catalog and every community description already cached — no campaign needed</span>
+          </div>
+          <button class="card-help" type="button" aria-label="How this works"
+                  data-help="The post's title, flair and body become a term vector, which is ranked against every issue sphere in the catalog. The winning spheres bring their member communities, the home subreddit's own spheres bring their siblings, and anything with a similar cached description is added too. Each community is then scored on shared vocabulary, sphere fit, civic language and activity. Check the ones you want and load them, or turn the whole thing into a campaign.">?</button>
+        </header>
+        <ol class="post-related-howto">
+          <li>Check the communities worth reaching — the score is out of 100, and every row says why it matched.</li>
+          <li><strong>Load the checked communities</strong> pulls their posts, which is what gives each one its own posting-time panel on the Dashboard.</li>
+          <li><strong>Make a campaign from this post</strong> does that and tracks the post, then runs full discovery against Reddit's search for communities the catalog does not know.</li>
+        </ol>
+        <div id="post-related-body"></div>
+        <div id="post-related-form" hidden></div>
+      </section>
     `;
   };
 
@@ -1140,7 +1382,7 @@
       const cls = t.score >= 70 ? "good" : t.score >= 50 ? "info" : t.score >= 30 ? "warn" : "bad";
       const reasonsHtml = t.reasons.map((r) => `<li>${r}</li>`).join("");
       const segments = `
-        <div class="meter">
+        <div class="meter-list">
           ${meterRow("Themes", t.themeJaccard, "var(--accent)")}
           ${meterRow("Sentiment", t.sentMatch, "var(--info)")}
           ${meterRow("Reception", t.reception, "var(--good)")}
@@ -1198,28 +1440,19 @@
     el.innerHTML = head + sizeRow + cards + pagerHtml;
   };
 
-  /* Render new-subreddit candidates discovered via Reddit search.
+  /* Render subreddit candidates from a Discovery.run result.
    *
-   * `result` shape:
-   *   { candidates:[...], alreadyLoaded:[...], totalScanned: N }
-   * (for back-compat we still accept a plain array). */
+   * Each candidate is a Discovery.scoreCandidate output:
+   *   { key, name, record, score, signals:{…}, overlapTerms, reasons } */
   UI.renderDiscoveryCandidates = function (result, container, ctx) {
     const el = typeof container === "string" ? document.getElementById(container) : container;
     if (!el) return;
     ctx = ctx || {};
-    let candidates, alreadyLoaded, totalScanned;
-    if (Array.isArray(result)) {
-      candidates = result; alreadyLoaded = []; totalScanned = result.length;
-    } else if (result) {
-      candidates = result.candidates || [];
-      alreadyLoaded = result.alreadyLoaded || [];
-      totalScanned = result.totalScanned || (candidates.length + alreadyLoaded.length);
-    } else {
-      candidates = []; alreadyLoaded = []; totalScanned = 0;
-    }
+    const candidates = (result && result.candidates) || [];
+    const alreadyLoaded = (result && result.alreadyLoaded) || [];
 
     if (!candidates.length && !alreadyLoaded.length) {
-      el.innerHTML = '<div class="empty">No candidate subreddits found. Try opening a campaign with richer post content first.</div>';
+      el.innerHTML = '<div class="empty">No candidate subreddits cleared the bar. Switch to <strong>All</strong> to see what was filtered out, or add more posts to the campaign so there is more vocabulary to match on.</div>';
       return;
     }
 
@@ -1238,18 +1471,27 @@
 
     function renderCard(c, i, isAlready) {
       const cls = c.score >= 70 ? "good" : c.score >= 50 ? "info" : c.score >= 30 ? "warn" : "bad";
-      const reasons = c.reasons.map((r) => `<li>${r}</li>`).join("");
-      const desc = c.candidate.public_description ? `<div class="cand-desc">${Util.escapeHtml(c.candidate.public_description.slice(0, 220))}${c.candidate.public_description.length > 220 ? "…" : ""}</div>` : "";
+      const s = c.signals || {};
+      const record = c.record || {};
+      const reasons = (c.reasons || []).map((r) => `<li>${r}</li>`).join("");
+      const blurb = record.public_description || record.title || "";
+      const desc = blurb ? `<div class="cand-desc">${Util.escapeHtml(blurb.slice(0, 220))}${blurb.length > 220 ? "…" : ""}</div>` : "";
+      /* Theme and sphere are the two the score actually turns on, so they
+       * lead; reach and activity are context for whether the match is
+       * worth acting on. Which sphere the bar refers to is named in the
+       * reasons directly below, so the label stays short here and keeps
+       * the rows aligned. */
       const meters = `
-        <div class="meter">
-          ${meterRow("Theme", c.themeMatch, "var(--accent)")}
-          ${meterRow("Popularity", c.popularity, "var(--info)")}
-          ${meterRow("Activity", c.engagement, "var(--good)")}
+        <div class="meter-list">
+          ${meterRow("Theme", s.theme, "var(--accent)", "Vocabulary overlap with your campaign's posts")}
+          ${meterRow("Sphere", s.sphere, "var(--accent-2)", s.sphereLabel ? `Fit with the ${s.sphereLabel} sphere` : "No sphere matched")}
+          ${meterRow("Reach", s.popularity, "var(--info)", "Subscriber count, log-scaled")}
+          ${meterRow("Activity", s.engagement, "var(--good)", "How much discussion a post here tends to get")}
         </div>
       `;
       const action = isAlready
         ? `<span class="badge info">already in your dashboard</span>`
-        : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.canonical)}">＋ Add to dashboard</button>`;
+        : `<button class="btn small primary" data-action="add" data-name="${Util.escapeHtml(c.key)}">＋ Add to dashboard</button>`;
 
       /* Submit-to-Reddit link (only when we have a campaign post template
        * AND the candidate sub doesn't already host it). The button is
@@ -1258,15 +1500,15 @@
        * here and we'll add it to the campaign so its stats start
        * tracking immediately. */
       let submitBlock = "";
-      if (bestPost && !campaignSubs.has(c.canonical)) {
-        const submitUrl = Util.buildSubmitUrl(c.canonical, bestPost);
+      if (bestPost && !campaignSubs.has(c.key)) {
+        const submitUrl = Util.buildSubmitUrl(c.key, bestPost);
         if (submitUrl) {
           const titleHint = String(bestPost.title || "").slice(0, 120);
-          const tip = `Open Reddit's compose page in r/${c.canonical} pre-filled with "${titleHint}"${campaignName ? ` from "${campaignName}"` : ""}`;
+          const tip = `Open Reddit's compose page in r/${c.key} pre-filled with "${titleHint}"${campaignName ? ` from "${campaignName}"` : ""}`;
           submitBlock = `
             <a class="btn small submit-link"
                data-action="open-submit"
-               data-canonical="${Util.escapeHtml(c.canonical)}"
+               data-canonical="${Util.escapeHtml(c.key)}"
                href="${Util.escapeHtml(submitUrl)}"
                target="_blank" rel="noopener"
                title="${Util.escapeHtml(tip)}">↪ Cross-post here</a>`;
@@ -1279,15 +1521,15 @@
        * see app.js delegated handler). The user can also click the
        * "I posted it" button manually if they already cross-posted in a
        * separate tab. */
-      const trackerBlock = (campaignName && bestPost && !campaignSubs.has(c.canonical)) ? `
-        <details class="cand-tracker" data-canonical="${Util.escapeHtml(c.canonical)}">
-          <summary>↪ I posted to r/${Util.escapeHtml(c.canonical)} — track it in this campaign</summary>
+      const trackerBlock = (campaignName && bestPost && !campaignSubs.has(c.key)) ? `
+        <details class="cand-tracker" data-canonical="${Util.escapeHtml(c.key)}">
+          <summary>↪ I posted to r/${Util.escapeHtml(c.key)} — track it in this campaign</summary>
           <div class="cand-tracker-body">
             <label class="group-label">Paste your new Reddit post URL — auto-adds on paste</label>
             <div class="cand-tracker-row">
               <input type="text"
                      data-action="track-post-url"
-                     placeholder="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/comments/..."
+                     placeholder="https://www.reddit.com/r/${Util.escapeHtml(c.key)}/comments/..."
                      autocomplete="off"
                      spellcheck="false" />
               <button type="button" class="btn small ghost" data-action="track-post-paste" title="Pull a Reddit URL from your clipboard">📋 Paste</button>
@@ -1299,14 +1541,14 @@
       ` : "";
 
       return `
-        <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.canonical)}">
+        <div class="target-row candidate ${isAlready ? "already" : ""}" data-name="${Util.escapeHtml(c.key)}">
           <div class="target-head">
             <div>
               <span class="rank">#${i + 1}</span>
               <strong>r/${Util.escapeHtml(c.name)}</strong>
               <span class="badge ${cls}">fit ${c.score}</span>
             </div>
-            <div class="target-meta">${Util.fmtNum(c.candidate.subscribers)} subs${c.candidate.active_user_count ? ` · ${Util.fmtNum(c.candidate.active_user_count)} online` : ""}</div>
+            <div class="target-meta">${Util.fmtNum(record.subscribers)} subs${record.active_user_count ? ` · ${Util.fmtNum(record.active_user_count)} online` : ""}</div>
           </div>
           ${desc}
           ${meters}
@@ -1314,7 +1556,7 @@
           <div class="cand-actions">
             ${action}
             ${submitBlock}
-            <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.canonical)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
+            <a class="btn small ghost" href="https://www.reddit.com/r/${Util.escapeHtml(c.key)}/" target="_blank" rel="noopener">Open in reddit ↗</a>
           </div>
           ${trackerBlock}
         </div>
@@ -1408,9 +1650,10 @@
     el.innerHTML = newSection + alreadySection;
   };
 
-  function meterRow(label, value, color) {
-    const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
-    return `<div class="meter-row"><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
+  function meterRow(label, value, color, tip) {
+    const pct = Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * 100);
+    const t = tip ? ` title="${Util.escapeHtml(tip)}"` : "";
+    return `<div class="meter-row"${t}><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
   }
 
 

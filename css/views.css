@@ -540,8 +540,33 @@
 }
 .sphere-suggestions {
   display: flex;
+  align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+.sphere-suggestions .meta {
+  font-size: var(--fs-xs);
+}
+.chip.sphere-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The confidence reads as a measurement, not a label, so it sits in its
+ * own pill rather than running on from the sphere name. */
+.chip.sphere-suggestion .chip-meta {
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.2px;
+  color: var(--text-mute);
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.chip.sphere-suggestion.active .chip-meta {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
 }
 
 /* Cross-post submit link on discovery candidates. Info-blue so it reads
@@ -555,6 +580,265 @@
   background: color-mix(in srgb, var(--info) 20%, transparent);
   border-color: var(--info);
   color: var(--text);
+}
+
+/* =====================================================================
+   POSTING TIMES, PER SUBREDDIT
+   ---------------------------------------------------------------------
+   Small multiples. Each community gets its own panel because their
+   peaks genuinely disagree and a shared chart hid that.
+   ===================================================================== */
+
+.timing-lead {
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.timing-lead strong {
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+.timing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--s-4);
+}
+
+.timing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-2);
+  background: var(--bg-elev-2);
+  min-width: 0;
+}
+
+.timing-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.timing-sub {
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timing-peak {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent-2);
+  flex-shrink: 0;
+}
+
+.timing-thin {
+  align-self: flex-start;
+}
+
+.timing-facts {
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+.timing-facts strong {
+  color: var(--text-dim);
+  font-weight: var(--fw-medium);
+}
+
+.timing-more {
+  margin-top: var(--s-4);
+}
+
+/* Text-only variant, used where hour charts already appear further
+   down the page. */
+.timing-summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.timing-summary li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-1);
+  background: var(--bg-elev-2);
+}
+.timing-summary .timing-facts {
+  grid-column: 1 / -1;
+}
+
+.timing-skipped {
+  margin: var(--s-4) 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.9;
+  color: var(--text-mute);
+}
+.timing-skipped .tag em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+/* =====================================================================
+   ONE POST → ITS SPHERES → RELATED COMMUNITIES
+   ---------------------------------------------------------------------
+   Lives at the bottom of the post detail card, and in miniature inside
+   the make-campaign form.
+   ===================================================================== */
+
+.post-related-card {
+  margin-top: var(--s-5);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--border-soft);
+}
+
+.post-related-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.post-related-header h4 {
+  margin: 0 0 2px;
+  font-size: var(--fs-md);
+}
+.post-related-header .hint {
+  display: block;
+}
+
+.post-related-howto {
+  margin: var(--s-3) 0 var(--s-4);
+  padding-left: 1.35em;
+  font-size: var(--fs-xs);
+  line-height: 1.65;
+  color: var(--text-mute);
+}
+.post-related-howto strong {
+  color: var(--text-dim);
+  font-weight: var(--fw-medium);
+}
+
+.post-related-block + .post-related-block {
+  margin-top: var(--s-4);
+}
+.post-related-label {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+  margin-bottom: var(--s-2);
+}
+.post-related-label .hint {
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: var(--s-2);
+}
+
+.post-related-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.post-related-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-1);
+  background: var(--bg-elev-2);
+}
+.post-related-row.is-loaded {
+  opacity: 0.6;
+}
+
+.post-related-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  cursor: pointer;
+}
+.post-related-pick input {
+  flex-shrink: 0;
+}
+.post-related-name {
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-related-score {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--accent-2);
+  justify-self: end;
+}
+
+.post-related-meta,
+.post-related-reason {
+  grid-column: 1 / -1;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-mute);
+  padding-left: calc(13px + var(--s-2));
+}
+.post-related-reason code {
+  font-size: 0.95em;
+}
+
+.post-related-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+
+.post-related-status {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-mute);
+}
+
+/* Compact copy inside the make-campaign form. */
+.pmf-related:empty {
+  display: none;
+}
+.pmf-related {
+  margin: var(--s-3) 0;
+}
+.pmf-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin: var(--s-2) 0;
+  cursor: pointer;
+}
+.pmf-check input {
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 /* =====================================================================

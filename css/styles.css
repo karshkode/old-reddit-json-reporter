@@ -451,7 +451,10 @@ tbody td .title-text {
   margin-right: 8px;
 }
 .target-meta { color: var(--text-dim); font-size: 12px; }
-.meter { display: grid; gap: 4px; margin-bottom: 8px; }
+/* A stack of labelled score bars, one per signal — distinct from the
+ * single-bar `.meter` progress primitive in base.css, which sets a 6px
+ * height and clips anything stacked inside it. */
+.meter-list { display: grid; gap: 4px; margin-bottom: 8px; }
 .meter-row {
   display: grid;
   grid-template-columns: 80px 1fr 28px;

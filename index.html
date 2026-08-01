@@ -118,18 +118,17 @@
       </button>
     </div>
 
-    <!-- Shown when every public CORS proxy is failing and no custom
-         worker is configured. Reddit periodically blocks datacenter IPs
-         en masse, which breaks all of them at once. -->
+    <!-- Shown when every CORS proxy in the chain is failing. Reddit
+         refuses unauthenticated requests from datacenter IPs, which is
+         every proxy at once — including a Cloudflare Worker of your
+         own, so the way out is the archive, not a better proxy. -->
     <div id="proxy-down-banner" class="alert-banner" hidden role="alert" aria-live="assertive">
       <div class="alert-banner-text">
-        <strong>Reddit is blocking the public proxies.</strong>
-        Deploy your own free Cloudflare Worker (about three minutes, no credit card) and paste the URL into <em>Settings → Data source → Custom</em>.
+        <strong>Reddit is refusing every proxy.</strong>
+        It blocks unauthenticated requests from datacenter IPs, which covers all of these — and a Cloudflare Worker of your own too. The <em>Reddit archive</em> is a public mirror your browser can read directly, with nothing to deploy.
       </div>
       <div class="alert-banner-actions">
-        <a id="proxy-down-banner-guide" class="btn primary small"
-           href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md"
-           target="_blank" rel="noopener">Setup guide ↗</a>
+        <button id="proxy-down-banner-switch" class="btn primary small" type="button">Switch to the archive</button>
         <button id="proxy-down-banner-dismiss" class="btn ghost small" type="button">Dismiss</button>
       </div>
     </div>
@@ -204,15 +203,15 @@
               <div class="chart-wrap tall"><canvas id="chart-timeline"></canvas></div>
             </div>
 
-            <div class="grid two" style="margin-top:var(--s-4)">
-              <div class="card">
-                <header class="card-header"><div><h2>Best hours to post</h2><span class="hint">Average upvotes per hour, in your local time</span></div></header>
-                <div class="chart-wrap"><canvas id="chart-hour-heat"></canvas></div>
-              </div>
-              <div class="card">
-                <header class="card-header"><div><h2>Busiest days</h2><span class="hint">Posts published per weekday</span></div></header>
-                <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
-              </div>
+            <div class="card" id="posting-times-card" style="margin-top:var(--s-4)">
+              <header class="card-header">
+                <div>
+                  <h2>Best hours to post, per subreddit</h2>
+                  <span class="hint">One panel per community, on its own clock — bars are average upvotes by hour, the line is how many posts landed in that hour</span>
+                </div>
+                <button class="card-help" type="button" aria-label="How to read this card" data-help="Every community keeps its own hours, so this card never averages them together. Each panel scores a subreddit against its own baseline: a peak marked +40% means posts in that hour beat that sub's own average by 40%, not anyone else's. Subs with fewer posts than the minimum are listed at the bottom rather than given a peak they haven't earned.">?</button>
+              </header>
+              <div id="posting-times"></div>
             </div>
           </div>
 
@@ -233,6 +232,10 @@
               <div class="card">
                 <header class="card-header"><div><h2>Are titles upbeat or critical?</h2><span class="hint">Lexicon scored, tuned for civic vocabulary</span></div></header>
                 <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
+              </div>
+              <div class="card">
+                <header class="card-header"><div><h2>Busiest days</h2><span class="hint">Posts per weekday, all loaded subs combined</span></div></header>
+                <div class="chart-wrap"><canvas id="chart-dow"></canvas></div>
               </div>
               <div class="card span-2">
                 <header class="card-header"><div><h2>How recent posts are doing</h2><span class="hint">Score and comment velocity on the latest posts</span></div></header>
@@ -589,8 +592,10 @@
           <header class="card-header">
             <div>
               <h2>Posts (<span id="posts-count">0</span>)</h2>
-              <span class="hint">Tap a row for comments, sentiment and a title-quality breakdown</span>
+              <span class="hint">Tap a row for comments, sentiment, a title-quality breakdown and the communities this post belongs in</span>
             </div>
+            <button class="card-help" type="button" aria-label="What you can do from a post"
+                    data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first.">?</button>
           </header>
 
           <div class="posts-controls">

@@ -16,6 +16,10 @@
 
   let lastSignature = "";
 
+  /* How many per-subreddit timing panels to draw before collapsing the
+   * rest behind a button. Twenty charts on one card is a stall. */
+  let timingLimit = 6;
+
   function esc(s) {
     return Util.escapeHtml(s == null ? "" : s);
   }
@@ -57,7 +61,10 @@
       label: "All loaded subreddits",
     });
 
-    UI.renderKpis(bundle.agg);
+    const timing = Analysis.postingTimes(posts);
+
+    UI.renderKpis(bundle.agg, timing);
+    UI.renderPostingTimes(timing, { limit: timingLimit });
     UI.renderNarrative(Analysis.narrative(bundle.agg, bundle.sentiment, Array.from(AppState.activeSubs)));
     UI.renderRecommendations(Analysis.recommendations(bundle.agg, bundle.sentiment, posts));
     UI.renderKeywords(bundle.keywords);
@@ -102,7 +109,6 @@
     safe("scatter", () => Charts.scatter("chart-scatter", posts));
     safe("subCompare", () => Charts.subCompare("chart-sub-compare", bundle.agg));
     safe("histogram", () => Charts.histogram("chart-hist", bundle.histogram));
-    safe("hourHeat", () => Charts.hourHeat("chart-hour-heat", bundle.agg));
     safe("dow", () => Charts.dow("chart-dow", bundle.agg));
     safe("velocity", () => Charts.velocity("chart-velocity", posts));
     safe("sentiment", () => Charts.sentiment("chart-sentiment", bundle.sentiment));
@@ -139,6 +145,11 @@
     Dom.delegate(document, "click", "#timeline-card .chart-window button", (e, btn) => {
       AppState.timelineWindow = btn.dataset.window;
       for (const sib of btn.parentElement.children) sib.classList.toggle("active", sib === btn);
+      View.render();
+    });
+
+    Dom.delegate(document, "click", '[data-action="show-all-timing"]', () => {
+      timingLimit = "all";
       View.render();
     });
 
