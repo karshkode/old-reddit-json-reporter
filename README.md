@@ -43,6 +43,16 @@ bundled sample data without touching the network.
 
 ## Where the data comes from
 
+There is exactly one source: the **[Arctic Shift]** archive, a public
+mirror of Reddit that serves plain JSON with CORS headers, so your
+browser reads it directly. Nothing to deploy, nothing to sign up for,
+nothing to configure. `js/archive.js` translates its API into the shape
+Reddit's own JSON has, so everything downstream is unchanged.
+
+[Arctic Shift]: https://arctic-shift.photon-reddit.com
+
+### Why not Reddit itself
+
 Reddit's `/json` endpoints send no `Access-Control-Allow-Origin` header,
 so a page on `*.github.io` cannot fetch them directly. The usual answer
 is a CORS proxy — and as of mid-2026 that answer no longer works.
@@ -52,27 +62,26 @@ every public proxy is, and what a Cloudflare Worker of your own is too.
 Changing the User-Agent does not help; the block is decided before the
 request reaches an application server.
 
-So the default source is not a proxy at all. **Arctic Shift** is a
-public Reddit archive that serves plain JSON with CORS headers, which
-means your browser reads it directly — nothing to deploy, nothing to
-sign up for. `js/archive.js` translates its API into the shape Reddit's
-own JSON has, so everything downstream is unchanged.
+This app used to carry a chain of proxies and fall back through them.
+Not one of them could reach Reddit, so the chain's only effect was to
+spend half a minute timing out before the archive answered anyway. It
+is gone, along with the Data source picker, the proxy-health strip and
+the settings that fed them.
 
-What you give up by reading an archive:
+Live scores are still possible, but only by registering a Reddit app
+and using OAuth: `POST /api/v1/access_token` is the one Reddit endpoint
+still reachable from a datacenter. That needs a credential this app has
+nowhere to keep, so it is out of scope for a static site.
+
+### What reading an archive costs you
 
 | | |
 |---|---|
 | **Scores lag** | A post is archived within minutes of submission with whatever score it had then, usually 1. A re-scan records the real numbers about a day later. *Hot* and *Top* show only posts whose scores have settled; *New* shows everything and marks the unsettled rows. |
 | **No true ranking** | The archive orders by time, not by Reddit's hot algorithm, so *Hot* and *Top* are approximated by pulling the requested window and sorting by score. Deterministic, which Reddit's ranking is not. |
-| **No site-wide search** | Free-text search must be scoped to a subreddit or an author, so discovery's "mine recent top posts across Reddit" phase is skipped rather than faked. |
-
-The proxy chain is still in **Settings → Data source** and still tried
-in auto mode, because a proxy that does get through returns live
-scores. If you want live scores reliably, the supported path is
-registering a Reddit app and using OAuth —
-`POST /api/v1/access_token` is the one Reddit endpoint still reachable
-from a datacenter. See [`cloudflare-worker/SETUP.md`](cloudflare-worker/SETUP.md)
-for the measurements behind all of this.
+| **No site-wide search** | Free-text search must be scoped to one subreddit, so discovery cannot ask "who across Reddit is posting about this". That phase is removed rather than faked; see [How discovery works](#how-discovery-works). |
+| **Prefix-matched subreddit search** | The archive matches subreddit *names* by prefix instead of doing Reddit's fuzzy relevance search, so "tenant rights" finds r/TenantRights but not r/Renters. The curated catalog and the local term index cover that gap. |
+| **No share links** | A mobile `/r/x/s/<token>` link is an opaque redirect only reddit.com can follow. Open it and paste the `/comments/…` URL it lands on. The app says so wherever you can paste one. |
 
 ---
 
@@ -127,10 +136,11 @@ you a workspace with six sections:
 | **Plan** | Cross-post cascade scheduling, title prediction and rewriting, volunteer coverage |
 | **Settings** | Goals, digest export, delete |
 
-Adding posts accepts anything pasteable from a phone: full URLs, mobile
-share links (`/r/x/s/<token>`, resolved automatically), `redd.it` short
-URLs, `t3_…` fullnames, or bare IDs. A live chip preview shows what got
-recognised before you commit.
+Adding posts accepts full URLs, `redd.it` short URLs, `t3_…` fullnames
+or bare IDs. A live chip preview shows what got recognised before you
+commit. Mobile `/r/x/s/<token>` share links are the one thing that will
+not work — the token is a redirect only reddit.com can follow — and the
+preview says so instead of accepting a row that can never resolve.
 
 ### Communities
 
@@ -222,7 +232,7 @@ own title, flair and body:
    worth giving.
 
 The offline result paints immediately and the live pass re-scores behind
-it, so a slow or blocked proxy costs you nothing. Communities the
+it, so a slow or unreachable archive costs you nothing. Communities the
 catalog knows but has never fetched still get a row, marked *description
 not read yet*, rather than being dropped for something the index has not
 got round to.
@@ -268,24 +278,29 @@ sphere because the vocabulary matches, not because someone remembered
 to add "eviction" to a list. The spheres that scored appear as chips
 with their confidence; clicking one pins it so it seeds later runs too.
 
-A run has five phases:
+A run has four phases:
 
 1. **Multi-angle search** — the campaign's vocabulary is split into
    several narrow queries rather than one broad one, and a sub matching
    more than one of them is a stronger signal than a sub matching the
    biggest.
-2. **Post mining** — recent top posts on the campaign's keywords, to
-   find active communities that subreddit search never surfaces.
-   Skipped when the archive is the live source, since it cannot serve a
-   site-wide search.
-3. **Sphere seeding** — every member of every sphere that scored.
-4. **Description resolution** — `about.json` for every name in play,
+2. **Sphere seeding** — every member of every sphere that scored.
+3. **Description resolution** — `about.json` for every name in play,
    cached in IndexedDB for 30 days, so description matching is based on
    descriptions actually read and a second run is nearly free.
-5. **Scoring** — theme, sphere fit, civic-space fit, engagement, reach,
-   search and post-mining hits, minus an off-topic penalty and a
-   discount for mega-subs that match any vocabulary by sheer surface
-   area.
+4. **Scoring** — theme, sphere fit, civic-space fit, engagement, reach
+   and how many search angles found the sub, minus an off-topic penalty
+   and a discount for mega-subs that match any vocabulary by sheer
+   surface area.
+
+There used to be a fifth phase between the first two: mining recent top
+posts across Reddit for the campaign's keywords, which found active
+communities that subreddit search never surfaces. The archive scopes
+free-text search to one subreddit, so that question has no honest
+answer any more and the phase is gone rather than left to return
+nothing. Its weight in the composite moved to shared vocabulary and to
+multi-angle corroboration, which is now the only evidence that a
+community answers to the campaign from more than one direction.
 
 Two of those signals are deliberately hedged, because each was a source
 of confident-looking nonsense:
@@ -357,9 +372,9 @@ index and current view.
 
 ### Performance and resilience
 
-- Parallel multi-sub fetching at concurrency 3, with the
-  most-recently-successful transport bubbled to the front of the next
-  request.
+- Parallel multi-sub fetching at concurrency 3, with one retry and a
+  hard per-request timeout so a stalled connection cannot hold up a
+  batch.
 - Streaming progress that advances per page of results, not per
   subreddit.
 - A cancellation token, so re-tapping Refresh mid-flight discards the
@@ -386,7 +401,7 @@ index and current view.
 | `js/theme.js` | Explicit dark/light/system switching, applied before first paint |
 | `js/util.js` | Formatters, ID and share-URL parsing, concurrency-limited `pmap`, toasts, progress |
 | `js/archive.js` | Arctic Shift adapter — presents an archive as Reddit's JSON API |
-| `js/reddit.js` | Transport chain, listing pagination with streaming, batching, search, share-URL resolution |
+| `js/reddit.js` | Request caching, listing pagination with streaming, batching, search |
 | `js/postcache.js` | IndexedDB post cache |
 | `js/subindex.js` | IndexedDB subreddit index: metadata, derived term vectors, stemming, 30-day TTL |
 | `js/seeds.js` | The curated catalog — issue, state and audience spheres, starter bundles |
@@ -441,7 +456,6 @@ css/styles.css             older component styles, still in play
 js/                        see the module table above
 sw.js                      service worker
 vendor/marked.min.js       markdown rendering for post bodies
-cloudflare-worker/         a proxy worker, and the measurements showing why it is not enough
 .github/workflows/pages.yml
 .nojekyll
 ```
@@ -453,6 +467,10 @@ cloudflare-worker/         a proxy worker, and the measurements showing why it i
 - **Scores from the archive lag.** Recent posts carry provisional
   numbers and are marked as such; anything older than about 48 hours is
   accurate. Ranked listings only include settled scores.
+- **The archive is the only source**, so anything Reddit's own API could
+  answer but an archive cannot — site-wide search, share-link expansion,
+  true *Hot* ranking — is absent rather than approximated silently. Each
+  is listed above with what replaced it.
 - **Sentiment** is a lexicon scorer tuned for civic vocabulary
   (`organize`, `solidarity`, `oppress`, `betray`). Directional, not
   authoritative.

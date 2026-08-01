@@ -380,10 +380,13 @@
     const subProfile = ctx.subProfiles && ctx.subProfiles[record.key];
     const engagement = engagementScore(record, subProfile);
 
+    /* How many of the independent search angles turned this sub up. It
+     * carries a little more weight than it used to: post mining was the
+     * other corroborating signal, and the archive cannot search Reddit
+     * site-wide, so this is now the only evidence that a community
+     * answers to the campaign's vocabulary from more than one direction. */
     const queryHits = (ctx.queryHits && ctx.queryHits[record.key]) || 0;
-    const postHits = (ctx.postHits && ctx.postHits[record.key]) || 0;
     const queryBoost = clamp01(queryHits / 4);
-    const postBoost = clamp01(postHits / 8);
 
     /* Being in the curated catalog shows a sub is a real organising
      * space; it does not show it is *this* campaign's organising space.
@@ -405,13 +408,12 @@
     const popularityEffective = megaGeneric ? popularity * 0.2 : popularity;
 
     let raw =
-      0.34 * theme +
+      0.38 * theme +
       0.20 * sphereScore +
       0.10 * civic +
       0.09 * engagement +
       0.07 * popularityEffective +
-      0.06 * postBoost +
-      0.04 * queryBoost +
+      0.06 * queryBoost +
       catalogBoost;
     raw -= 0.26 * offtopicPenalty;
 
@@ -437,7 +439,6 @@
         engagement: engagement,
         popularity: popularity,
         queryHits: queryHits,
-        postHits: postHits,
         offtopic: offtopic,
         catalog: catalogSpheres,
         catalogAffinity: catalogAffinity,
@@ -447,7 +448,7 @@
       reasons: buildReasons(record, overlap, {
         theme: theme, sphere: sphereScore, civic: civic,
         sphereFit: sphereFit, sphereConfidence: sphereConfidence,
-        bestSphere: bestSphere, queryHits: queryHits, postHits: postHits,
+        bestSphere: bestSphere, queryHits: queryHits,
         catalogSpheres: catalogSpheres, catalogAffinity: catalogAffinity,
         offtopic: offtopic,
         megaGeneric: megaGeneric, engagement: engagement,
@@ -494,9 +495,6 @@
         ? `In the curated catalog under ${labels}`
         : `In the curated catalog under ${labels}, which your ${subject} does not clearly match`);
     }
-    if (s.postHits >= 2) {
-      out.push(`${s.postHits} recent top posts on your keywords came from here`);
-    }
     if (s.queryHits >= 2) {
       out.push(`Matched ${s.queryHits} of the search angles independently`);
     }
@@ -541,7 +539,7 @@
       if (s.catalog && s.catalog.length && s.catalogAffinity >= 0.5) { kept.push(c); continue; }
 
       if (s.offtopic >= 2 && s.theme < 0.3) { dropped.offtopic++; continue; }
-      if (s.megaGeneric && s.postHits < 3 && s.sphere < 0.3) { dropped.mega++; continue; }
+      if (s.megaGeneric && s.sphere < 0.3) { dropped.mega++; continue; }
 
       /* Sphere fit alone only carries a sub when the campaign clearly
        * belongs to that sphere. Otherwise a community can be a perfect
@@ -551,7 +549,7 @@
         s.theme >= 0.28 ||
         (s.sphere >= 0.3 && s.sphereConfidence >= 0.5) ||
         (s.theme >= 0.15 && s.sphere >= 0.18) ||
-        s.postHits >= 2;
+        s.queryHits >= 3;
       if (!strongEnough) { dropped.weak++; continue; }
 
       kept.push(c);
@@ -656,43 +654,20 @@
       });
     }
 
-    /* ---- Phase 2: mine recent top posts for active communities ---- */
-    const postHits = {};
-    const postQuery = Discovery.topTerms(vector, 4).join(" ");
-    if (postQuery && window.Reddit) {
-      report(32, "Mining recent top posts for active communities…");
-      try {
-        const posts = await Reddit.searchPosts(postQuery, { limit: 75, sort: "top", t: "month" });
-        for (const p of posts) {
-          const key = (p.subreddit || "").toLowerCase();
-          if (!key) continue;
-          postHits[key] = (postHits[key] || 0) + 1;
-        }
-      } catch (err) {
-        console.warn("[discovery] post mining:", err && err.message);
-      }
-    }
-
-    /* ---- Phase 3: seed from the spheres that scored ---- */
+    /* ---- Phase 2: seed from the spheres that scored ---- */
     const seedNames = [];
     for (const sphere of activeSpheres) {
       for (const name of sphere.subs || []) seedNames.push(name);
     }
 
-    /* ---- Phase 4: make sure every candidate has real metadata ----
+    /* ---- Phase 3: make sure every candidate has real metadata ----
      * This is the change that makes description matching trustworthy.
      * Previously most candidates were scored on whatever the search
      * endpoint returned and only a couple of dozen ever got about.json;
      * now every name in play is resolved through the index, which caches
      * for 30 days so a second run is nearly free. */
-    const minedNames = Object.keys(postHits)
-      .sort((a, b) => postHits[b] - postHits[a])
-      .slice(0, 20);
-
     const allNames = Array.from(new Set(
-      Array.from(found.keys())
-        .concat(minedNames)
-        .concat(seedNames.map((n) => String(n)))
+      Array.from(found.keys()).concat(seedNames.map((n) => String(n)))
     ));
 
     report(38, `Reading community descriptions · 0/${allNames.length}`);
@@ -712,16 +687,23 @@
       if (fresh) sphere.vector = fresh.vector;
     }
 
-    /* ---- Phase 5: score ---- */
+    /* ---- Phase 4: score ---- */
     report(88, "Scoring candidates…");
-    const records = [];
+    /* Dedupe on the resolved record, not on the name that led to it.
+     * allNames holds search results keyed in lowercase alongside
+     * catalog entries in their display casing, so r/TenantUnion and
+     * r/tenantunion survive the Set as two strings and resolve to one
+     * record — which is how the same community used to be recommended
+     * twice, at identical scores, in the same list. */
+    const byKey = new Map();
     for (const name of allNames) {
       const record = SubIndex.get(name);
       if (!record) continue;
       if (record.over18) continue;
       if ((record.subscribers || 0) < (opts.minSubs == null ? 25 : opts.minSubs)) continue;
-      records.push(record);
+      if (!byKey.has(record.key)) byKey.set(record.key, record);
     }
+    const records = Array.from(byKey.values());
 
     const idf = SubIndex.buildIdf(records.map((r) => r.vector).concat([vector]));
     const ctx = {
@@ -729,7 +711,6 @@
       idf: idf,
       spheres: activeSpheres,
       queryHits: queryHits,
-      postHits: postHits,
       subProfiles: opts.subProfiles || {},
     };
 
@@ -747,7 +728,6 @@
       autoSpheres: autoSpheres,
       vector: vector,
       topTerms: Discovery.topTerms(vector, 12),
-      postsMined: Object.keys(postHits).length,
     };
 
     report(100, "Done");
@@ -850,9 +830,15 @@
       }
     }
 
-    /* 4. Post co-occurrence: take this sub's own top posts, search those
-     *    titles site-wide, and see which other communities are talking
-     *    about the same things right now. */
+    /* 4. What the sub actually posts about, which is regularly not what
+     *    its sidebar says it is about. Read its own recent top posts and
+     *    search for communities named after that vocabulary. This used
+     *    to look for co-posting — the same story appearing in several
+     *    subs at once — but that needs a site-wide post search, and the
+     *    archive scopes free-text queries to one subreddit. Searching on
+     *    post vocabulary instead keeps the distinction that made step 4
+     *    worth having: step 3 asks who describes themselves like this
+     *    sub, step 4 asks who talks about what it talks about. */
     if (window.Reddit && opts.live !== false && opts.mine !== false) {
       try {
         const posts = await Reddit.fetchSubredditListing(target.display_name, {
@@ -862,26 +848,22 @@
         for (const p of posts.slice(0, 15)) {
           for (const t of SubIndex.tokenize(p.title || "")) titleTerms[t] = (titleTerms[t] || 0) + 1;
         }
-        const query = Object.entries(titleTerms)
+        /* Only terms the sub returns to repeatedly — a term used once is
+         * one story, not a subject the community is organised around. */
+        const topics = Object.entries(titleTerms)
+          .filter(([, n]) => n >= 2)
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 4)
-          .map(([t]) => t)
-          .join(" ");
-        if (query) {
-          const found = await Reddit.searchPosts(query, { limit: 60, sort: "top", t: "month" });
-          const counts = {};
-          for (const p of found) {
-            const k = (p.subreddit || "").toLowerCase();
-            if (!k || k === key) continue;
-            counts[k] = (counts[k] || 0) + 1;
-          }
-          for (const [k, n] of Object.entries(counts)) {
-            if (n < 2) continue;
-            note(k, "co-posting", Math.min(0.5, n / 10));
+          .slice(0, 3)
+          .map(([t]) => t);
+        for (const topic of topics) {
+          const results = await Reddit.searchSubreddits(topic, { limit: 10 });
+          for (const raw of results) {
+            const record = SubIndex.put(raw, { partial: true });
+            if (record && record.key !== key) note(record.display_name, "topics", 0.25);
           }
         }
       } catch (err) {
-        console.warn("[discovery] similar mining:", err && err.message);
+        console.warn("[discovery] similar topics:", err && err.message);
       }
     }
 
@@ -940,13 +922,15 @@
 
     for (const record of SubIndex.searchLocal(q, 8)) add(record, "cache");
 
-    /* The curated catalog answers issue queries without a single request.
-     * That matters more than it sounds: Reddit blocks anonymous browser
-     * CORS, so on a bad proxy day the live sources below return nothing
-     * at all, and a search box that can only fail is worse than no
-     * search box. Ranking the spheres against the query and offering
-     * their members means "tenant rights" still returns the tenancy
-     * communities. */
+    /* The curated catalog answers issue queries without a single
+     * request. That matters more than it sounds. The archive matches
+     * subreddit names by prefix rather than doing Reddit's fuzzy
+     * relevance search, so a query like "tenant rights" finds
+     * r/TenantRights and misses r/Renters entirely; and when the
+     * archive is unreachable the live sources below return nothing at
+     * all, and a search box that can only fail is worse than no search
+     * box. Ranking the spheres against the query and offering their
+     * members covers both cases. */
     const queryVector = Discovery.textVector(q);
     /* States are in scope here, unlike campaign discovery: someone
      * typing "texas" into a search box wants the Texas communities, and
@@ -1018,13 +1002,14 @@
    * Discovery.run needs a campaign. But the moment a user is looking
    * at a single interesting post, the same question already applies:
    * what is this about, and where else would it land? This is the
-   * cheap single-post version — no site-wide search, no post mining,
-   * just the catalog, the local index and a bounded about.json fill.
+   * cheap single-post version — just the catalog, the local index and
+   * a bounded about.json fill.
    *
    * It reports twice. The first pass scores whatever is already
    * cached, so the panel paints immediately; the second pass fills in
    * real descriptions and re-scores. Waiting on the network before
-   * showing anything made the affordance feel broken on a slow proxy.
+   * showing anything made the affordance feel broken when the archive
+   * was slow.
    * ================================================================== */
 
   /* The term vector for one post. Title carries the message, flair
@@ -1178,13 +1163,12 @@
     /* Live pass: resolve descriptions for the shortlist so scoring is
      * based on what the communities actually say about themselves.
      *
-     * Bounded by a deadline rather than run to completion. When every
-     * public proxy is refusing — which is the normal state of affairs
-     * for unauthenticated Reddit now — SubIndex.ensure takes as long as
-     * the slowest failure chain, and the user is left staring at a
-     * panel that already had a usable offline answer. Whatever landed
-     * inside the deadline is in the index by then, so the re-score
-     * picks it up either way. */
+     * Bounded by a deadline rather than run to completion. If the
+     * archive is slow or unreachable, SubIndex.ensure takes as long as
+     * its slowest timeout, and the user is left staring at a panel that
+     * already had a usable offline answer. Whatever landed inside the
+     * deadline is in the index by then, so the re-score picks it up
+     * either way. */
     const shortlist = Array.from(gatherNames(spheres).names.values());
     if (shortlist.length) {
       const fill = SubIndex.ensure(shortlist, {

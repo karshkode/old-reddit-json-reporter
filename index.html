@@ -118,21 +118,6 @@
       </button>
     </div>
 
-    <!-- Shown when every CORS proxy in the chain is failing. Reddit
-         refuses unauthenticated requests from datacenter IPs, which is
-         every proxy at once — including a Cloudflare Worker of your
-         own, so the way out is the archive, not a better proxy. -->
-    <div id="proxy-down-banner" class="alert-banner" hidden role="alert" aria-live="assertive">
-      <div class="alert-banner-text">
-        <strong>Reddit is refusing every proxy.</strong>
-        It blocks unauthenticated requests from datacenter IPs, which covers all of these — and a Cloudflare Worker of your own too. The <em>Reddit archive</em> is a public mirror your browser can read directly, with nothing to deploy.
-      </div>
-      <div class="alert-banner-actions">
-        <button id="proxy-down-banner-switch" class="btn primary small" type="button">Switch to the archive</button>
-        <button id="proxy-down-banner-dismiss" class="btn ghost small" type="button">Dismiss</button>
-      </div>
-    </div>
-
     <!-- Always-visible data scope: which subs are loaded, and the knobs
          that decide what the next fetch pulls. -->
     <div class="scopebar">
@@ -334,7 +319,7 @@
           <header class="card-header">
             <div>
               <h2>Start a new campaign</h2>
-              <span class="hint">Paste Reddit URLs, mobile share links, or bare post IDs — anything from your phone works</span>
+              <span class="hint">Paste Reddit post URLs or bare post IDs, one per line</span>
             </div>
             <button class="btn ghost small" type="button" id="campaign-new-close" aria-label="Close">×</button>
           </header>
@@ -680,8 +665,7 @@
 
     <footer class="statusbar">
       <div id="status-bar" class="status-bar" aria-live="polite"></div>
-      <div id="proxy-health" class="proxy-health" hidden aria-live="polite"></div>
-      <span class="hint">Live data from <code>reddit.com/r/&lt;sub&gt;.json</code> via a CORS proxy. No server, no account, no tracking.</span>
+      <span class="hint">Reddit data from the <a href="https://arctic-shift.photon-reddit.com" target="_blank" rel="noopener">Arctic Shift archive</a>, read straight from your browser. No server, no account, no tracking.</span>
     </footer>
   </div>
 
@@ -743,14 +727,9 @@
 
     <section class="sheet-section">
       <h3>Data source</h3>
-      <p class="hint">Reddit answers <strong>403 Blocked</strong> to every datacenter IP, which is what CORS proxies and Cloudflare Workers both are — so the proxies below mostly fail. The <strong>Reddit archive</strong> is a separate public dataset that your browser can read directly, with no proxy and no account.</p>
-      <label class="field">
-        <span class="field-label">Source</span>
-        <select id="transport-select"></select>
-      </label>
-      <input id="custom-proxy-input" type="url" placeholder="https://reddit-proxy.you.workers.dev" autocomplete="off" spellcheck="false" hidden />
+      <p class="hint">Every number here comes from the <a href="https://arctic-shift.photon-reddit.com" target="_blank" rel="noopener">Arctic Shift archive</a>, a public mirror of Reddit that your browser reads directly. There is nothing to configure and nothing to deploy. Reddit itself answers <strong>403 Blocked</strong> to unauthenticated requests from datacenter IPs, which is what a CORS proxy and a Cloudflare Worker both are, so reading it from a static site is not possible without an app registration.</p>
       <p class="hint" id="archive-note">The archive records a post within minutes but only learns its final score about a day later. <strong>Hot</strong> and <strong>Top</strong> therefore show only posts whose scores have settled; <strong>New</strong> shows everything and marks the unsettled ones.</p>
-      <a class="hint" href="https://github.com/karshkode/old-reddit-json-reporter/blob/main/cloudflare-worker/SETUP.md" target="_blank" rel="noopener">Getting live scores instead (needs a Reddit app) ↗</a>
+      <p class="hint">Two things the archive cannot do: search all of Reddit at once (free-text search is scoped to one community), and expand a mobile <code>/s/</code> share link. Paste the <code>/comments/…</code> URL instead.</p>
     </section>
 
     <section class="sheet-section">

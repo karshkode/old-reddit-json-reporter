@@ -378,50 +378,6 @@
     Util.setActionPhase("pending", reason ? `${reason} — ${tail}` : tail);
   }
 
-  /* "Deploy a Cloudflare Worker" suggestion banner.
-   *
-   * Visibility rules:
-   *   - Hidden if the user already pasted a custom proxy URL (they're
-   *     already on the recommended path).
-   *   - Hidden if the user has manually dismissed it this session.
-   *   - Shown when public-proxy stats meet *both*:
-   *       a. ≥3 attempts have been observed across the public proxies, AND
-   *       b. NONE of the public proxies have a recent-window success rate
-   *          ≥ 50%.
-   *   This avoids false positives on first-load (no stats yet) and
-   *   on transient single-proxy failures. */
-  let proxyDownBannerDismissed = false;
-  function maybeShowProxyDownBanner(statsByTransport) {
-    const el = document.getElementById("proxy-down-banner");
-    if (!el) return;
-    if (proxyDownBannerDismissed) { el.hidden = true; return; }
-    if (Reddit.getCustomProxyUrl && Reddit.getCustomProxyUrl()) { el.hidden = true; return; }
-
-    const PUBLIC = ["codetabs", "allorigins", "corsproxy", "isomorphic"];
-    let totalAttempts = 0;
-    let anyHealthy = false;
-    for (const name of PUBLIC) {
-      const s = (statsByTransport || {})[name];
-      if (!s) continue;
-      const recent = (s.recent || []).slice(-20);
-      const total = recent.length || (s.ok + s.fail);
-      if (!total) continue;
-      const ok = recent.length ? recent.filter((x) => x).length : s.ok;
-      const rate = total ? ok / total : 1;
-      totalAttempts += total;
-      if (rate >= 0.5) anyHealthy = true;
-    }
-
-    el.hidden = !(totalAttempts >= 3 && !anyHealthy);
-  }
-  /* Wire the dismiss button — moved here so it's defined before
-   * bind() runs. The button itself is set up in bind(). */
-  function dismissProxyDownBanner() {
-    proxyDownBannerDismissed = true;
-    const el = document.getElementById("proxy-down-banner");
-    if (el) el.hidden = true;
-  }
-
   /* ---------- Data fetch ---------- */
 
   /* @param force  truthy means the user explicitly tapped Refresh and
@@ -494,7 +450,7 @@
     function postProgressPct() {
       return Math.min(95, (state.posts.length / expectedTotal) * 100);
     }
-    Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… 0/${subs.length}`, "", "via " + describeTransport());
+    Util.setStatus(`Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… 0/${subs.length}`, "", "via " + Reddit.SOURCE_LABEL);
     Util.setProgress(0, `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}…  0 posts so far`);
     rerenderLight();
 
@@ -571,7 +527,7 @@
           Util.setStatus(
             `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… ${completed}/${subs.length}`,
             errors ? "err" : "",
-            "via " + describeTransport()
+            "via " + Reddit.SOURCE_LABEL
           );
           Util.setProgress(
             postProgressPct(),
@@ -609,7 +565,6 @@
     } else {
       state.posts = freshUnique;
     }
-    state.lastTransport = Reddit._lastTransport || state.lastTransport;
     state.rendering.light = false;
     /* Fetch finished — the dataset now matches the user's settings, so
      * pendingChanges is cleared. Util.hideProgress transitions the
@@ -634,16 +589,16 @@
       `Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""} in ${(totalMs / 1000).toFixed(1)}s` +
       (errors ? ` · ${errors} err` : ""),
       errors ? "err" : "ok",
-      "via " + describeTransport()
+      "via " + Reddit.SOURCE_LABEL
     );
 
     if (state.posts.length === 0 && state.activeSubs.size > 0) {
       const errLines = state.lastErrors.map((e) => `<li><code>r/${Util.escapeHtml(e.sub)}</code> — ${Util.escapeHtml(e.message)}</li>`).join("");
       showBanner("bad", `
-        <strong>All Reddit fetches failed.</strong>
-        Reddit doesn't send CORS headers for browser requests, so this site routes through public CORS proxies. The currently selected proxy may be down or rate-limited.
+        <strong>Nothing came back from the archive.</strong>
+        All Reddit data here comes from the ${Util.escapeHtml(Reddit.SOURCE_LABEL)}, read straight from your browser. Either it is having an outage or this device is offline.
         <ul style="margin:6px 0 0 18px;padding:0">${errLines}</ul>
-        <span class="hint">Try picking a different <strong>Data source</strong> (top bar on desktop, in Filters on mobile), or wait a minute and tap <strong>Refresh</strong>.</span>
+        <span class="hint">Check your connection, then tap <strong>Refresh</strong>. If the archive itself is down, its <a href="${Util.escapeHtml(Reddit.SOURCE_HOME)}" target="_blank" rel="noopener">status page</a> will say so.</span>
       `);
     } else if (state.posts.length > 0) {
       hideBanner();
@@ -652,20 +607,14 @@
     rerenderAll();
     /* The local-first campaign aggregator can resolve campaign IDs from
      * the just-fetched subreddit posts without any extra network calls.
-     * For IDs that aren't covered, give the proxy a brief breather (1.2s)
-     * before kicking off the network pass — back-to-back bursts are what
-     * trip codetabs's rate limiter. */
+     * For IDs that aren't covered, wait a moment (1.2s) before kicking
+     * off the network pass — the archive rate-limits back-to-back
+     * bursts, and the subreddit fetch just made a lot of them. */
     setTimeout(() => {
       refreshAllCampaignSummaries().catch((err) => {
         console.warn("[refreshData] campaign refresh failed:", err && err.message);
       });
     }, 1200);
-  }
-
-  function describeTransport() {
-    const pref = Reddit.getTransport();
-    if (pref === "auto") return "auto" + (state.lastTransport ? " → " + state.lastTransport : "");
-    return pref;
   }
 
   /* ---------- Post detail ---------- */
@@ -758,7 +707,7 @@
 
     /* First pass: instant render using only the dashboard's already-loaded
      * subreddit posts. No network. Lets the user see partial totals
-     * immediately even when the proxy is slow. */
+     * immediately even when the archive is slow. */
     for (const c of list) {
       try {
         summaries[c.id] = await Campaigns.fetchAggregated(c, { fromPosts: state.posts, skipNetwork: true });
@@ -770,8 +719,8 @@
     Router.invalidate(["campaigns"]);
     populateCampaignSelectors();
 
-    /* Second pass: fill in the rest from the network. Concurrency 2 keeps
-     * the proxy from being overwhelmed while the subreddit batch may have
+    /* Second pass: fill in the rest from the network. Concurrency 2 stays
+     * under the archive's rate limit while the subreddit batch may have
      * just finished. Local-first means most IDs already resolve here so
      * this often does zero or one network calls per campaign. */
     await Util.pmap(list, 2, async (c) => {
@@ -806,38 +755,16 @@
     state.openCampaignId = campaign.id;
     refreshWatchToggleUI(state.watchedCampaignId === campaign.id && !!watchTimer);
 
-    /* Auto-repair: campaigns saved by older builds could hold raw mobile
-     * share URLs in postIds. Resolve them once and rewrite the record so
-     * future opens take the fast path. */
+    /* Campaigns saved by older builds could hold raw mobile share URLs
+     * in postIds, which those builds resolved on open by having a CORS
+     * proxy follow Reddit's redirect. Nothing can do that now, so say so
+     * once instead of retrying an impossible repair on every open. The
+     * entries stay in the campaign — deleting a user's rows to tidy up
+     * after ourselves would be worse — and show up as unresolved posts. */
     const shareEntries = (campaign.postIds || []).filter((s) => Util.isShareUrl(s));
-    if (shareEntries.length) {
-      try {
-        Util.setStatus(`Resolving ${shareEntries.length} share URL${shareEntries.length === 1 ? "" : "s"}…`, "");
-        const { resolved, failed } = await Reddit.resolveShareUrls(shareEntries);
-        const newPostIds = [];
-        const seen = new Set();
-        let fixed = 0;
-        for (const old of campaign.postIds) {
-          const resolvedId = Util.isShareUrl(old) ? resolved[old] : old;
-          if (resolvedId && !seen.has(resolvedId)) {
-            seen.add(resolvedId);
-            newPostIds.push(resolvedId);
-            if (Util.isShareUrl(old)) fixed++;
-          } else if (!resolvedId && Util.isShareUrl(old)) {
-            /* Keep the original so the user can see what failed. */
-            newPostIds.push(old);
-          }
-        }
-        Campaigns.update(campaign.id, { postIds: newPostIds });
-        campaign = Campaigns.get(campaign.id);
-        if (failed.length) {
-          Util.toast(`Repaired ${fixed} of ${shareEntries.length} share URLs (${failed.length} failed).`, "error");
-        } else if (fixed) {
-          Util.toast(`Repaired ${fixed} share URL${fixed === 1 ? "" : "s"}.`, "ok");
-        }
-      } catch (err) {
-        console.warn("[campaign] share-URL repair failed:", err && err.message);
-      }
+    if (shareEntries.length && !state.shareWarnedCampaigns.has(campaign.id)) {
+      state.shareWarnedCampaigns.add(campaign.id);
+      Util.toast(`${shareEntries.length} share link${shareEntries.length === 1 ? "" : "s"} in this campaign can't be read. ${Reddit.SHARE_URL_HELP}`, "error");
     }
 
     function publish(agg) {
@@ -857,13 +784,13 @@
       /* The view is already showing skeletons. */
     }
 
-    /* Bounded so a hanging proxy cannot leave the user staring at a
+    /* Bounded so a stalled request cannot leave the user staring at a
      * skeleton forever; the local render stays put if it fires. */
     try {
       const agg = await Promise.race([
         Campaigns.fetchAggregated(campaign, { fromPosts: state.posts }),
         new Promise((_, rej) => setTimeout(
-          () => rej(new Error("Network refresh timed out — proxies may be down. Tap Refresh to retry.")),
+          () => rej(new Error("The archive didn't answer in time. Tap Refresh to retry.")),
           20000
         )),
       ]);
@@ -1147,18 +1074,6 @@
   }
 
   /* ---------- Wire UI ---------- */
-
-  function populateTransportSelect(select) {
-    if (!select) return;
-    select.innerHTML = "";
-    for (const t of Reddit.TRANSPORTS) {
-      const opt = document.createElement("option");
-      opt.value = t.name;
-      opt.textContent = t.label;
-      select.appendChild(opt);
-    }
-    select.value = Reddit.getTransport();
-  }
 
   /* ============ Active sphere picker (Discover hero) ============ */
 
@@ -1619,117 +1534,6 @@
   }
 
   function bind() {
-    const transportSelect = document.getElementById("transport-select");
-    populateTransportSelect(transportSelect);
-
-    /* Custom-proxy URL inputs. Visible when:
-     *   - the user picks "Custom (your CORS proxy)" from Data source, OR
-     *   - they've already pasted a URL (so they can re-edit even on auto)
-     *
-     * The input is paired with localStorage via Reddit.{get,set}CustomProxyUrl.
-     * Cross-device sharing rides through the existing Sync payload. */
-    const customInput = document.getElementById("custom-proxy-input");
-
-    function syncCustomInputVisibility() {
-      const t = Reddit.getTransport();
-      const haveUrl = !!Reddit.getCustomProxyUrl();
-      const visible = t === "custom" || haveUrl;
-      if (customInput) {
-        customInput.hidden = !visible;
-        customInput.value = Reddit.getCustomProxyUrl();
-      }
-    }
-
-    function onCustomProxyChange(e) {
-      const v = String(e.target.value || "").trim();
-      Reddit.setCustomProxyUrl(v);
-      if (customInput && customInput !== e.target) customInput.value = v;
-      Reddit.clearCache();
-      if (typeof Reddit.resetCircuitBreaker === "function") Reddit.resetCircuitBreaker();
-      Util.toast(v ? "Custom proxy saved" : "Custom proxy cleared", "ok");
-      markPending();
-    }
-
-    if (customInput) {
-      customInput.addEventListener("change", onCustomProxyChange);
-      customInput.addEventListener("blur", onCustomProxyChange);
-    }
-
-    syncCustomInputVisibility();
-
-    /* Dismiss button on the "Reddit blocked" suggestion banner.
-     * Once dismissed it stays hidden until the user reloads the tab,
-     * matching the behavior of the share-import banner. */
-    const proxyDownDismiss = document.getElementById("proxy-down-banner-dismiss");
-    if (proxyDownDismiss) {
-      proxyDownDismiss.addEventListener("click", dismissProxyDownBanner);
-    }
-    /* The banner's one-tap fix. Pinning the archive explicitly, rather
-     * than leaving it on auto, stops the chain from spending seconds on
-     * the proxies we just told the user are refused. */
-    const proxyDownSwitch = document.getElementById("proxy-down-banner-switch");
-    if (proxyDownSwitch) {
-      proxyDownSwitch.addEventListener("click", () => {
-        Reddit.setTransport("archive");
-        if (transportSelect) transportSelect.value = "archive";
-        syncCustomInputVisibility();
-        Reddit.clearCache();
-        dismissProxyDownBanner();
-        Util.toast("Reading from the Reddit archive", "ok");
-        refreshData(true);
-      });
-    }
-
-    function onTransportChange(e) {
-      const v = e.target.value;
-      Reddit.setTransport(v);
-      if (transportSelect && transportSelect !== e.target) transportSelect.value = v;
-      syncCustomInputVisibility();
-      Reddit.clearCache();
-      Util.toast(`Data source: ${v}`, "ok");
-      refreshData(true);
-    }
-    if (transportSelect) transportSelect.addEventListener("change", onTransportChange);
-
-    Reddit.onTransportSuccess = function (name) { state.lastTransport = name; };
-
-    /* Per-proxy health dashboard. Renders into #proxy-health in the
-     * footer with a small status pill per transport showing recent
-     * success rate ("codetabs ✓ 100% · allorigins ⚠ 60% blocked").
-     * Updates after every fetch attempt via Reddit.onTransportStats. */
-    Reddit.onTransportStats = function (statsByTransport) {
-      const el = document.getElementById("proxy-health");
-      const entries = Object.entries(statsByTransport || {});
-
-      /* --- The visible health pills in the footer --- */
-      if (el) {
-        if (!entries.length) {
-          el.hidden = true;
-        } else {
-          el.hidden = false;
-          const pills = entries.map(([name, s]) => {
-            const recent = (s.recent || []).slice(-20);
-            const total = recent.length || (s.ok + s.fail);
-            const ok = recent.length ? recent.filter((x) => x).length : s.ok;
-            const rate = total ? ok / total : 1;
-            const cls = rate >= 0.9 ? "ok" : rate >= 0.5 ? "warn" : "bad";
-            const sym = rate >= 0.9 ? "✓" : rate >= 0.5 ? "⚠" : "✗";
-            const tail = (rate < 1 && s.lastKind) ? ` · last: ${s.lastKind}` : "";
-            const tip = `${s.ok} ok / ${s.fail} fail (last ${total})${tail}`;
-            return `<span class="proxy-pill ${cls}" title="${Util.escapeHtml(tip)}">${sym} ${Util.escapeHtml(name)} <strong>${Math.round(rate * 100)}%</strong></span>`;
-          });
-          el.innerHTML = `<span class="proxy-health-label">Proxy health:</span>${pills.join("")}`;
-        }
-      }
-
-      /* --- The "deploy a Cloudflare Worker" suggestion banner ---
-       * Triggered when the public proxies are demonstrably failing
-       * AND the user hasn't already set up their own. The banner
-       * stays dismissable; once dismissed it doesn't return until
-       * the user opens a fresh tab. */
-      maybeShowProxyDownBanner(statsByTransport);
-    };
-
     /* Settings sheet — one dialog for fetch settings, data source,
      * appearance and cache controls. */
     for (const id of ["settings-toggle", "settings-toggle-mobile"]) {
@@ -1775,8 +1579,8 @@
     const actionBtn = document.getElementById("action-btn");
     if (actionBtn) actionBtn.addEventListener("click", () => {
       if (actionBtn.disabled) return;
-      /* User tapped Refresh — clear the proxy circuit breaker so we
-       * give the chain a fresh chance even if it's been auto-failing. */
+      /* User tapped Refresh — clear the circuit breaker so the archive
+       * gets a fresh chance even if it's been auto-failing. */
       if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
       refreshData(true);
     });
@@ -1908,11 +1712,11 @@
           `<span class="kw"><code>${Util.escapeHtml(id)}</code></span>`
         ).join("");
         const shareChips = refs.shares.slice(0, 40).map((s) =>
-          `<span class="kw share" title="${Util.escapeHtml(s.url)} — will be resolved on Save"><code>r/${Util.escapeHtml(s.sub)}/s/${Util.escapeHtml(s.token)}</code></span>`
+          `<span class="kw share" title="${Util.escapeHtml(s.url)} — ${Util.escapeHtml(Reddit.SHARE_URL_HELP)}"><code>r/${Util.escapeHtml(s.sub)}/s/${Util.escapeHtml(s.token)}</code></span>`
         ).join("");
         const headParts = [];
         if (refs.ids.length) headParts.push(`<strong>${refs.ids.length}</strong> ID${refs.ids.length === 1 ? "" : "s"} ready`);
-        if (refs.shares.length) headParts.push(`<span style="color:var(--warn)">${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"} — will be resolved on Save</span>`);
+        if (refs.shares.length) headParts.push(`<span style="color:var(--warn)">${refs.shares.length} share link${refs.shares.length === 1 ? "" : "s"} can't be read — open ${refs.shares.length === 1 ? "it" : "them"} and paste the <code>/comments/…</code> URL instead</span>`);
         el.innerHTML = `<div class="meta">${headParts.join(" · ")}</div>${idChips}${shareChips}`;
       };
       campaignIdsTa.addEventListener("input", update);
@@ -2188,7 +1992,6 @@
      * iOS Safari edge case where form submit doesn't fire. */
     async function handleCampaignSave(e) {
       if (e && e.preventDefault) e.preventDefault();
-      const saveBtnEl = document.querySelector("#campaign-form button[type=submit]");
       try {
         const name = (document.getElementById("campaign-name").value || "").trim();
         if (!name) { Util.toast("Campaign needs a name", "error"); return; }
@@ -2197,40 +2000,16 @@
         const rawIds = document.getElementById("campaign-post-ids").value;
 
         /* parsePostRefs splits the input into clean IDs and Reddit
-         * mobile-share URLs (/r/<sub>/s/<token>). The shares need an
-         * async redirect-following round-trip to extract the real ID. */
+         * mobile-share URLs (/r/<sub>/s/<token>). Only reddit.com can
+         * expand a share token, so those are dropped with an
+         * explanation rather than saved as rows that never resolve. */
         const refs = Util.parsePostRefs(rawIds);
-        let allIds = refs.ids.slice();
-        let resolveFailed = [];
-
-        if (refs.shares.length) {
-          /* Visible progress while we resolve. */
-          if (saveBtnEl) {
-            saveBtnEl.disabled = true;
-            saveBtnEl.dataset.originalText = saveBtnEl.textContent;
-            saveBtnEl.textContent = `Resolving ${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"}…`;
-          }
-          Util.setStatus(`Resolving ${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"} via redirects…`, "");
-          console.log(`[handleCampaignSave] resolving ${refs.shares.length} share URLs`);
-
-          const urls = refs.shares.map((s) => s.url);
-          const { resolved, failed } = await Reddit.resolveShareUrls(urls);
-          for (const u of urls) {
-            if (resolved[u]) allIds.push(resolved[u]);
-          }
-          resolveFailed = failed;
-          allIds = Util.uniqBy(allIds, (x) => x);
-
-          if (saveBtnEl) {
-            saveBtnEl.disabled = false;
-            if (saveBtnEl.dataset.originalText) saveBtnEl.textContent = saveBtnEl.dataset.originalText;
-          }
-          console.log(`[handleCampaignSave] resolved ${Object.keys(resolved).length}/${urls.length} share URLs; ${failed.length} failed`);
-        }
+        const allIds = Util.uniqBy(refs.ids.slice(), (x) => x);
+        const skippedShares = refs.shares.length;
 
         if (!allIds.length) {
-          Util.toast(refs.shares.length
-            ? "All share URLs failed to resolve. Check the URLs or try a different Data source."
+          Util.toast(skippedShares
+            ? Reddit.SHARE_URL_HELP
             : "No valid post IDs found in the input.", "error");
           Util.setStatus("Save aborted — no valid IDs.", "err");
           return;
@@ -2238,8 +2017,8 @@
 
         const c = Campaigns.add({ name, goalScore, goalComments, postIds: allIds });
 
-        if (resolveFailed.length) {
-          Util.toast(`Saved "${c.name}" with ${allIds.length} ID${allIds.length === 1 ? "" : "s"} (${resolveFailed.length} share URL${resolveFailed.length === 1 ? "" : "s"} failed to resolve)`, "error");
+        if (skippedShares) {
+          Util.toast(`Saved "${c.name}" with ${allIds.length} ID${allIds.length === 1 ? "" : "s"}. ${skippedShares} share link${skippedShares === 1 ? "" : "s"} skipped — ${Reddit.SHARE_URL_HELP}`, "error");
         } else if (Campaigns.persistErrorMessage()) {
           Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
         } else {
@@ -2262,14 +2041,6 @@
       } catch (err) {
         console.error("Couldn't save campaign:", err);
         Util.toast(`Couldn't save campaign: ${(err && err.message) || err}`, "error");
-      } finally {
-        if (saveBtnEl) {
-          saveBtnEl.disabled = false;
-          if (saveBtnEl.dataset.originalText) {
-            saveBtnEl.textContent = saveBtnEl.dataset.originalText;
-            delete saveBtnEl.dataset.originalText;
-          }
-        }
       }
     }
 
@@ -2695,11 +2466,11 @@
           `<span class="kw"><code>${Util.escapeHtml(id)}</code></span>`
         ).join("");
         const shareChips = refs.shares.slice(0, 30).map((sh) =>
-          `<span class="kw share" title="${Util.escapeHtml(sh.url)} — will be resolved on Add"><code>r/${Util.escapeHtml(sh.sub)}/s/${Util.escapeHtml(sh.token)}</code></span>`
+          `<span class="kw share" title="${Util.escapeHtml(sh.url)} — ${Util.escapeHtml(Reddit.SHARE_URL_HELP)}"><code>r/${Util.escapeHtml(sh.sub)}/s/${Util.escapeHtml(sh.token)}</code></span>`
         ).join("");
         const head = [];
         if (refs.ids.length) head.push(`<strong>${refs.ids.length}</strong> ID${refs.ids.length === 1 ? "" : "s"} ready`);
-        if (refs.shares.length) head.push(`<span style="color:var(--warn)">${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"} — will resolve on Add</span>`);
+        if (refs.shares.length) head.push(`<span style="color:var(--warn)">${refs.shares.length} share link${refs.shares.length === 1 ? "" : "s"} can't be read — open ${refs.shares.length === 1 ? "it" : "them"} and paste the <code>/comments/…</code> URL instead</span>`);
         prev.innerHTML = `<div class="meta">${head.join(" · ")}</div>${idChips}${shareChips}`;
       });
 
@@ -2887,33 +2658,18 @@
 
       try {
         const refs = Util.parsePostRefs(ta.value);
-        let allIds = refs.ids.slice();
-        let resolveFailed = [];
+        const allIds = Util.uniqBy(refs.ids.slice(), (x) => x);
+        const skippedShares = refs.shares.length;
 
-        if (!refs.ids.length && !refs.shares.length) {
-          Util.toast("Paste a Reddit URL, share link, or post ID first.", "error");
-          setAddPostsStatus(form, "Paste a Reddit URL, share link, or post ID, then tap Add.", "warn");
+        if (!refs.ids.length && !skippedShares) {
+          Util.toast("Paste a Reddit URL or post ID first.", "error");
+          setAddPostsStatus(form, "Paste a Reddit URL or post ID, then tap Add.", "warn");
           return;
         }
 
-        if (refs.shares.length) {
-          btn.disabled = true;
-          btn.dataset.originalText = btn.textContent;
-          btn.textContent = `Resolving ${refs.shares.length} share URL${refs.shares.length === 1 ? "" : "s"}…`;
-          const urls = refs.shares.map((sh) => sh.url);
-          const { resolved, failed } = await Reddit.resolveShareUrls(urls);
-          for (const u of urls) {
-            if (resolved[u]) allIds.push(resolved[u]);
-          }
-          resolveFailed = failed;
-          allIds = Util.uniqBy(allIds, (x) => x);
-          console.log(`[addPostsToCampaign] resolved ${Object.keys(resolved).length}/${urls.length} share URLs; ${failed.length} failed`);
-        }
-
         if (!allIds.length) {
-          Util.toast(refs.shares.length
-            ? "All share URLs failed to resolve. Try a different Data source."
-            : "No valid post IDs found.", "error");
+          Util.toast(skippedShares ? Reddit.SHARE_URL_HELP : "No valid post IDs found.", "error");
+          if (skippedShares) setAddPostsStatus(form, Util.escapeHtml(Reddit.SHARE_URL_HELP), "warn");
           return;
         }
 
@@ -2925,9 +2681,9 @@
           ? ` <span class="add-posts-status-chips">${addedIds.map((id) => `<code>${Util.escapeHtml(id)}</code>`).join(" ")}</span>`
           : "";
 
-        if (resolveFailed.length) {
-          Util.toast(`Added ${result.added} post${result.added === 1 ? "" : "s"} (${resolveFailed.length} share URL${resolveFailed.length === 1 ? "" : "s"} failed)`, "error");
-          setAddPostsStatus(form, `<strong>Added ${result.added}</strong> · ${resolveFailed.length} share URL failed${addedChips}`, "warn");
+        if (skippedShares) {
+          Util.toast(`Added ${result.added} post${result.added === 1 ? "" : "s"}. ${skippedShares} share link${skippedShares === 1 ? "" : "s"} skipped — ${Reddit.SHARE_URL_HELP}`, "error");
+          setAddPostsStatus(form, `<strong>Added ${result.added}</strong> · ${skippedShares} share link${skippedShares === 1 ? "" : "s"} skipped${addedChips}`, "warn");
         } else if (result.added === 0) {
           Util.toast("Those posts are already in the campaign.", "ok");
           setAddPostsStatus(form, `Already in this campaign — nothing to add.`, "warn");
@@ -2947,14 +2703,6 @@
         console.error("[addPostsToCampaign] failed:", err);
         Util.toast(`Couldn't add posts: ${(err && err.message) || err}`, "error");
         setAddPostsStatus(form, `<strong>✗ Couldn't add:</strong> ${Util.escapeHtml((err && err.message) || String(err)).slice(0, 200)}`, "error");
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          if (btn.dataset.originalText) {
-            btn.textContent = btn.dataset.originalText;
-            delete btn.dataset.originalText;
-          }
-        }
       }
     }
 
@@ -3147,7 +2895,7 @@
         const dur = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
         const f = result.filtered || {};
         const spheres = (result.autoSpheres || []).map((s) => `${s.key}:${s.confidence}%`).join(" ") || "—";
-        console.log(`[discover] ${campaign.name}: ${result.queries.length} queries · spheres ${spheres} · ${result.totalScanned} scored (${result.postsMined} subs mined from posts) → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · dropped offtopic=${f.offtopic || 0} weak=${f.weak || 0} mega=${f.mega || 0} · ${dur}ms`);
+        console.log(`[discover] ${campaign.name}: ${result.queries.length} queries · spheres ${spheres} · ${result.totalScanned} scored → ${result.candidates.length} new + ${result.alreadyLoaded.length} already-loaded · dropped offtopic=${f.offtopic || 0} weak=${f.weak || 0} mega=${f.mega || 0} · ${dur}ms`);
         Util.hideProgress(`${result.candidates.length} new sub${result.candidates.length === 1 ? "" : "s"} · ${result.alreadyLoaded.length} already loaded`);
       } catch (err) {
         console.warn("[discover] failed:", err && err.message);
@@ -3341,21 +3089,14 @@
       trackBtn.disabled = true;
       const origText = trackBtn.textContent;
       trackBtn.textContent = "Adding…";
-      showStatus("", "Resolving…");
 
       try {
         const refs = Util.parsePostRefs(value);
-        let allIds = refs.ids.slice();
-        if (refs.shares.length) {
-          const urls = refs.shares.map((s) => s.url);
-          const { resolved } = await Reddit.resolveShareUrls(urls);
-          for (const u of urls) {
-            if (resolved[u]) allIds.push(resolved[u]);
-          }
-        }
-        allIds = Util.uniqBy(allIds, (x) => x);
+        const allIds = Util.uniqBy(refs.ids.slice(), (x) => x);
         if (!allIds.length) {
-          showStatus("err", "Couldn't extract a Reddit post ID from that. Paste the full https://www.reddit.com/... permalink.");
+          showStatus("err", refs.shares.length
+            ? Reddit.SHARE_URL_HELP
+            : "Couldn't extract a Reddit post ID from that. Paste the full https://www.reddit.com/... permalink.");
           trackBtn.disabled = false;
           trackBtn.textContent = origText;
           return;
@@ -4049,11 +3790,10 @@
   /* ============================================================
    * Markdown composer + crossposter
    *
-   * See cloudflare-worker/SETUP.md and js/composer.js for the
-   * broader workflow. The composer is opened from a "Compose &
-   * cross-post" button in the campaign-detail panel; this module
-   * wires the modal's DOM up to Composer's state model and to
-   * Reddit/Campaigns helpers.
+   * See js/composer.js for the broader workflow. The composer is
+   * opened from a "Compose & cross-post" button in the campaign-detail
+   * panel; this module wires the modal's DOM up to Composer's state
+   * model and to Reddit/Campaigns helpers.
    * ============================================================ */
   let composerState = null;       // working copy of Composer.defaultDraft for the open campaign
   let composerSaveTimer = null;

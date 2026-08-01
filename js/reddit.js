@@ -1,22 +1,42 @@
-/* Reddit JSON fetcher.
+/* Reddit data access.
  *
- * Reddit serves anonymous JSON over HTTPS at:
- *   https://www.reddit.com/r/<sub>/<listing>.json
- *   https://www.reddit.com/comments/<id>.json
- *   https://www.reddit.com/by_id/t3_<id>.json
+ * Every request in this file is answered by the Arctic Shift archive
+ * (js/archive.js), which is the dashboard's only data source. The archive
+ * is not a proxy for reddit.com: it is a separate public mirror that
+ * ingests Reddit continuously and serves the stored records with
+ * `Access-Control-Allow-Origin: *`, so the browser reads it directly, with
+ * no proxy, no worker, no account and no CORS problem to solve.
  *
- * However, Reddit's response does NOT include `Access-Control-Allow-Origin`
- * headers, so a browser running on https://*.github.io cannot fetch these
- * URLs directly. Reddit also actively returns a 403 "Blocked" HTML page to
- * datacenter and unidentified IPs.
+ * WHY THERE IS NOTHING ELSE HERE
  *
- * To make this static site work from GitHub Pages we route requests through
- * a chain of public CORS proxies, validate that the response is real Reddit
- * JSON (the proxy may forward Reddit's HTML "Blocked" page, which we must
- * reject so the next proxy is tried), and cache successful responses.
+ *   Reddit answers 403 "Blocked due to a network policy" to every
+ *   unauthenticated request from a datacenter IP. Public CORS proxies and
+ *   a personal Cloudflare Worker are both datacenter IPs, so no link in
+ *   the proxy chain this file used to carry could reach Reddit at all.
+ *   Keeping the chain only bought the user half a minute of timeouts
+ *   before the archive answered anyway.
  *
- * Users can override the proxy via the "Data source" select in the topbar
- * or by calling Reddit.setTransport(name).
+ * THE REDDIT URL IS AN INTERNAL REQUEST GRAMMAR
+ *
+ *   fetchJson still composes a canonical https://www.reddit.com/… URL and
+ *   hands it to Archive.fetchRedditUrl, which translates it into archive
+ *   queries and translates the answer back into Reddit's JSON envelope.
+ *   That indirection is deliberate rather than left over: Reddit's URL
+ *   grammar is a compact, already-documented way to name a request, it
+ *   makes a natural cache key, and it keeps the adapter replaceable
+ *   without touching a caller. Everything downstream — normalizePost, the
+ *   pagination loop, the comment parser — speaks Reddit's shapes for the
+ *   same reason.
+ *
+ * WHAT THE ARCHIVE CANNOT DO
+ *
+ *   Site-wide post search and mobile share-link expansion both require
+ *   reddit.com itself, so they are gone rather than stubbed: callers get
+ *   an explicit refusal that explains the alternative. Scores on posts
+ *   from the last couple of days are provisional until the archive
+ *   re-scans them (Archive.SCORE_LAG_HOURS); normalizePost stamps every
+ *   post with score_confirmed so the UI can label those rows instead of
+ *   quietly charting a placeholder.
  */
 (function () {
   const Reddit = {};
@@ -31,155 +51,14 @@
   const CACHE_SWR_MAX_MS = 30 * 60 * 1000;
   const memCache = new Map();
   const inflight = new Map();
-  const STORAGE_KEY = "rj.transport";
-  /* User-configured custom proxy URL (e.g. their own Cloudflare Worker).
-   * See cloudflare-worker/SETUP.md for deployment instructions. The
-   * dashboard appends ?url=<encoded-reddit-url> automatically; the
-   * `customBuild` helper below is permissive about exactly how the
-   * URL is shaped (with or without trailing `?` / `&` / `?url=`). */
-  const CUSTOM_PROXY_KEY = "rj.customProxy";
+  /* One hard timeout per attempt. The archive normally answers a page in
+   * a few hundred milliseconds, so anything past this is a stall rather
+   * than a slow response, and waiting longer just delays the retry. */
+  const REQUEST_TIMEOUT_MS = 8000;
 
-  function getCustomProxyUrl() {
-    try {
-      const raw = localStorage.getItem(CUSTOM_PROXY_KEY) || "";
-      const normalized = normalizeCustomProxyUrl(raw);
-      /* One-time auto-heal: if the stored value isn't already
-       * canonical (trailing slash, extra whitespace, etc.), rewrite
-       * it. This rescues users who pasted before the
-       * normalization fix shipped — without this, their old
-       * entry keeps producing broken `/?url=` URLs forever. */
-      if (raw !== normalized) {
-        try { localStorage.setItem(CUSTOM_PROXY_KEY, normalized); } catch (_) {}
-      }
-      return normalized;
-    } catch (_) { return ""; }
-  }
-  function setCustomProxyUrl(url) {
-    try {
-      const v = normalizeCustomProxyUrl(url);
-      if (v) localStorage.setItem(CUSTOM_PROXY_KEY, v);
-      else localStorage.removeItem(CUSTOM_PROXY_KEY);
-    } catch (_) {}
-  }
-  /* Normalize a user-pasted proxy URL.
-   *
-   * Why: users routinely paste with a trailing slash
-   * (`https://x.workers.dev/`). For a Cloudflare Worker, that slash
-   * is meaningless — the worker has no /path routing. But the OLD
-   * customBuild used `endsWith("/")` as a signal that the user
-   * wanted CODETABS-STYLE PATH-BASED proxying:
-   *
-   *   "https://x.workers.dev/" + "https://www.reddit.com/…"
-   *   -> "https://x.workers.dev/https://www.reddit.com/…"
-   *
-   * Our worker reads its target from ?url=, not from the path, so
-   * it would reject every such request with
-   *   {"error":400,"message":"Missing ?url= parameter."}
-   *
-   * Fix: strip a trailing slash when the URL is bare-host (no
-   * other path component, no query). That preserves explicit path
-   * proxies like `https://my.com/proxy/` while disambiguating the
-   * common Cloudflare Worker paste case.
-   */
-  function normalizeCustomProxyUrl(url) {
-    let v = String(url || "").trim();
-    if (!v) return "";
-    try {
-      const parsed = new URL(v);
-      /* Bare host: pathname is "/" and no search params. */
-      if (parsed.pathname === "/" && !parsed.search) {
-        v = parsed.protocol + "//" + parsed.host;
-      }
-    } catch (_) { /* malformed input — leave as-is, customBuild will fail loudly */ }
-    return v;
-  }
-  Reddit.getCustomProxyUrl = getCustomProxyUrl;
-  Reddit.setCustomProxyUrl = setCustomProxyUrl;
-
-  /* Build the per-request URL for a custom proxy. Tolerates three
-   * common shapes the user might paste:
-   *   1. Bare Cloudflare Worker URL          ->  appends `?url=<enc>`
-   *      e.g. https://reddit-proxy.alex.workers.dev
-   *   2. Worker with trailing query stub     ->  appends `<enc>`
-   *      e.g. https://reddit-proxy.alex.workers.dev/?url=
-   *   3. codetabs-style path proxy           ->  appends `<full url>`
-   *      e.g. https://my-proxy.example.com/proxy/
-   */
-  function customBuild(reddit) {
-    const base = getCustomProxyUrl();
-    if (!base) return null;
-    /* 1. Explicit `?url=` / `?` / `&` stub — caller has pre-shaped
-     *    the proxy URL; we just append the encoded target. */
-    if (/[\?&]url=$/i.test(base) || base.endsWith("?") || base.endsWith("&")) {
-      return base + encodeURIComponent(reddit);
-    }
-    /* 2. Codetabs-style path-based proxy — caller put `/proxy/` in
-     *    the path. We append the FULL Reddit URL with no encoding. */
-    if (/\/proxy\/?$/i.test(base)) {
-      return base.replace(/\/?$/, "/") + reddit;
-    }
-    /* 3. Already has a query — append as another param. */
-    if (base.includes("?")) {
-      return base + "&url=" + encodeURIComponent(reddit);
-    }
-    /* 4. DEFAULT: append `/?url=…`. This is the right shape for a
-     *    Cloudflare Worker. We strip any trailing slash on the
-     *    base first (setCustomProxyUrl normalizes already, but
-     *    this is belt-and-suspenders for share-link payloads that
-     *    might have escaped normalization). */
-    return base.replace(/\/+$/, "") + "/?url=" + encodeURIComponent(reddit);
-  }
-
-  /* A "transport" wraps a Reddit URL into a CORS-friendly request.
-   * Each transport's `build(redditUrl)` returns the URL the browser hits.
-   *
-   * `direct` only works if the user has installed a CORS-disabling browser
-   * extension or if a future Reddit policy change adds CORS support; we
-   * keep it as a manual option but never auto-pick it.
-   */
-  const TRANSPORTS = [
-    { name: "auto", label: "Auto (try archive + custom proxy + public proxies)" },
-    /* Not a proxy at all: a different data source, called straight from
-     * the browser because it sends CORS headers. It answers when every
-     * proxy is blocked, which since Reddit's datacenter-IP ban is most
-     * of the time. `fetchDirect` replaces build()+parse() wholesale
-     * because the archive speaks its own API and the adapter has to
-     * translate both the request and the response. */
-    {
-      name: "archive",
-      label: "Reddit archive (no proxy needed)",
-      fetchDirect: (redditUrl, signal) => Archive.fetchRedditUrl(redditUrl, { signal: signal }),
-    },
-    { name: "custom", label: "Custom (your CORS proxy)", build: customBuild },
-    { name: "codetabs", label: "codetabs.com proxy", build: (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u) },
-    { name: "allorigins", label: "allorigins.win proxy", build: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u) },
-    { name: "corsproxy", label: "corsproxy.io proxy", build: (u) => "https://corsproxy.io/?" + encodeURIComponent(u) },
-    { name: "isomorphic", label: "isomorphic-git/cors-proxy", build: (u) => "https://cors.isomorphic-git.org/" + u.replace(/^https?:\/\//, "") },
-    { name: "direct", label: "Direct (needs CORS unblocker)", build: (u) => u },
-  ];
-  Reddit.TRANSPORTS = TRANSPORTS;
-
-  /* Auto-rotation order. The archive leads because it is the only
-   * source that currently answers at all: Reddit 403s every datacenter
-   * IP, which is what all the proxies below are. They stay in the chain
-   * because a proxy that does get through returns live scores, which the
-   * archive cannot, so it is worth spending a few seconds finding out.
-   * `isomorphic` (cors.isomorphic-git.org) is left out because its
-   * deployment is effectively dead. */
-  const AUTO_ORDER_BASE = ["archive", "codetabs", "allorigins", "corsproxy"];
-
-  function isUsable(t) {
-    return !!(t && (t.build || t.fetchDirect));
-  }
-
-  let preferredTransport = "auto";
-  try { preferredTransport = localStorage.getItem(STORAGE_KEY) || "auto"; } catch (_) {}
-
-  Reddit.getTransport = () => preferredTransport;
-  Reddit.setTransport = function (name) {
-    preferredTransport = name;
-    try { localStorage.setItem(STORAGE_KEY, name); } catch (_) {}
-  };
+  /* Human-readable name of the source, for status lines and errors. */
+  Reddit.SOURCE_LABEL = "Arctic Shift archive";
+  Reddit.SOURCE_HOME = "https://arctic-shift.photon-reddit.com";
 
   Reddit.clearCache = function () {
     memCache.clear();
@@ -225,224 +104,54 @@
     } catch (_) {}
   }
 
-  function getTransportByName(name) {
-    return TRANSPORTS.find((t) => t.name === name);
-  }
-
-  function transportsToTry() {
-    if (preferredTransport === "auto") {
-      const order = AUTO_ORDER_BASE.slice();
-      /* If the user has configured their own proxy (typically a
-       * Cloudflare Worker), put it FIRST. It's the most reliable
-       * link in the chain since the user controls the upstream IP. */
-      if (getCustomProxyUrl()) order.unshift("custom");
-      /* Bubble the most recently successful transport to the front so a
-       * slow/dead proxy isn't tried first on every subsequent request.
-       * The custom proxy already starts at the front so this only
-       * shuffles the public ones. */
-      const last = Reddit._lastTransport;
-      if (last && order.includes(last) && last !== "custom") {
-        const i = order.indexOf(last);
-        if (i > 1) {  /* skip index 0 if it's the custom proxy */
-          const [t] = order.splice(i, 1);
-          /* Insert AFTER custom (if present) so custom stays first. */
-          order.splice(getCustomProxyUrl() ? 1 : 0, 0, t);
-        }
-      }
-      return order.map(getTransportByName).filter(isUsable);
-    }
-    const t = getTransportByName(preferredTransport);
-    /* If the user picked "custom" but hasn't configured a URL yet, fall
-     * back to auto — better than throwing on every fetch. */
-    if (preferredTransport === "custom" && !getCustomProxyUrl()) {
-      return AUTO_ORDER_BASE.map(getTransportByName).filter(isUsable);
-    }
-    return isUsable(t) ? [t] : AUTO_ORDER_BASE.map(getTransportByName).filter(isUsable);
-  }
-
-  function looksLikeBlockedHtml(text) {
-    if (!text) return false;
-    const head = text.slice(0, 600).toLowerCase();
-    if (head.startsWith("<")) return true;
-    if (head.includes("whoa there, pardner")) return true;
-    if (head.includes("<title>blocked")) return true;
-    if (head.includes("blocked due to a network policy")) return true;
-    return false;
-  }
-
   /* Normalize browser-specific fetch failure messages into a single
    * plain-language label. Without this, users see Safari's
    * "TypeError: Load failed" or Chrome's "Failed to fetch" or
    * Firefox's "NetworkError when attempting to fetch resource" and
-   * can't tell whether it's a parsing problem, a CORS reject, or
-   * a dead proxy. The actual root cause is identical for all three:
-   * the browser refused or couldn't complete the network request. */
+   * can't tell whether the archive is down or their own connection is.
+   * The root cause is the same for all three: the browser could not
+   * complete the request. */
   function normalizeFetchKind(e) {
-    if (!e) return "fetch failed";
-    if (e.name === "AbortError") return "timeout";
+    if (!e) return "the archive did not respond";
+    if (e.name === "AbortError") return "the archive timed out";
     const m = String(e.message || e || "").trim();
     if (m === "Load failed" || m === "Failed to fetch" || /networkerror/i.test(m)) {
-      return "network/CORS rejected";
+      return "couldn't reach the archive — check your connection";
     }
-    return m || "fetch failed";
+    return m || "the archive did not respond";
   }
 
-  /* Throw an Error tagged with .transport, .kind, .attempt so
-   * fetchJson() can build a per-transport summary at the end of
-   * the chain. Without these tags we'd be string-parsing the
-   * messages downstream — fragile. */
-  function throwTransportError(transport, kind, attempt) {
-    const err = new Error(kind + " via " + transport.name);
-    err.transport = transport.name;
-    err.kind = kind;
-    err.attempt = attempt;
-    return err;
-  }
-
-  async function tryTransport(transport, redditUrl, attempt) {
-    /* Direct-fetch transports (the archive) own the whole exchange:
-     * they translate the request, call their own API and hand back
-     * Reddit-shaped JSON, so none of the proxy response-sniffing below
-     * applies to them. */
-    if (transport.fetchDirect) {
-      const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
-      const tid = controller ? setTimeout(() => controller.abort(), 8000) : null;
-      try {
-        const data = await transport.fetchDirect(redditUrl, controller && controller.signal);
-        return { data, transport: transport.name };
-      } catch (e) {
-        /* "This source cannot answer this question" is a routing fact,
-         * not an outage. Tag it so the caller can skip the retry pass
-         * and so it does not pollute the transport health stats. */
-        if (window.Archive && Archive.isUnsupported(e)) {
-          const err = throwTransportError(transport, e.message, attempt);
-          err.archiveUnsupported = true;
-          throw err;
-        }
-        throw throwTransportError(transport, normalizeFetchKind(e), attempt);
-      } finally {
-        if (tid) clearTimeout(tid);
-      }
-    }
-
-    const target = transport.build(redditUrl);
-    /* customBuild returns null when the user picked Custom but
-     * hasn't pasted a URL yet. Fail fast with a helpful message
-     * instead of attempting fetch(null). */
-    if (!target) {
-      throw throwTransportError(transport, "no proxy URL configured", attempt);
-    }
-    /* 8s hard timeout per proxy attempt — without this a slow proxy can
-     * block the entire fallback chain. AbortController is widely supported
-     * including iOS Safari 12.1+. */
+  /* One request to the archive, with a hard timeout so a stalled
+   * connection cannot hold the caller open indefinitely.
+   *
+   * Two error classes come back out, and they mean opposite things:
+   * an `archiveUnsupported` error says the archive is healthy but
+   * structurally cannot answer this question (site-wide search), which
+   * is routing information rather than an outage, so it must not be
+   * retried or counted against the breaker. Everything else is a real
+   * failure. */
+  async function fetchFromArchive(redditUrl) {
     const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    /* 5s hard timeout per proxy attempt — was 8s, but with 3 proxies
-     * × 2 attempts × N subs × M campaign IDs that compounds into
-     * minutes of waiting when proxies are flat dead. 5s is still
-     * generous for any healthy proxy. */
-    const tid = controller ? setTimeout(() => controller.abort(), 5000) : null;
-    let res;
+    const tid = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
     try {
-      res = await fetch(target, {
-        method: "GET",
-        credentials: "omit",
-        headers: { Accept: "application/json, text/plain;q=0.9, */*;q=0.5" },
-        signal: controller && controller.signal,
-      });
+      return await Archive.fetchRedditUrl(redditUrl, { signal: controller && controller.signal });
     } catch (e) {
-      throw throwTransportError(transport, normalizeFetchKind(e), attempt);
+      if (window.Archive && Archive.isUnsupported(e)) throw e;
+      const err = new Error(normalizeFetchKind(e));
+      if (e && e.status) err.status = e.status;
+      throw err;
     } finally {
       if (tid) clearTimeout(tid);
     }
-    if (res.status === 429) {
-      const retry = parseInt(res.headers.get("Retry-After") || "0", 10);
-      await Util.sleep(Math.max(800 * Math.pow(2, attempt), retry * 1000));
-      /* Phrase 429s differently for the user's own proxy vs a public
-       * one — actionable advice is different ("wait and retry" vs
-       * "Reddit is rate-limiting your Cloudflare Worker — wait
-       * 30-60s, the worker's edge cache will mostly absorb future
-       * refreshes once it warms up"). */
-      const phrase = transport.name === "custom"
-        ? "Reddit rate-limited your worker (429) — wait 30-60s, then retry"
-        : "rate limited (429)";
-      throw throwTransportError(transport, phrase, attempt);
-    }
-    if (!res.ok) {
-      /* Worker v2.0 surfaces Reddit block-pages as 503 with a
-       * structured JSON body. Try to extract the human-readable
-       * `message` so the dashboard error matches the worker's
-       * diagnosis exactly. */
-      let detail = "";
-      if (res.status === 503 && transport.name === "custom") {
-        try {
-          const body = await res.clone().json();
-          if (body && body.message) {
-            detail = ": " + String(body.message).slice(0, 120);
-          }
-        } catch (_) {}
-      }
-      throw throwTransportError(transport, "HTTP " + res.status + detail, attempt);
-    }
-    const text = await res.text();
-    /* Empty 200 — codetabs sometimes returns 200 with a 0-byte body
-     * when its upstream fetch succeeded but produced nothing. Old
-     * code threw "non-JSON response via codetabs" via JSON.parse,
-     * which is technically right but unhelpfully vague. Be explicit. */
-    if (!text || !text.trim()) {
-      throw throwTransportError(transport, "empty response (proxy returned " + res.status + " with no body)", attempt);
-    }
-    if (looksLikeBlockedHtml(text)) {
-      throw throwTransportError(transport, "Reddit blocked page", attempt);
-    }
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw throwTransportError(transport, "non-JSON response", attempt);
-    }
-    /* Reject "proxy error" JSON shapes — corsproxy.io now returns
-     *   {"error":"Server-side requests are not allowed on your plan…"}
-     * which our old check accepted because `error` was a string, not
-     * the Reddit numeric error code. Reddit error responses are shaped
-     *   {"error": 403, "message": "Forbidden"}
-     * and never carry both `error` AND `data`/`kind`. */
-    if (data && typeof data === "object" && !Array.isArray(data) && data.error != null) {
-      const isRedditError = typeof data.error === "number" && data.error >= 400;
-      const isProxyJunk = !data.data && !data.kind;
-      if (isRedditError) {
-        /* Distinguish Reddit-side errors (forwarded by the proxy
-         * intact) from proxy-side errors. Reddit returning 500 means
-         * Reddit is having a bad day; the user can't fix that by
-         * switching proxies. The error code in the message helps
-         * the circuit breaker / UI banner explain the situation. */
-        const code = data.error;
-        const tag = (code >= 500) ? `Reddit ${code} (server error)`
-                  : (code === 429) ? "Reddit 429 (rate limited)"
-                  : `Reddit ${code}`;
-        throw throwTransportError(transport, tag + (data.message ? ": " + data.message : ""), attempt);
-      }
-      if (isProxyJunk) {
-        const msg = typeof data.error === "string" ? data.error.slice(0, 80) : "error " + data.error;
-        throw throwTransportError(transport, "proxy error: " + msg, attempt);
-      }
-    }
-    return { data, transport: transport.name };
   }
 
-  /* Per-proxy success/failure tally so the UI can render a small
-   * health dashboard ("codetabs ✓ 100% · allorigins ⚠ 60% blocked").
-   * Recent-window EMA — gives more weight to recent attempts so a
-   * proxy that just came back online doesn't stay flagged forever.
-   * (PR 2 — already in main.) */
-  Reddit._stats = { byTransport: {} };
-
-  /* Circuit breaker — once we've had N consecutive "all proxies
-   * failed" rejections, fast-fail subsequent fetchJson calls
-   * without spending 30+ seconds re-trying every dead proxy. The
-   * breaker re-arms automatically after a cool-off so transient
-   * outages don't permanently block the user — they can also tap
-   * Refresh to force a re-probe via clearCircuitBreaker(). */
-  const CIRCUIT_BREAKER_THRESHOLD = 3;       // consecutive total failures
+  /* Circuit breaker — after N consecutive failures, fast-fail the next
+   * calls instead of making every one of them wait out its own timeout.
+   * The case this exists for is a phone that lost signal midway through
+   * loading a dozen subreddits: without it the user sits through twelve
+   * timeouts to learn the same thing once. It re-arms itself after a
+   * cool-off, and Refresh clears it immediately. */
+  const CIRCUIT_BREAKER_THRESHOLD = 3;       // consecutive failures
   const CIRCUIT_BREAKER_COOL_MS   = 60000;   // 1 min before re-probe
   let consecutiveFailures = 0;
   let circuitOpenUntil = 0;
@@ -452,7 +161,7 @@
       circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_COOL_MS;
       consecutiveFailures = 0;
       Reddit._lastCircuitTripError = summaryError;
-      console.warn("[reddit] circuit breaker OPEN — all proxies failing; pausing fetches for", CIRCUIT_BREAKER_COOL_MS / 1000, "s");
+      console.warn("[reddit] circuit breaker OPEN — the archive is not answering; pausing fetches for", CIRCUIT_BREAKER_COOL_MS / 1000, "s");
     }
   }
   function resetCircuitBreaker() {
@@ -463,33 +172,15 @@
   function isCircuitOpen() {
     return circuitOpenUntil > Date.now();
   }
-  function recordTransportOutcome(transportName, ok, kind) {
-    if (!transportName) return;
-    const s = Reddit._stats.byTransport[transportName] = Reddit._stats.byTransport[transportName] || { ok: 0, fail: 0, lastKind: null, recent: [] };
-    s.ok += ok ? 1 : 0;
-    s.fail += ok ? 0 : 1;
-    if (!ok && kind) s.lastKind = kind;
-    s.recent.push(ok ? 1 : 0);
-    if (s.recent.length > 20) s.recent.shift();
-    if (typeof Reddit.onTransportStats === "function") {
-      try { Reddit.onTransportStats(Reddit._stats.byTransport); } catch (_) {}
-    }
-  }
 
-  /* Fire-and-forget revalidation for SWR (PR 7). Updates the cache
-   * for the next caller; never throws (errors are logged). */
+  /* Fire-and-forget revalidation for SWR. Updates the cache for the
+   * next caller and never throws — the caller already has usable data,
+   * so a failure here is not worth interrupting them over. */
   function revalidateInBackground(redditUrl, key) {
     const promise = (async () => {
-      const transports = transportsToTry();
-      for (const t of transports) {
-        try {
-          const out = await tryTransport(t, redditUrl, 0);
-          cacheSet(key, out.data);
-          Reddit._lastTransport = out.transport;
-          if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
-          return;
-        } catch (_) { /* keep trying */ }
-      }
+      try {
+        cacheSet(key, await fetchFromArchive(redditUrl));
+      } catch (_) { /* the stale value we already served stands */ }
     })().finally(() => { inflight.delete(key); });
     inflight.set(key, promise);
   }
@@ -515,90 +206,42 @@
     }
     if (inflight.has(key)) return inflight.get(key);
 
-    /* Circuit breaker: if every proxy has failed N times in a row
-     * recently, fast-fail without waiting another 15+ seconds for
-     * each new request to time out individually. The user can tap
-     * Refresh to force re-probe. */
+    /* Fast-fail while the breaker is open rather than making this
+     * request discover the outage on its own clock. */
     if (isCircuitOpen()) {
-      const last = Reddit._lastCircuitTripError || "all proxies failing";
+      const last = Reddit._lastCircuitTripError || "the archive is not answering";
       const secsLeft = Math.ceil((circuitOpenUntil - Date.now()) / 1000);
-      const err = new Error(`fast-fail: ${last} (auto-retry in ${secsLeft}s — or tap Refresh)`);
+      const err = new Error(`${last} (retrying in ${secsLeft}s — or tap Refresh)`);
       err.circuit = true;
       throw err;
     }
 
     const promise = (async () => {
-      const transports = transportsToTry();
-      /* Per-transport latest failure. The map is keyed by transport
-       * name; later attempts overwrite the kind for the same name so
-       * we end up with one row per *transport* (not one per attempt),
-       * deduplicated for display. */
-      const lastByTransport = new Map();
-      let anySuccessThisCall = false;
+      let lastErr = null;
+      /* One retry. The archive's own failure modes are a rate limit or
+       * a blip, both of which a short backoff clears; anything that
+       * survives a second attempt is an outage that more attempts will
+       * not fix. */
       for (let attempt = 0; attempt < 2; attempt++) {
-        for (const t of transports) {
-          try {
-            const out = await tryTransport(t, redditUrl, attempt);
-            cacheSet(key, out.data);
-            Reddit._lastTransport = out.transport;
-            recordTransportOutcome(out.transport, true);
-            anySuccessThisCall = true;
-            /* A successful call resets the circuit breaker — proxies
-             * are alive again. */
-            resetCircuitBreaker();
-            if (typeof Reddit.onTransportSuccess === "function") Reddit.onTransportSuccess(out.transport);
-            return out.data;
-          } catch (err) {
-            const tName = (err && err.transport) || (t && t.name) || "?";
-            const kind = (err && err.kind) || (err && err.message) || String(err);
-            lastByTransport.set(tName, kind);
-            /* A source declining to answer a question it structurally
-             * cannot answer is not a health signal — counting it would
-             * make the archive look broken every time discovery asks
-             * for a site-wide search. */
-            if (!err || !err.archiveUnsupported) recordTransportOutcome(tName, false, kind);
-          }
+        try {
+          const data = await fetchFromArchive(redditUrl);
+          cacheSet(key, data);
+          resetCircuitBreaker();
+          return data;
+        } catch (err) {
+          /* A question the archive structurally cannot answer is not
+           * an outage: hand it straight back untouched so the caller
+           * can treat it as a skipped capability, and leave the
+           * breaker alone. */
+          if (err && err.archiveUnsupported) throw err;
+          lastErr = err;
+          if (attempt === 0) await Util.sleep(err && err.status === 429 ? 2000 : 400);
         }
-        await Util.sleep(250 * Math.pow(2, attempt));
       }
 
-      /* Build a rich summary error so the UI doesn't show one
-       * arbitrary "via X" message that hides the real picture.
-       *
-       * If every transport failed with the SAME kind (e.g. all
-       * timed out), simplify to "all N proxies — <kind>".
-       * Otherwise list each transport(kind) so the user sees
-       * exactly what each proxy did. */
-      const entries = Array.from(lastByTransport.entries());
-      let summary;
-      const kinds = new Set(entries.map(([, k]) => k));
-      if (entries.length === 0) {
-        summary = "all proxies failed";
-      } else if (kinds.size === 1) {
-        summary = `all ${entries.length} prox${entries.length === 1 ? "y" : "ies"} ${entries[0][1]}`;
-      } else {
-        summary = `all ${entries.length} proxies failed — ${entries.map(([t, k]) => `${t}(${k})`).join(" · ")}`;
-      }
-      const err = new Error(summary);
-      err.attempts = entries.map(([t, k]) => ({ transport: t, kind: k }));
-      /* Trip the breaker so subsequent calls fast-fail.
-       *
-       * EXCEPT when the only transport that was tried is the user's
-       * own custom proxy. The breaker exists to save the user from
-       * sitting through 30+ seconds of public-proxy timeouts when
-       * everything's down — but a custom proxy responds in well
-       * under a second whether it's healthy or not. Tripping the
-       * breaker on custom-only failures just means the user gets
-       * "fast-fail: …" for 60 seconds every time their personal
-       * worker hiccups once, which is worse than just letting them
-       * tap Refresh and find out immediately. */
-      const onlyCustom = entries.length === 1 && entries[0][0] === "custom";
-      if (!onlyCustom) {
-        tripCircuitBreaker(summary);
-      } else {
-        console.warn("[reddit] custom-only transport failed (" + summary + ") — NOT tripping circuit breaker");
-      }
-      throw err;
+      const summary = (lastErr && lastErr.message) || "the archive did not respond";
+      tripCircuitBreaker(summary);
+      throw new Error(summary);
     })();
     inflight.set(key, promise);
     try {
@@ -688,7 +331,7 @@
     );
     if (!cleaned.length) return [];
 
-    /* Track the most recent transport-level failure so callers
+    /* Track the most recent network-level failure so callers
      * (Campaigns.fetchAggregated -> renderCampaignDetail) can surface
      * a meaningful error instead of just listing un-resolved IDs.
      * Attached to the returned array as a non-enumerable property
@@ -713,9 +356,10 @@
     }
 
     /* Fallback: fetch each ID individually via /comments/<id>.json with
-     * concurrency 3. The proxy may have rate-limited the batch URL but
-     * cached or service individual lookups. We accept partial success —
-     * any IDs that still fail simply aren't included. */
+     * concurrency 3. A batch is one archive query over a long id list,
+     * and one missing or malformed id fails the lot; asking per id
+     * salvages the rest. We accept partial success — any IDs that still
+     * fail simply aren't included. */
     const results = [];
     await Util.pmap(cleaned, 3, async (id) => {
       try {
@@ -925,53 +569,15 @@
       }));
   };
 
-  /* Site-wide post search. Used by candidate discovery to find which
-   * subreddits are *currently active* on a topic, not just which sub
-   * descriptions match the keyword. The set of distinct subreddit names
-   * returned by these post results often reveals niche communities the
-   * /subreddits/search endpoint never surfaces. */
-  /* Returns [] rather than throwing when the active data source has no
-   * site-wide search (the archive requires a subreddit or author
-   * scope). Discovery treats an empty result as a skipped phase, which
-   * is the truth: it still has subreddit search and the curated catalog
-   * to work with. */
-  Reddit.searchPostsSupported = function () {
-    if (!transportsToTry().some((t) => t && t.build)) return false;
-    /* Supported is not the same as worth attempting. In auto mode the
-     * archive answers first and cannot serve this query, so the request
-     * falls through to the proxies below it — and if the archive is what
-     * is currently working, those proxies are being refused by Reddit.
-     * Asking anyway costs twenty seconds of timeouts to arrive at the
-     * empty list we already know is coming. */
-    const last = getTransportByName(Reddit._lastTransport);
-    if (last && !last.build) return false;
-    return true;
-  };
-
-  Reddit.searchPosts = async function (query, opts) {
-    opts = opts || {};
-    if (!Reddit.searchPostsSupported()) return [];
-    const json = await fetchJson(`/search.json`, {
-      q: query,
-      limit: Math.min(opts.limit || 50, 100),
-      sort: opts.sort || "top",
-      t: opts.t || "month",
-      type: "link",
-      include_over_18: "off",
-      restrict_sr: "off",
-    });
-    const children = (json && json.data && json.data.children) || [];
-    return children
-      .filter((c) => c && c.kind === "t3" && c.data)
-      .map((c) => ({
-        id: c.data.id,
-        subreddit: c.data.subreddit,
-        title: c.data.title,
-        score: c.data.score,
-        num_comments: c.data.num_comments,
-        created_utc: c.data.created_utc,
-      }));
-  };
+  /* There is deliberately no site-wide post search here.
+   *
+   * Arctic Shift requires a subreddit or an author to scope a free-text
+   * query, so "which communities across Reddit are posting about X" has
+   * no honest answer from this source. Discovery used to mine that to
+   * find active communities; it now leans on subreddit search, the
+   * curated catalog and the local term index, and says so rather than
+   * running a phase that can only ever return nothing.
+   */
 
   /* Name-completion for the subreddit search box.
    *
@@ -1032,91 +638,50 @@
   };
 
   /* ============================================================
-   * SHARE URL RESOLUTION
+   * SHARE URLS
    * ----------------------------------------------------------
    * Reddit mobile-share links look like
    *   https://www.reddit.com/r/<sub>/s/<token>
    * where <token> is opaque and 301-redirects to the canonical
    *   /r/<sub>/comments/<id>/<title>/
-   * URL. We need the real <id> to populate /by_id. The CORS proxy
-   * follows the redirect transparently and returns the destination
-   * page; we then grep the first occurrence of "comments/<id>" out
-   * of the body. That's reliable in practice because Reddit's HTML
-   * embeds the canonical URL in <link rel="canonical">, og:url, and
-   * the JSON blob, all very near the top of the document.
+   * URL that actually names the post.
+   *
+   * Expanding one means asking reddit.com to perform that redirect
+   * and reading where it lands. The browser cannot do that itself —
+   * reddit.com sends no CORS headers, and the token is a routing
+   * record that lives nowhere but Reddit, so the archive has nothing
+   * to look it up in. This used to work by having a CORS proxy follow
+   * the redirect and scraping the canonical URL out of the returned
+   * HTML; with the proxies gone, so is the capability.
+   *
+   * Rather than fail slowly and vaguely, the app refuses these up
+   * front, everywhere one can be pasted, with the one instruction
+   * that does work: open the link, then paste the URL it lands on.
    * ============================================================ */
 
-  Reddit.resolveShareUrl = async function (shareUrl) {
-    /* Share links resolve by following a redirect and scraping the
-     * canonical URL out of the HTML, so this needs a transport that
-     * fetches an arbitrary page. The archive serves structured records,
-     * not pages, and has nothing to offer here. */
-    const transports = transportsToTry().filter((t) => t && t.build);
-    /* Mirrors fetchJson's per-transport tracking so the user sees the
-     * full chain of failures instead of just whichever proxy was last
-     * in line. */
-    const lastByTransport = new Map();
-    function note(name, kind) { lastByTransport.set(name, kind); }
-    for (const t of transports) {
-      const target = t.build(shareUrl);
-      const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-      const tid = ctrl ? setTimeout(() => ctrl.abort(), 10000) : null;
-      try {
-        const res = await fetch(target, {
-          method: "GET",
-          credentials: "omit",
-          headers: { Accept: "text/html, */*;q=0.5" },
-          signal: ctrl && ctrl.signal,
-        });
-        if (!res.ok) { note(t.name, "HTTP " + res.status); continue; }
-        const text = await res.text();
-        if (looksLikeBlockedHtml(text)) {
-          /* Reddit's "Blocked" interstitial has no canonical comments link.
-           * Fall through to the next proxy. */
-          note(t.name, "Reddit blocked page");
-          continue;
-        }
-        const m = text.match(/comments\/([a-z0-9]{4,12})/i);
-        if (m) {
-          Reddit._lastTransport = t.name;
-          return m[1].toLowerCase();
-        }
-        note(t.name, "no canonical id in response");
-      } catch (e) {
-        note(t.name, normalizeFetchKind(e));
-      } finally {
-        if (tid) clearTimeout(tid);
-      }
-    }
-    const entries = Array.from(lastByTransport.entries());
-    const kinds = new Set(entries.map(([, k]) => k));
-    let summary;
-    if (entries.length === 0) summary = "share URL resolution failed";
-    else if (kinds.size === 1) summary = `share URL — all ${entries.length} prox${entries.length === 1 ? "y" : "ies"} ${entries[0][1]}`;
-    else summary = `share URL — ${entries.map(([t, k]) => `${t}(${k})`).join(" · ")}`;
-    const err = new Error(summary);
-    err.attempts = entries.map(([t, k]) => ({ transport: t, kind: k }));
+  Reddit.SHARE_URL_HELP =
+    "Share links (/s/…) can't be expanded without reddit.com. Open the link, then paste the /comments/… URL it lands on.";
+
+  /* A constant, not a probe: no configuration or retry makes this
+   * possible, so callers can branch on it while building their UI
+   * instead of after a failed round-trip. */
+  Reddit.shareUrlsResolvable = function () { return false; };
+
+  Reddit.resolveShareUrl = async function () {
+    const err = new Error(Reddit.SHARE_URL_HELP);
+    err.shareUnresolvable = true;
     throw err;
   };
 
-  /* Resolve many share URLs concurrently. Returns
-   *   { resolved: { url: id, ... }, failed: [{url, message}, ...] }
-   * so the UI can render partial success without rejecting. Concurrency
-   * 4 — share URL resolution downloads ~500KB of HTML each, so going
-   * higher chews memory on phones. */
+  /* Kept in its original shape — { resolved, failed } — because the
+   * callers already render partial success, and a batch where every
+   * entry failed for the same stated reason is exactly that shape. */
   Reddit.resolveShareUrls = async function (urls) {
     const cleaned = Util.uniqBy((urls || []).map(String).filter(Boolean), (x) => x);
-    const resolved = {};
-    const failed = [];
-    await Util.pmap(cleaned, 4, async (u) => {
-      try {
-        const id = await Reddit.resolveShareUrl(u);
-        resolved[u] = id;
-      } catch (e) {
-        failed.push({ url: u, message: (e && e.message) || String(e) });
-      }
-    });
-    return { resolved, failed };
+    return {
+      resolved: {},
+      failed: cleaned.map((u) => ({ url: u, message: Reddit.SHARE_URL_HELP })),
+    };
   };
 
   window.Reddit = Reddit;
