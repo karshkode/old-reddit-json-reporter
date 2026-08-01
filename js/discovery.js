@@ -689,14 +689,21 @@
 
     /* ---- Phase 4: score ---- */
     report(88, "Scoring candidates…");
-    const records = [];
+    /* Dedupe on the resolved record, not on the name that led to it.
+     * allNames holds search results keyed in lowercase alongside
+     * catalog entries in their display casing, so r/TenantUnion and
+     * r/tenantunion survive the Set as two strings and resolve to one
+     * record — which is how the same community used to be recommended
+     * twice, at identical scores, in the same list. */
+    const byKey = new Map();
     for (const name of allNames) {
       const record = SubIndex.get(name);
       if (!record) continue;
       if (record.over18) continue;
       if ((record.subscribers || 0) < (opts.minSubs == null ? 25 : opts.minSubs)) continue;
-      records.push(record);
+      if (!byKey.has(record.key)) byKey.set(record.key, record);
     }
+    const records = Array.from(byKey.values());
 
     const idf = SubIndex.buildIdf(records.map((r) => r.vector).concat([vector]));
     const ctx = {
