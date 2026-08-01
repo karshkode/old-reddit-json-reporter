@@ -2,8 +2,9 @@
 
 > A zero-backend dashboard for measuring how a message lands when you
 > deliberately post it across several subreddits at once — trend analysis
-> per community, campaign tracking across them, and a discovery engine
-> that tells you which other communities are worth the next post.
+> and posting times per community, campaign tracking across them, and a
+> discovery engine that turns any single post into the list of
+> communities it belongs in.
 
 [![Live demo](https://img.shields.io/badge/live%20demo-karshkode.github.io-ff5722?style=flat-square)](https://karshkode.github.io/old-reddit-json-reporter/?demo=1)
 [![No backend](https://img.shields.io/badge/backend-none-blue?style=flat-square)](#how-it-works)
@@ -26,6 +27,8 @@ bundled sample data without touching the network.
   - [Campaigns](#campaigns)
   - [Communities](#communities)
   - [Posts](#posts)
+- [Posting times are per subreddit](#posting-times-are-per-subreddit)
+- [From one post to a campaign](#from-one-post-to-a-campaign)
 - [How discovery works](#how-discovery-works)
 - [Demo mode](#demo-mode)
 - [Cross-device session sync](#cross-device-session-sync)
@@ -84,16 +87,19 @@ looking at.
 
 Everything about the currently loaded set of subreddits, as one page.
 
-- **KPI row** — posts, upvotes, comments, average upvote ratio, best
-  posting hour in your local timezone with the lift over average, and
-  the top-scoring post.
+- **KPI row** — posts, upvotes, comments, average upvote ratio, the best
+  hour to post *named to the subreddit it belongs to*, and the
+  top-scoring post.
 - **When posts go up** — a full-width timeline. Switch between *Per
   sub*, *Stacked*, *Density* (each sub normalised to its own peak, so
   cadence shapes overlay without volume bias) and *Total*, across
   windows from 1 day to all time. Bucket size follows the window.
-- **Best hours** and **busiest days**, **score vs comments**,
-  **side-by-side subreddit totals**, a **score histogram**, a
-  **sentiment doughnut** and **recent-post velocity**.
+- **Best hours to post, per subreddit** — one small chart per community,
+  each on its own clock. See
+  [below](#posting-times-are-per-subreddit).
+- **Busiest days**, **score vs comments**, **side-by-side subreddit
+  totals**, a **score histogram**, a **sentiment doughnut** and
+  **recent-post velocity**.
 - **Words coming up most**, **quick takeaways** in plain English, and
   **topics that keep coming up** — recurring themes with sentiment,
   engagement, cross-sub spread and clickable examples.
@@ -148,9 +154,94 @@ Where subreddits come from. Three tabs:
 A sortable, paginated table of every loaded post with per-view sub
 filtering, title/author/flair search, and post-ID filtering. Tapping a
 row opens a detail panel: top comments with sentiment, thread
-temperature, upvote ratio, permalink, and a title-quality score broken
-down by factor (length, caps ratio, punctuation, numerals, brackets,
-sentiment, clickbait).
+temperature, upvote ratio, permalink, a title-quality score broken down
+by factor (length, caps ratio, punctuation, numerals, brackets,
+sentiment, clickbait), and **where else this post could go** — see
+[below](#from-one-post-to-a-campaign).
+
+---
+
+## Posting times are per subreddit
+
+Ask "when should I post" of a dashboard holding a dozen communities and
+the honest answer is usually "that depends which one". r/politics peaks
+at a different hour than a state organising sub, and pooling their
+hour-of-day histograms produces a number that is true of neither.
+
+So no timing figure in this app is pooled. `Analysis.postingTimes`
+groups by subreddit before it measures anything, and every peak is
+scored against that subreddit's own average — a `+40%` in a small sub is
+a real finding even if its absolute scores never approach a big sub's
+floor.
+
+Two things keep the numbers honest:
+
+- **Hour estimates are shrunk toward the sub's mean.** Twenty posts
+  spread over twenty-four hours leaves most hours holding a single post,
+  and the raw maximum of average-score-per-hour is then just "which lone
+  post got lucky". Each hour is pulled toward the subreddit's own
+  average by three imaginary average posts, so an hour has to be either
+  busy or emphatically better than normal to win. Each panel says how
+  many posts landed in the hour it is recommending.
+- **Subs below the sample floor get no peak at all.** They are listed at
+  the bottom of the card with their post count, rather than handed a
+  peak hour they have not earned.
+
+Where you see it:
+
+| Surface | What it shows |
+|---|---|
+| **Dashboard → Best hours to post, per subreddit** | A chart per community: bars are average upvotes by hour, the line is how many posts landed in that hour. Under each one: the lift over that sub's own average, the sample behind the peak, its busiest weekday, where early traction is fastest, and its dead window. Six panels, with the rest a click away. |
+| **Dashboard → KPI row** | The busiest subreddit's own peak, labelled with its name, plus how many other subs peak somewhere else. |
+| **Dashboard → Quick takeaways** | Names the subs and how many hours apart their peaks are, instead of asserting one hour for everything. |
+| **Campaign → When to post, community by community** | The same per-sub reading scoped to the campaign. Where a campaign has too few posts in a community to measure, it borrows that subreddit's own loaded traffic — excluding the campaign's posts, so the answer is "when is this room busy" and not a restatement of when you posted — and says so on the row. |
+| **Campaign → Subreddits** | A trend card per community with its own cadence and hour charts. |
+
+---
+
+## From one post to a campaign
+
+Discovery used to require a campaign. But the moment you are looking at
+a post worth spreading, the same question already applies: what is this
+about, and where else would it land?
+
+**Open any post in the Posts table.** At the bottom of the detail panel,
+*Where else this post could go* runs `Discovery.forPost` on the post's
+own title, flair and body:
+
+1. The post's text becomes a term vector and is ranked against every
+   issue sphere in the catalog. The spheres that match appear as chips
+   with their confidence — clicking one loads every community in it.
+2. Those spheres bring their member communities, the post's home
+   subreddit brings the siblings it is catalogued alongside, and
+   anything with a similar cached description is added too.
+3. Each community is scored on shared vocabulary, sphere fit, civic
+   language, activity and reach, and every row says which words it
+   matched on. Communities already in your dashboard are shown too,
+   marked and greyed — "you are already in the right rooms" is an answer
+   worth giving.
+
+The offline result paints immediately and the live pass re-scores behind
+it, so a slow or blocked proxy costs you nothing. Communities the
+catalog knows but has never fetched still get a row, marked *description
+not read yet*, rather than being dropped for something the index has not
+got round to.
+
+Then pick one of two buttons:
+
+| Button | What happens |
+|---|---|
+| **Load the checked communities** | Adds them to your dashboard and pulls their posts. This is what gives each one a posting-time panel of its own, so you can see when to post there before you do. |
+| **Make a campaign from this post** | Names a campaign after the post, suggests goals at 1.5× its current numbers, loads the checked communities alongside it, opens the campaign workspace and runs the full discovery pass — which also reaches Reddit's own search, wider than the catalog-only match above. |
+
+The **+ Campaign** button on any table row is the same flow without
+opening the post first; it shows the sphere match inline as a preview
+before you commit. Both routes leave a checkbox you can clear if you
+want the campaign without loading anything.
+
+Rows are pre-checked only when they share actual vocabulary with the
+post. A sphere sibling with no overlap is worth showing but not worth
+loading on your behalf.
 
 ---
 
@@ -200,6 +291,11 @@ Each candidate carries reasoning that names the overlapping words rather
 than restating its score, so you can tell a real match from a
 coincidence. The **Relevant / All** toggle re-filters the scored list in
 place — no refetch, no waiting.
+
+`Discovery.forPost` is the single-post variant of the same machinery,
+minus the two phases that need Reddit's search. It runs from the post
+detail panel and is described in
+[From one post to a campaign](#from-one-post-to-a-campaign).
 
 ---
 
@@ -273,8 +369,8 @@ index and current view.
 | `js/postcache.js` | IndexedDB post cache |
 | `js/subindex.js` | IndexedDB subreddit index: metadata, derived term vectors, stemming, 30-day TTL |
 | `js/seeds.js` | The curated catalog — issue, state and audience spheres, starter bundles |
-| `js/analysis.js` | Aggregates, activism-tuned lexicon sentiment, keywords and bigrams, themes, per-sub profiles, campaign profiles, targeting, comment-side analysis, title quality |
-| `js/discovery.js` | The discovery pipeline: campaign vectors, sphere ranking, candidate scoring, filtering, similar communities |
+| `js/analysis.js` | Aggregates, activism-tuned lexicon sentiment, keywords and bigrams, themes, per-sub profiles and per-sub posting times, campaign profiles, targeting, comment-side analysis, title quality |
+| `js/discovery.js` | The discovery pipeline: campaign and single-post vectors, sphere ranking, candidate scoring, filtering, similar communities |
 | `js/charts.js` | Chart.js wrappers plus dynamic mount/destroy for cards that come and go |
 | `js/campaigns.js` | Campaign storage with an in-memory mirror for blocked-storage browsers |
 | `js/sync.js` | Session payload, base64url codec, share links, merge/replace |
@@ -345,6 +441,10 @@ cloudflare-worker/         a proxy worker, and the measurements showing why it i
 - **Discovery scores** are cosine similarity over term vectors plus
   named heuristics. Every candidate lists the words and signals behind
   its number, because a fit score you cannot check is not worth much.
+- **Posting times are never pooled across subreddits**, and a peak is
+  shrunk toward the subreddit's own mean so a single lucky post cannot
+  crown its hour. Each panel reports the sample it is working from;
+  subreddits below the floor get no peak at all.
 - **Awards** are gone: Reddit retired them in 2023 and the fields are
   always zero, so the dashboard drops them rather than charting zeros.
 - **`view_count`** is hidden by Reddit from non-owners on most posts.
