@@ -94,29 +94,26 @@ looking at.
 
 ### Dashboard
 
-Everything about the currently loaded set of subreddits, as one page.
+Everything about the currently loaded set of subreddits. A KPI row sits
+above six tabs — posts, upvotes, comments, average upvote ratio, the
+best hour to post *named to the subreddit it belongs to*, and the
+top-scoring post. On a phone those six tiles scroll sideways as one
+snapping row rather than stacking.
 
-- **KPI row** — posts, upvotes, comments, average upvote ratio, the best
-  hour to post *named to the subreddit it belongs to*, and the
-  top-scoring post.
-- **When posts go up** — a full-width timeline. Switch between *Per
-  sub*, *Stacked*, *Density* (each sub normalised to its own peak, so
-  cadence shapes overlay without volume bias) and *Total*, across
-  windows from 1 day to all time. Bucket size follows the window.
-- **Best hours to post, per subreddit** — one small chart per community,
-  each on its own clock. See
-  [below](#posting-times-are-per-subreddit).
-- **Busiest days**, **score vs comments**, **side-by-side subreddit
-  totals**, a **score histogram**, a **sentiment doughnut** and
-  **recent-post velocity**.
-- **Words coming up most**, **quick takeaways** in plain English, and
-  **topics that keep coming up** — recurring themes with sentiment,
-  engagement, cross-sub spread and clickable examples.
-- **What each subreddit looks like** — an audience fingerprint per sub:
-  engagement style, reception, best hour, top themes.
-- **The same post in multiple subreddits** — cross-post detection across
-  your loaded data, ranked by spread first and score second, so a post
-  seeded into five subs outranks a single viral hit.
+| Tab | What is in it |
+|---|---|
+| **Summary** | What the data is telling you, in plain English, and the quick takeaways drawn from it |
+| **Timing** | **When posts go up** — a full-width timeline, switchable between *Per sub*, *Stacked*, *Density* (each sub normalised to its own peak, so cadence shapes overlay without volume bias) and *Total*, across windows from 1 day to all time, with bucket size following the window. Below it, **best hours to post per subreddit**: one small chart per community, each on its own clock — see [below](#posting-times-are-per-subreddit) |
+| **Charts** | **Busiest days**, **score vs comments**, **side-by-side subreddit totals**, a **score histogram**, a **sentiment doughnut** and **recent-post velocity** |
+| **Themes** | **Words coming up most**, and **topics that keep coming up** — recurring themes with sentiment, engagement, cross-sub spread and clickable examples |
+| **Communities** | **What each subreddit looks like** — an audience fingerprint per sub: engagement style, reception, best hour, top themes |
+| **Cross-posts** | **The same post in multiple subreddits**, detected across your loaded data and ranked by spread first and score second, so a post seeded into five subs outranks a single viral hit |
+
+Only the selected tab is in the document flow, which is what keeps the
+view to two or three screenfuls on a phone instead of eleven. It also
+means a repaint builds one tab's charts rather than all ten; the
+analysis behind them is computed once per scope and re-used as you move
+between tabs.
 
 ### Campaigns
 
@@ -125,12 +122,13 @@ same message cross-posted to several communities.
 
 The list view shows every campaign as a tile with goal progress, plus a
 14-day calendar strip and a two-campaign comparison. Opening one gives
-you a workspace with six sections:
+you a KPI row and goal bars above seven tabs:
 
 | Section | What is in it |
 |---|---|
-| **Overview** | KPI row, goal bars, campaign-scoped charts |
-| **Subreddits** | A trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. |
+| **Overview** | How the campaign is doing in plain English, what separates its best posts from its worst, and the fingerprint it presents to a new community |
+| **Trends** | Campaign-scoped charts: activity over time by subreddit, score vs comments, title tone and score spread |
+| **Subreddits** | When to post community by community, then a trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. |
 | **Posts** | Every tracked post, with paste-to-add and per-row removal |
 | **Targeting** | Discovery — see below — plus a ranking of the subs already in your dashboard by how well they fit this campaign |
 | **Plan** | Cross-post cascade scheduling, title prediction and rewriting, volunteer coverage |
@@ -397,7 +395,7 @@ index and current view.
 |---|---|
 | `js/state.js` | The single app state object and its persistence |
 | `js/router.js` | View registry, lazy mount, hash routing, invalidation |
-| `js/dom.js` | Small DOM helpers: query, fill, delegate, empty states, skeletons |
+| `js/dom.js` | Small DOM helpers: query, fill, delegate, empty states, skeletons, and the shared tab-rail and overflow-menu widgets |
 | `js/theme.js` | Explicit dark/light/system switching, applied before first paint |
 | `js/util.js` | Formatters, ID and share-URL parsing, concurrency-limited `pmap`, toasts, progress |
 | `js/archive.js` | Arctic Shift adapter — presents an archive as Reddit's JSON API |

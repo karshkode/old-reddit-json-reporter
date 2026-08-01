@@ -2068,8 +2068,21 @@ body.modal-open { overflow: hidden; }
 .posts-controls {
   display: flex;
   flex-direction: column;
+  /* The older .crossposts-controls rule above still contributes
+   * `align-items: center` and `flex-wrap: wrap`. In a column the first
+   * stops these rows being stretched to the card, and the second makes
+   * the container multi-line, so a row is stretched to the widest item
+   * on its line rather than to the card. A select is as wide as its
+   * longest option wants to be, so between them they pushed the card
+   * 22px past the edge of a 320px screen. */
+  align-items: stretch;
+  flex-wrap: nowrap;
   gap: 10px;
   padding: 10px 14px 0;
+}
+.posts-controls .pc-search,
+.posts-controls .pc-filters {
+  min-width: 0;
 }
 .posts-controls .pc-search {
   display: flex;
@@ -2100,11 +2113,16 @@ body.modal-open { overflow: hidden; }
   gap: 12px;
   padding-bottom: 4px;
 }
+/* A select is as wide as its longest option wants to be, so on a 320px
+ * screen a filter group could outgrow the row it sits in and push the
+ * card past the viewport. Let the group and the control give way. */
 .posts-controls .pc-filter {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .posts-controls .pc-filter .group-label { white-space: nowrap; }
 .posts-controls .pc-filter select {
@@ -2115,6 +2133,7 @@ body.modal-open { overflow: hidden; }
   border-radius: 8px;
   font-size: 13px;
   min-height: 34px;
+  min-width: 0;
 }
 /* ---------- "Show all / Show fewer" expander button ---------- */
 
