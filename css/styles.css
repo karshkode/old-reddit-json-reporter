@@ -263,7 +263,11 @@ tbody td .title-text {
   select.only-mobile { display: block; flex: 1 1 auto; }
   /* Posts table → card list */
   .sort-row { display: flex; }
-  .table-wrap { overflow-x: visible; margin: 0; padding: 0; }
+  /* Only the posts table stops being a table here. Releasing the scroll
+   * on every .table-wrap took the campaign's eight-column subreddit
+   * table with it, which then overflowed the viewport and stretched the
+   * fixed tab bar along with it. */
+  .table-wrap:has(#posts-table) { overflow-x: visible; margin: 0; padding: 0; }
   #posts-table thead { display: none; }
   #posts-table tbody tr {
     display: block;
@@ -3542,38 +3546,9 @@ body.sidebar-open {
 .campaign-hub-kpi-label { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.5px; }
 .campaign-hub-kpi-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
 .campaign-hub-kpi-sub   { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-/* ====================================================================
- * Floating "back to top" button. Appears after the user scrolls
- * past the first viewport-height. Tucked away in the bottom-right
- * with thumb-friendly sizing. Hidden when a sidebar is open
- * (the sidebar's own scroll is independent). */
-.back-to-top {
-  position: fixed;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  border: 0;
-  font-size: 20px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.back-to-top.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-.back-to-top:hover { transform: translateY(-2px); }
-.back-to-top:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-body.sidebar-open .back-to-top { display: none; }
+/* The back-to-top button lives in css/shell.css with the rest of the
+ * fixed furniture. A second copy here used to win on load order and
+ * quietly undo the mobile offset that keeps it off the tab bar. */
 /* "When" cell in the Posts table: relative age over actual clock
  * time. The pair makes timing patterns visible at a glance. */
 .when-age {

@@ -849,6 +849,17 @@ table.data .num {
 .section-rail::-webkit-scrollbar {
   display: none;
 }
+/* Six tabs do not fit a phone, and with the scrollbar hidden the ones
+ * past the edge just looked cut off. Bleed the strip to the screen
+ * edges and fade the overflowing end so it reads as scrollable. */
+@media (max-width: 900px) {
+  .section-rail {
+    margin-inline: calc(var(--s-3) * -1);
+    padding-inline: var(--s-3);
+    scroll-padding-inline: var(--s-3);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+}
 .section-rail a,
 .section-rail button {
   appearance: none;

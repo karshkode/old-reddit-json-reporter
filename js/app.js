@@ -2581,8 +2581,7 @@
       const nameInput = form.querySelector('input[data-field="name"]');
       const scoreInput = form.querySelector('input[data-field="goalScore"]');
       const commentsInput = form.querySelector('input[data-field="goalComments"]');
-      const fallbackName = `From r/${post.subreddit}: ${(post.title || "").slice(0, 60).trim()}`;
-      const name = (nameInput && nameInput.value || "").trim() || fallbackName;
+      const name = (nameInput && nameInput.value || "").trim() || UI.campaignNameForPost(post);
       const goalScore = scoreInput ? Number(scoreInput.value) || 0 : 0;
       const goalComments = commentsInput ? Number(commentsInput.value) || 0 : 0;
 
@@ -2598,7 +2597,10 @@
         if (Campaigns.persistErrorMessage()) {
           Util.toast(`Saved in this tab only — browser storage is unavailable (${Campaigns.persistErrorMessage()}).`, "error");
         } else {
-          Util.toast(`Created "${name}" — finding recommended subreddits…`, "ok");
+          /* The campaign name is the heading of the view this lands on,
+           * so the toast reports the next step rather than reading the
+           * name back over the top of it. */
+          Util.toast("Campaign created — finding recommended subreddits…", "ok");
         }
 
         /* Loading the matched communities is what makes the rest of the
