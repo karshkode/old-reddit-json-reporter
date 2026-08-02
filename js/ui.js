@@ -132,10 +132,20 @@
   }
 
   /* Signal strength as a word, not a colour alone. */
+  /* What the band on a row actually asserts. The words on their own
+   * invite everyone to supply their own scale, and the numbers beside
+   * them do not say which one earns which label. */
+  const SIGNAL_TITLES = {
+    strong: "Strong: the shuffle test put this at p ≤ .05, the confidence interval stays above zero, and at least 5 posts sit near the slot. On pure noise this band fires about 1 time in 20.",
+    likely: "Likely: p ≤ .15 and at least a 15% lift. Probably real, but the interval may still cross zero. On pure noise this band fires about 1 time in 7.",
+    weak: "Weak: p ≤ .25 and at least a 25% lift. Worth knowing, not worth rearranging a day for.",
+  };
+
   function signalBadge(r) {
     if (!r.signal || r.signal === "none") return "";
     const cls = r.signal === "strong" ? "good" : r.signal === "likely" ? "" : "warn";
-    return `<span class="badge ${cls} timing-signal">${Util.escapeHtml(Timing.signalLabel(r.signal))}</span>`;
+    const why = SIGNAL_TITLES[r.signal] || "";
+    return `<span class="badge ${cls} timing-signal" title="${Util.escapeHtml(why)}">${Util.escapeHtml(Timing.signalLabel(r.signal))}</span>`;
   }
 
   /* The one-line justification under each community. Ordered by how
