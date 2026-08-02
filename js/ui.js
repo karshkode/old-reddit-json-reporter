@@ -181,6 +181,18 @@
   /* The compact all-communities list. Deliberately not the Timing
    * tab: one line per community, the quarter hour, and just enough
    * numbers to tell a finding from a coincidence. */
+  /* The summary is a glance, not the Timing tab: five communities is
+   * about what fits on a phone before the rest of the briefing is
+   * pushed off screen, and the sort puts the best-evidenced first, so
+   * the ones that get cut are the ones least worth acting on. */
+  const BRIEFING_TIMING_ROWS = 5;
+
+  /* opts.limit   number of rows before truncating, or "all"
+   * opts.more    data-action for the expander (omit for no expander)
+   * opts.drillTo when set, each row becomes a control that opens that
+   *              community's own chart. Off by default, because the
+   *              campaign workspace renders this list beside the
+   *              breakdown it would otherwise link to. */
   UI.timingListHtml = function (model, opts) {
     opts = opts || {};
     const tz = model.tz ? ` ${Util.escapeHtml(model.tz)}` : "";
@@ -188,16 +200,20 @@
     const limit = opts.limit === "all" ? all.length : (opts.limit || all.length);
     const rows = all.slice(0, limit);
     const hidden = all.length - rows.length;
+    const drill = opts.drillTo
+      ? (r) => ` data-timing-goto="${Util.escapeHtml(r.key)}" role="button" tabindex="0"`
+      : () => "";
+    const more = opts.more || "show-all-timing";
     return `
-      <ul class="timing-summary">
+      <ul class="timing-summary${opts.drillTo ? " is-drillable" : ""}">
         ${rows.map((r) => `
-          <li data-signal="${Util.escapeHtml(r.signal || "none")}" title="${Util.escapeHtml(evidenceTitle(r))}">
+          <li data-signal="${Util.escapeHtml(r.signal || "none")}" title="${Util.escapeHtml(evidenceTitle(r))}"${drill(r)}>
             <span class="timing-sub">r/${Util.escapeHtml(r.subreddit)}${signalBadge(r)}</span>
             <span class="timing-peak">${Util.escapeHtml(slotOf(r))}${tz}</span>
             <span class="timing-facts">${timingFacts(r)}</span>
           </li>`).join("")}
       </ul>
-      ${hidden > 0 ? `<div class="timing-more"><button class="btn small ghost" type="button" data-action="show-all-timing">Show ${hidden} more communit${hidden === 1 ? "y" : "ies"}</button></div>` : ""}`;
+      ${hidden > 0 ? `<div class="timing-more"><button class="btn small ghost" type="button" data-action="${Util.escapeHtml(more)}">Show ${hidden} more communit${hidden === 1 ? "y" : "ies"}</button></div>` : ""}`;
   };
 
   /* Small multiples, one community per panel. The alternative — a
@@ -286,7 +302,7 @@
 
     return `
       <p class="timing-lead">${lead}</p>
-      ${UI.timingListHtml(model, { limit: opts.limit || 6 })}
+      ${UI.timingListHtml(model, { limit: opts.limit || 6, more: opts.more })}
       ${flatNote(model)}
       ${model.skipped.length ? `<p class="timing-skipped">Too few posts to measure: ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}</p>` : ""}`;
   };
@@ -1329,20 +1345,28 @@
 
   /* The dashboard summary: one labelled row per finding, so the card is
    * read by scanning the left column rather than by reading prose. */
-  UI.renderBriefing = function (rows) {
+  /* opts.timingLimit — how many communities the When row lists before
+   * it truncates. "all" once the user has asked for the rest. */
+  UI.renderBriefing = function (rows, opts) {
     const el = document.getElementById("dash-briefing");
     if (!el) return;
     if (!rows || !rows.length) {
       el.innerHTML = `<p class="hint">Nothing to summarise yet.</p>`;
       return;
     }
+    opts = opts || {};
+    const timingOpts = {
+      limit: opts.timingLimit || BRIEFING_TIMING_ROWS,
+      more: "expand-briefing-timing",
+      drillTo: true,
+    };
     el.innerHTML = rows.map((r) => `
       <li>
         <span class="briefing-label">${Util.escapeHtml(r.label)}</span>
         <span class="briefing-body">
           <span class="briefing-value">${r.value}</span>
           ${r.note ? `<span class="briefing-note">${r.note}</span>` : ""}
-          ${r.timing ? `<span class="briefing-timing">${UI.timingListHtml(r.timing, { limit: "all" })}</span>` : ""}
+          ${r.timing ? `<span class="briefing-timing">${UI.timingListHtml(r.timing, timingOpts)}</span>` : ""}
         </span>
       </li>`).join("");
   };

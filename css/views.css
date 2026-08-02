@@ -857,6 +857,33 @@
      strength is readable before any of the numbers are. */
   border-left: 2px solid transparent;
 }
+/* Rows that lead somewhere say so. */
+.timing-summary.is-drillable li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  cursor: pointer;
+}
+.timing-summary.is-drillable li::after {
+  content: "›";
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  margin-left: var(--s-2);
+  color: var(--text-mute);
+}
+.timing-summary.is-drillable li:hover {
+  background: var(--bg-elev-3);
+}
+.timing-summary.is-drillable li:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Where a drill-down landed. */
+.timing-panel.is-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .timing-summary li[data-signal="strong"] { border-left-color: var(--good); }
 .timing-summary li[data-signal="likely"] { border-left-color: var(--accent-2); }
 .timing-summary li[data-signal="weak"]   { border-left-color: var(--warn); }
