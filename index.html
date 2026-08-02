@@ -8,14 +8,14 @@
   <link rel="preconnect" href="https://www.reddit.com" />
   <link rel="preconnect" href="https://api.codetabs.com" />
   <link rel="preconnect" href="https://api.allorigins.win" />
-  <link rel="stylesheet" href="./css/tokens.css?v=20260802" />
-  <link rel="stylesheet" href="./css/base.css?v=20260802" />
-  <link rel="stylesheet" href="./css/shell.css?v=20260802" />
-  <link rel="stylesheet" href="./css/views.css?v=20260802" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260802" />
+  <link rel="stylesheet" href="./css/tokens.css?v=20260802b" />
+  <link rel="stylesheet" href="./css/base.css?v=20260802b" />
+  <link rel="stylesheet" href="./css/shell.css?v=20260802b" />
+  <link rel="stylesheet" href="./css/views.css?v=20260802b" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260802b" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=20260802"></script>
+  <script src="./js/theme.js?v=20260802b"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -156,7 +156,7 @@
                   <h2>What this data is telling you</h2>
                   <span class="hint">Where and when to post next, read from your own loaded posts</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one is scoped to a named community rather than pooled across them. Communities are compared on the median post, not on totals — a sub does not become the better place to post because more of its posts happen to be loaded. A line is left out entirely when there is not enough data to support it. Under When, every percentage is the lift on a typical post against that community's own baseline, with a 95% confidence interval beside it; the p-value comes from reshuffling the same scores across the same timestamps a few hundred times and asking how often chance produces a peak that good. A community whose scores do not track the clock is listed as having no signal rather than being assigned an hour. The totals themselves are in the row above, and the full breakdowns are on the other tabs.">?</button>
+                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one is scoped to a named community rather than pooled across them. Communities are compared on the median post, not on totals — a sub does not become the better place to post because more of its posts happen to be loaded. A line is left out entirely when there is not enough data to support it. Under When, every percentage is the lift on a typical post against that community's own baseline, with a 95% confidence interval beside it; the p-value comes from reshuffling the same scores across the same timestamps a few hundred times and asking how often chance produces a peak that good. A community whose scores do not track the clock is listed as having no signal rather than being assigned an hour. The badge on each row grades that evidence: STRONG means p is .05 or better with a confidence interval that stays above zero and at least 5 posts near the slot, so on pure noise it would fire about 1 time in 20; LIKELY means p is .15 or better with a lift of at least 15%, which is probably real but may still have an interval crossing zero; WEAK means p is .25 or better with a lift of at least 25%, worth knowing but not worth rearranging a day for. Nothing under 8 posts is graded at all. The totals themselves are in the row above, and the full breakdowns are on the other tabs.">?</button>
               </header>
               <ul id="dash-briefing" class="briefing"></ul>
             </div>
@@ -195,7 +195,7 @@
                   <h2>Best times to post, per subreddit</h2>
                   <span class="hint">One panel per community, on its own clock — each dot is one post, the line is what a typical post scores at that time of day</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How to read this card" data-help="Each panel plots one community's posts by time of day, not by date: the x axis is the 24-hour clock and the y axis is upvotes on a log scale, so a breakout post and an ordinary one both stay on screen. The curve is what a typical post earns at that time of day — it is fitted in log space with extremes capped, so it is deliberately NOT dragged up to whatever hour a single viral post happened to land in. The dashed line is the community's all-day average, and the highlighted stretch of curve is the recommended window. Every figure is against that sub's own baseline, never a figure pooled across communities. Subs with too few posts are listed at the bottom rather than given a peak they haven't earned.">?</button>
+                <button class="card-help" type="button" aria-label="How to read this card" data-help="Each panel plots one community's posts by time of day, not by date: the x axis is the 24-hour clock and the y axis is upvotes on a log scale, so a breakout post and an ordinary one both stay on screen. The curve is what a typical post earns at that time of day — it is fitted in log space with extremes capped, so it is deliberately NOT dragged up to whatever hour a single viral post happened to land in. The dashed line is the community's all-day average, and the highlighted stretch of curve is the recommended window. Every figure is against that sub's own baseline, never a figure pooled across communities. The badge beside each community grades the evidence for its slot: STRONG means p is .05 or better with a confidence interval that stays above zero and at least 5 posts near the slot, so on pure noise it would fire about 1 time in 20; LIKELY means p is .15 or better with a lift of at least 15%, probably real but with an interval that may still cross zero; WEAK means p is .25 or better with a lift of at least 25%, worth knowing but not worth rearranging a day for. A slot is graded only if the community has at least 8 posts and the statistically tied window is under 12 hours — below that the model cannot tell a time of day from the order the posts arrived in. Subs with too few posts are listed at the bottom rather than given a peak they haven't earned.">?</button>
               </header>
               <div id="posting-times"></div>
             </div>
@@ -950,32 +950,32 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=20260802"></script>
+<script src="./vendor/marked.min.js?v=20260802b"></script>
 
-<script src="./js/dom.js?v=20260802"></script>
-<script src="./js/util.js?v=20260802"></script>
-<script src="./js/state.js?v=20260802"></script>
-<script src="./js/router.js?v=20260802"></script>
-<script src="./js/sync.js?v=20260802"></script>
-<script src="./js/archive.js?v=20260802"></script>
-<script src="./js/reddit.js?v=20260802"></script>
-<script src="./js/postcache.js?v=20260802"></script>
-<script src="./js/subindex.js?v=20260802"></script>
-<script src="./js/seeds.js?v=20260802"></script>
-<script src="./js/timing.js?v=20260802"></script>
-<script src="./js/analysis.js?v=20260802"></script>
-<script src="./js/discovery.js?v=20260802"></script>
-<script src="./js/charts.js?v=20260802"></script>
-<script src="./js/campaigns.js?v=20260802"></script>
-<script src="./js/sidebar.js?v=20260802"></script>
-<script src="./js/composer.js?v=20260802"></script>
-<script src="./js/ui.js?v=20260802"></script>
-<script src="./js/views/dashboard.js?v=20260802"></script>
-<script src="./js/views/campaign.js?v=20260802"></script>
-<script src="./js/views/communities.js?v=20260802"></script>
-<script src="./js/views/posts.js?v=20260802"></script>
-<script src="./js/demo.js?v=20260802"></script>
-<script src="./js/app.js?v=20260802"></script>
+<script src="./js/dom.js?v=20260802b"></script>
+<script src="./js/util.js?v=20260802b"></script>
+<script src="./js/state.js?v=20260802b"></script>
+<script src="./js/router.js?v=20260802b"></script>
+<script src="./js/sync.js?v=20260802b"></script>
+<script src="./js/archive.js?v=20260802b"></script>
+<script src="./js/reddit.js?v=20260802b"></script>
+<script src="./js/postcache.js?v=20260802b"></script>
+<script src="./js/subindex.js?v=20260802b"></script>
+<script src="./js/seeds.js?v=20260802b"></script>
+<script src="./js/timing.js?v=20260802b"></script>
+<script src="./js/analysis.js?v=20260802b"></script>
+<script src="./js/discovery.js?v=20260802b"></script>
+<script src="./js/charts.js?v=20260802b"></script>
+<script src="./js/campaigns.js?v=20260802b"></script>
+<script src="./js/sidebar.js?v=20260802b"></script>
+<script src="./js/composer.js?v=20260802b"></script>
+<script src="./js/ui.js?v=20260802b"></script>
+<script src="./js/views/dashboard.js?v=20260802b"></script>
+<script src="./js/views/campaign.js?v=20260802b"></script>
+<script src="./js/views/communities.js?v=20260802b"></script>
+<script src="./js/views/posts.js?v=20260802b"></script>
+<script src="./js/demo.js?v=20260802b"></script>
+<script src="./js/app.js?v=20260802b"></script>
 
 <script>
   (function () {
