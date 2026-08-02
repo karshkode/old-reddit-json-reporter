@@ -960,6 +960,9 @@
 
   /* ---------- cross-community summary ---------- */
 
+  /* Weakest evidence sorts last everywhere it is used. */
+  const STRENGTH = { strong: 0, likely: 1, weak: 2 };
+
   Timing.summarize = function (rows, opts) {
     opts = opts || {};
     const minSample = opts.minSample == null ? 4 : opts.minSample;
@@ -969,6 +972,17 @@
        list of best times, however many posts it has. */
     const ranked = measured.filter((r) => r.signal && r.signal !== "none");
     const flat = measured.filter((r) => !r.signal || r.signal === "none");
+
+    /* Order by how much the recommendation is worth acting on, not by
+       how many posts happened to be loaded. Every caller shows a
+       handful of these before truncating, and under a post-count sort
+       those first few were whichever communities the fetch had pulled
+       most from — an ordering with nothing to say about when to post.
+       Evidence first, then the size of the edge it buys. */
+    ranked.sort((a, b) =>
+      (STRENGTH[a.signal] - STRENGTH[b.signal]) ||
+      ((b.lift || 0) - (a.lift || 0)) ||
+      a.subreddit.localeCompare(b.subreddit));
 
     let spreadMinutes = 0;
     for (let i = 0; i < ranked.length; i++) {
@@ -980,7 +994,6 @@
     /* The answer to "so when is my next post": the soonest actionable
        window, but a well-evidenced slot tomorrow beats a shaky one in
        an hour, so strength of evidence orders the list first. */
-    const STRENGTH = { strong: 0, likely: 1, weak: 2 };
     const nextUp = ranked
       .filter((r) => r.next)
       .sort((a, b) => (STRENGTH[a.signal] - STRENGTH[b.signal]) || (a.next.inMinutes - b.next.inMinutes))[0] || null;
