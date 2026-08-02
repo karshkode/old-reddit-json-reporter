@@ -1,66 +1,91 @@
-/* Service worker for offline-cache + stale-while-revalidate of static
- * assets. Reddit JSON requests are NOT cached here — they go through
- * a separate in-page SWR layer (Reddit.fetchJson) so the user can
- * control freshness via the Refresh / Go button.
+/* Service worker for offline use and fast repeat loads.
  *
- * Strategy:
- *   - Static assets (HTML, CSS, JS, the icons) are served cache-first
- *     with a background fetch that updates the cache for next visit.
- *   - Cross-origin requests (CORS proxies, chart.js CDN) are NOT
- *     intercepted; the browser handles them normally.
+ * Reddit/archive JSON is NOT cached here — it goes through a separate
+ * in-page layer (Reddit.fetchJson) so the user controls freshness with
+ * the Refresh button.
  *
- * !!! IMPORTANT WHENEVER YOU SHIP A JS/CSS CHANGE !!!
- * BUMP BOTH numbers in lockstep:
- *   1. CACHE_VERSION below
- *   2. The ?v=YYYYMMDDx query strings in index.html
+ * The strategy exists to solve one problem: a returning visitor must
+ * never be served a stale bundle. An earlier version of this file
+ * matched every request with `ignoreSearch: true` and relied on a
+ * hand-bumped CACHE_VERSION to evict anything. Bumping the `?v=` in
+ * index.html therefore did nothing on its own, and the day someone
+ * shipped without also editing this file, every existing install
+ * froze on the old code until it was manually reinstalled. That is
+ * exactly what happened between May and August 2026.
  *
- * The fetch handler matches with `ignoreSearch: true`, which means a
- * pre-existing service-worker cache will keep serving the OLD bundle
- * even when index.html now references `?v=newer`. The only thing
- * that evicts the old cache is a CACHE_VERSION change here, which
- * triggers the activate handler to delete every `rj-static-*` cache
- * key that doesn't match. Forgetting this leaves users (especially
- * iOS PWA installs, which retain SWs aggressively) stuck on an old
- * UI build until they manually reinstall the app.
+ * So versioning is now load-bearing rather than ceremonial:
+ *
+ *   - Navigations are network-first. index.html is the manifest that
+ *     names which `?v=` of every asset to run, so it is the one file
+ *     that must never come from a stale cache. Falls back to the
+ *     cached copy when offline.
+ *
+ *   - Assets carrying a `?v=` are cached under their full URL, query
+ *     string included. A new `?v=` is a cache miss and hits the
+ *     network by itself, with no help from CACHE_VERSION. Superseded
+ *     versions of the same path are pruned as the new one lands.
+ *
+ *   - Assets without a `?v=` fall back to stale-while-revalidate.
+ *
+ * The upshot: bumping the `?v=` strings in index.html is sufficient,
+ * and forgetting to touch this file is no longer a way to strand
+ * users. CACHE_VERSION below is now only a "throw everything away"
+ * lever for when the cache format itself changes.
  */
-const CACHE_VERSION = "v20260519d";
+const CACHE_VERSION = "v20260802";
 const CACHE_NAME = "rj-static-" + CACHE_VERSION;
 
-const PRECACHE = [
-  "./",
-  "./index.html",
-  "./css/styles.css",
-  "./js/util.js",
-  "./js/sync.js",
-  "./js/reddit.js",
-  "./js/seeds.js",
-  "./js/analysis.js",
-  "./js/charts.js",
-  "./js/campaigns.js",
-  "./js/postcache.js",
-  "./js/sidebar.js",
-  "./js/composer.js",
-  "./js/ui.js",
-  "./js/app.js",
-  "./vendor/marked.min.js",
-];
+const SHELL = "./index.html";
+
+/* Which same-origin assets we are willing to cache. */
+const ASSET_RE = /\.(css|js|svg|png|jpe?g|webp|woff2?)$/i;
+
+function isNavigation(req) {
+  if (req.mode === "navigate") return true;
+  const accept = req.headers.get("accept") || "";
+  return accept.includes("text/html");
+}
+
+/* Pull the asset list straight out of index.html rather than keeping a
+ * second copy of it here. The old hardcoded PRECACHE had drifted badly
+ * — it still named files that had been deleted and missed a dozen that
+ * had been added — and a precache list that disagrees with the page is
+ * worse than none at all. */
+function assetsFrom(html) {
+  const urls = new Set();
+  const re = /(?:src|href)\s*=\s*"(\.\/[^"]+?\.(?:css|js)(?:\?[^"]*)?)"/gi;
+  let m;
+  while ((m = re.exec(html))) urls.add(m[1]);
+  return Array.from(urls);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    /* addAll fails the whole install if any one URL 404s; do them
-     * individually so a missing optional asset doesn't block updates. */
-    await Promise.all(PRECACHE.map(async (url) => {
-      try { await cache.add(url); } catch (_) {}
-    }));
-    self.skipWaiting();
+    try {
+      /* `reload` so a new worker never seeds itself from the HTTP
+       * cache's copy of the previous release. */
+      const res = await fetch(SHELL, { cache: "reload" });
+      if (res && res.ok) {
+        const html = await res.clone().text();
+        await cache.put(SHELL, res);
+        /* One at a time and failure-tolerant: a single 404 must not
+         * abort the install and leave the worker uninstalled. */
+        await Promise.all(assetsFrom(html).map(async (url) => {
+          try { await cache.add(new Request(url, { cache: "reload" })); } catch (_) {}
+        }));
+      }
+    } catch (_) {
+      /* Offline at install time. The fetch handler will fill the
+       * cache on the next successful load. */
+    }
+    await self.skipWaiting();
   })());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    /* Evict any old cache versions. */
     await Promise.all(keys
       .filter((k) => k.startsWith("rj-static-") && k !== CACHE_NAME)
       .map((k) => caches.delete(k)));
@@ -68,36 +93,85 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+/* Drop other cached versions of the same path once a new one is in.
+ * Without this the cache would accumulate every build ever shipped. */
+async function pruneOldVersions(cache, url) {
+  const keep = url.href;
+  const path = url.origin + url.pathname;
+  for (const req of await cache.keys()) {
+    if (req.url === keep) continue;
+    const u = new URL(req.url);
+    if (u.origin + u.pathname === path) await cache.delete(req);
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  /* Only handle same-origin GETs for our static assets. Archive
-   * requests go cross-origin so won't even hit this branch. */
   if (req.method !== "GET") return;
+
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  /* Match by pathname (ignore ?v= cache-bust). */
-  const isHtml  = req.headers.get("accept") && req.headers.get("accept").includes("text/html");
-  const isAsset = /\.(css|js|svg|png|jpe?g|webp|woff2?)$/i.test(url.pathname);
-  if (!isHtml && !isAsset && url.pathname !== "/" && !url.pathname.endsWith(".html")) return;
 
-  event.respondWith((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(req, { ignoreSearch: true });
-    /* Stale-while-revalidate: return cached immediately if we have
-     * it, then update the cache in the background for next visit.
-     * No cached entry -> fall through to a regular fetch + cache. */
-    const networkPromise = fetch(req).then((res) => {
-      if (res && res.ok) {
-        cache.put(req, res.clone()).catch(() => {});
-      }
-      return res;
-    }).catch(() => null);
+  if (isNavigation(req)) {
+    event.respondWith(networkFirst(req));
+    return;
+  }
+  if (!ASSET_RE.test(url.pathname)) return;
 
-    if (cached) {
-      networkPromise.catch(() => {});
-      return cached;
-    }
-    const fresh = await networkPromise;
-    return fresh || new Response("Offline — content not in cache yet.", { status: 503, statusText: "Service unavailable", headers: { "Content-Type": "text/plain" } });
-  })());
+  event.respondWith(url.searchParams.has("v")
+    ? versionedAsset(req, url)
+    : staleWhileRevalidate(req));
 });
+
+/* index.html: fresh whenever the network allows, cached copy when not. */
+async function networkFirst(req) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) cache.put(SHELL, res.clone()).catch(() => {});
+    return res;
+  } catch (_) {
+    const cached = (await cache.match(req)) || (await cache.match(SHELL));
+    return cached || offline();
+  }
+}
+
+/* `?v=`-stamped asset: the URL is the version, so a hit is by
+ * definition the right bytes and needs no revalidation. */
+async function versionedAsset(req, url) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(req);
+  if (cached) return cached;
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) {
+      await cache.put(req, res.clone());
+      pruneOldVersions(cache, url).catch(() => {});
+    }
+    return res;
+  } catch (_) {
+    /* An unversioned or differently-versioned copy beats a hard
+     * failure when the network is gone. */
+    const fallback = await cache.match(req, { ignoreSearch: true });
+    return fallback || offline();
+  }
+}
+
+async function staleWhileRevalidate(req) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(req);
+  const network = fetch(req).then((res) => {
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    return res;
+  }).catch(() => null);
+  if (cached) return cached;
+  return (await network) || offline();
+}
+
+function offline() {
+  return new Response("Offline — content not in cache yet.", {
+    status: 503,
+    statusText: "Service unavailable",
+    headers: { "Content-Type": "text/plain" },
+  });
+}
