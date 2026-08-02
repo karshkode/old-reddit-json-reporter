@@ -239,6 +239,7 @@
 
     host.innerHTML = `
       <p class="timing-lead">${lead}</p>
+      ${ranked.length ? chartKey() : ""}
       <div class="timing-grid">
         ${shown.map((r) => timingPanel(r, tz)).join("")}
       </div>
@@ -289,6 +290,22 @@
       ${flatNote(model)}
       ${model.skipped.length ? `<p class="timing-skipped">Too few posts to measure: ${model.skipped.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)} <em>${r.count}</em></span>`).join(" ")}</p>` : ""}`;
   };
+
+  /* What the marks on the panels mean, said once above the grid rather
+   * than crammed into a legend on each 150px chart. The last clause is
+   * the one that matters: the curve is not the top-scoring hour, and
+   * without saying so the highlighted window reads as though it should
+   * sit under the tallest point. */
+  function chartKey() {
+    return `
+      <p class="timing-key">
+        <span><i class="tk-dot"></i>one post</span>
+        <span><i class="tk-line"></i>what a typical post scores at that time</span>
+        <span><i class="tk-win"></i>recommended window</span>
+        <span><i class="tk-base"></i>this community's all-day average</span>
+        <span class="timing-key-note">x: hour of day · y: upvotes, log scale. The curve tracks the typical post, so a single breakout does not move it.</span>
+      </p>`;
+  }
 
   function timingPanel(r, tz) {
     const facts = [];

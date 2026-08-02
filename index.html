@@ -192,10 +192,10 @@
             <div class="card" id="posting-times-card" style="margin-top:var(--s-4)">
               <header class="card-header">
                 <div>
-                  <h2>Best hours to post, per subreddit</h2>
-                  <span class="hint">One panel per community, on its own clock — bars are average upvotes by hour, the line is how many posts landed in that hour</span>
+                  <h2>Best times to post, per subreddit</h2>
+                  <span class="hint">One panel per community, on its own clock — each dot is one post, the line is what a typical post scores at that time of day</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How to read this card" data-help="Every community keeps its own hours, so this card never averages them together. Each panel scores a subreddit against its own baseline: a peak marked +40% means posts in that hour beat that sub's own average by 40%, not anyone else's. Subs with fewer posts than the minimum are listed at the bottom rather than given a peak they haven't earned.">?</button>
+                <button class="card-help" type="button" aria-label="How to read this card" data-help="Each panel plots one community's posts by time of day, not by date: the x axis is the 24-hour clock and the y axis is upvotes on a log scale, so a breakout post and an ordinary one both stay on screen. The curve is what a typical post earns at that time of day — it is fitted in log space with extremes capped, so it is deliberately NOT dragged up to whatever hour a single viral post happened to land in. The dashed line is the community's all-day average, and the highlighted stretch of curve is the recommended window. Every figure is against that sub's own baseline, never a figure pooled across communities. Subs with too few posts are listed at the bottom rather than given a peak they haven't earned.">?</button>
               </header>
               <div id="posting-times"></div>
             </div>

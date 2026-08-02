@@ -726,10 +726,63 @@
   font-weight: var(--fw-medium);
 }
 
+/* Key for the per-community panels. Drawn once above the grid, since a
+   legend repeated on a dozen 150px charts costs more room than the
+   charts it labels. */
+.timing-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.timing-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.timing-key i {
+  flex-shrink: 0;
+  display: inline-block;
+}
+.timing-key .tk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--info);
+  opacity: 0.6;
+}
+.timing-key .tk-line,
+.timing-key .tk-win,
+.timing-key .tk-base {
+  width: 16px;
+  height: 0;
+  border-top: 2px solid var(--text-mute);
+}
+.timing-key .tk-win {
+  border-top-width: 3px;
+  border-top-color: var(--accent);
+}
+.timing-key .tk-base {
+  border-top-style: dashed;
+  border-top-width: 1px;
+}
+.timing-key-note {
+  flex-basis: 100%;
+  color: var(--text-mute);
+}
+
 .timing-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: var(--s-4);
+}
+
+/* Room for the two axis titles the panels now carry. */
+.timing-panel .chart-wrap.short {
+  height: 175px;
 }
 
 .timing-panel {
