@@ -37,6 +37,10 @@
    * rest behind a button. Twenty charts on one card is a stall. */
   let timingLimit = 6;
 
+  /* The summary's When row keeps its own truncation, independent of the
+   * Timing tab's — expanding one should not silently expand the other. */
+  let briefingTimingLimit = null;
+
   function esc(s) {
     return Util.escapeHtml(s == null ? "" : s);
   }
@@ -123,7 +127,10 @@
 
     const posts = bundle.posts;
     if (section === "summary") {
-      UI.renderBriefing(Analysis.postingBriefing(posts, { agg: bundle.agg, timing: timingModel }));
+      UI.renderBriefing(
+        Analysis.postingBriefing(posts, { agg: bundle.agg, timing: timingModel }),
+        { timingLimit: briefingTimingLimit }
+      );
     } else if (section === "timing") {
       UI.renderPostingTimes(timingModel, { limit: timingLimit });
       renderTimeline(posts);
@@ -148,6 +155,39 @@
      * one had been scrolled to. */
     const view = Dom.byId("view-dashboard");
     if (view) window.scrollTo({ top: Math.max(0, view.offsetTop - 8), behavior: "auto" });
+  };
+
+  /* Open the Timing tab on one particular community's panel.
+   *
+   * The panel may be past the truncation point, so the limit is raised
+   * to reach it — far enough and no further. Jumping straight to "all"
+   * would be simpler, but someone with a hundred loaded subreddits
+   * would pay for a hundred charts to look at one of them. */
+  View.revealTiming = function (key) {
+    if (!timingModel || !key) return;
+    const ranked = timingModel.ranked || [];
+    const idx = ranked.findIndex((r) => r.key === key);
+    if (idx === -1) return;
+
+    const drawn = timingLimit === "all" ? ranked.length : timingLimit;
+    if (idx >= drawn) {
+      timingLimit = idx + 1;
+      painted.delete("timing");
+    }
+
+    AppState.dashSection = "timing";
+    paintSection();
+    Dom.revealRailTab(RAIL, "dash-tab", "timing");
+
+    const panel = document.querySelector(`.timing-panel[data-sub="${CSS.escape(key)}"]`);
+    if (!panel) return;
+    panel.scrollIntoView({ block: "center", behavior: "smooth" });
+    /* A brief outline so it is obvious which of a dozen near-identical
+     * panels the tap landed on. */
+    panel.classList.remove("is-target");
+    void panel.offsetWidth;
+    panel.classList.add("is-target");
+    window.setTimeout(() => panel.classList.remove("is-target"), 2000);
   };
 
   function safe(label, fn) {
@@ -228,6 +268,24 @@
        * markup needs redrawing. */
       painted.delete("timing");
       paintSection();
+    });
+
+    Dom.delegate(document, "click", '[data-action="expand-briefing-timing"]', () => {
+      briefingTimingLimit = "all";
+      painted.delete("summary");
+      paintSection();
+    });
+
+    /* Drill from a row of the summary's When list into that community's
+     * own chart. Without this the list was a dead end: it named the
+     * slot but gave no way through to the evidence behind it. */
+    Dom.delegate(document, "click", "[data-timing-goto]", (e, el) => {
+      View.revealTiming(el.dataset.timingGoto);
+    });
+    Dom.delegate(document, "keydown", "[data-timing-goto]", (e, el) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      View.revealTiming(el.dataset.timingGoto);
     });
 
     Dom.wireRail(RAIL, "dash-tab", View.goToSection);

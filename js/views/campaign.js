@@ -111,6 +111,12 @@
 
   const SECTIONS = ["overview", "trends", "subreddits", "posts", "targeting", "plan", "settings"];
 
+  /* Communities listed in the Subreddits tab's timing card before it
+   * truncates. Its expander used to emit the dashboard's action, which
+   * no listener in this view answered, so the button sat there doing
+   * nothing while the rest of the list stayed unreachable. */
+  let campTimingLimit = 6;
+
   Workspace.render = function (params) {
     const id = (params && params.id) || AppState.openCampaignId;
     const campaign = id ? Campaigns.get(id) : null;
@@ -421,7 +427,7 @@
           <header class="card-header">
             <div><h2>When to post, community by community</h2><span class="hint">Each peak is against that sub's own average — never a figure pooled across them</span></div>
           </header>
-          ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: 6 })}
+          ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: campTimingLimit, more: "expand-campaign-timing" })}
         </div>`;
     }
 
@@ -780,6 +786,11 @@
     Dom.delegate(document, "click", "#campaign-sub-window button", (e, btn) => {
       AppState.campaignSubWindow = btn.dataset.window;
       for (const sib of btn.parentElement.children) sib.classList.toggle("active", sib === btn);
+      const campaign = Campaigns.get(AppState.openCampaignId);
+      if (campaign && AppState.campaignAgg) renderSubreddits(campaign, AppState.campaignAgg);
+    });
+    Dom.delegate(document, "click", '[data-action="expand-campaign-timing"]', () => {
+      campTimingLimit = "all";
       const campaign = Campaigns.get(AppState.openCampaignId);
       if (campaign && AppState.campaignAgg) renderSubreddits(campaign, AppState.campaignAgg);
     });

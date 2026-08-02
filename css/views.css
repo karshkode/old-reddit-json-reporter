@@ -726,10 +726,63 @@
   font-weight: var(--fw-medium);
 }
 
+/* Key for the per-community panels. Drawn once above the grid, since a
+   legend repeated on a dozen 150px charts costs more room than the
+   charts it labels. */
+.timing-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  margin: 0 0 var(--s-4);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.timing-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.timing-key i {
+  flex-shrink: 0;
+  display: inline-block;
+}
+.timing-key .tk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--info);
+  opacity: 0.6;
+}
+.timing-key .tk-line,
+.timing-key .tk-win,
+.timing-key .tk-base {
+  width: 16px;
+  height: 0;
+  border-top: 2px solid var(--text-mute);
+}
+.timing-key .tk-win {
+  border-top-width: 3px;
+  border-top-color: var(--accent);
+}
+.timing-key .tk-base {
+  border-top-style: dashed;
+  border-top-width: 1px;
+}
+.timing-key-note {
+  flex-basis: 100%;
+  color: var(--text-mute);
+}
+
 .timing-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: var(--s-4);
+}
+
+/* Room for the two axis titles the panels now carry. */
+.timing-panel .chart-wrap.short {
+  height: 175px;
 }
 
 .timing-panel {
@@ -804,6 +857,33 @@
      strength is readable before any of the numbers are. */
   border-left: 2px solid transparent;
 }
+/* Rows that lead somewhere say so. */
+.timing-summary.is-drillable li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  cursor: pointer;
+}
+.timing-summary.is-drillable li::after {
+  content: "›";
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  margin-left: var(--s-2);
+  color: var(--text-mute);
+}
+.timing-summary.is-drillable li:hover {
+  background: var(--bg-elev-3);
+}
+.timing-summary.is-drillable li:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Where a drill-down landed. */
+.timing-panel.is-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .timing-summary li[data-signal="strong"] { border-left-color: var(--good); }
 .timing-summary li[data-signal="likely"] { border-left-color: var(--accent-2); }
 .timing-summary li[data-signal="weak"]   { border-left-color: var(--warn); }

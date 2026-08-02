@@ -329,6 +329,16 @@
    * far above a curve that barely acknowledges it, which is the whole
    * argument in one picture. The recommended window is the segment
    * drawn in accent colour. */
+  function axisTitle(opts, text, t) {
+    return {
+      display: true,
+      text: text,
+      color: t.mute,
+      font: { size: opts.compact ? 9 : 11 },
+      padding: opts.compact ? 0 : 4,
+    };
+  }
+
   Charts.timingCurve = function (id, row, opts) {
     opts = opts || {};
     const t = theme();
@@ -395,7 +405,11 @@
               label: (c) => {
                 const h = Math.floor(c.parsed.x);
                 const m = Math.round((c.parsed.x - h) * 60);
-                return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} — ${Math.round(c.parsed.y)}`;
+                const at = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                const n = Math.round(c.parsed.y);
+                if (c.datasetIndex === 0) return `${at} — a post scoring ${n}`;
+                if (c.datasetIndex === 1) return `${at} — a typical post scores ${n}`;
+                return `all day — this community averages ${n}`;
               },
             },
           }),
@@ -407,10 +421,14 @@
               stepSize: opts.compact ? 6 : 3,
               callback: (v) => String(v).padStart(2, "0"),
             }),
+            /* Labelled even on the small multiples. Unlabelled axes
+             * were read as "upvotes over time" rather than "upvotes by
+             * time of day", which inverts what the chart says. */
+            title: axisTitle(opts, "hour of day", t),
           }),
           y: Object.assign({}, base.scales.y, {
             type: "logarithmic",
-            title: opts.compact ? { display: false } : { display: true, text: "score", color: t.mute },
+            title: axisTitle(opts, "upvotes (log)", t),
           }),
         },
       }),

@@ -1114,9 +1114,10 @@
        This row used to name three communities and defer the rest to
        the Timing tab, which meant the single most actionable thing on
        the dashboard was three-quarters hidden behind a tab. It now
-       leads with the next slot to actually hit and lists every
-       community underneath — the whole picture at a glance, without
-       reproducing the tab's hour-by-hour charts. */
+       leads with the next slot to actually hit, lists the
+       best-evidenced communities underneath, and lets a row through to
+       that community's chart — the whole picture at a glance, without
+       reproducing the tab's charts. */
     const measured = timing.measured || [];
     if (!ranked.length) {
       out.push({
@@ -1140,7 +1141,8 @@
           : ranked.length === 1
             ? `measured against this community's own typical post`
             : `each community keeps its own clock — peaks span ${timing.spread}h`)
-          + ` · times in ${tz}`,
+          + ` · times in ${tz}`
+          + (ranked.length > 1 ? ` · best-evidenced first, tap one for its chart` : ""),
         timing: timing,
       });
     }
