@@ -1086,6 +1086,7 @@
 
   /*   opts.limit        communities to return (default 12)
    *   opts.exclude      names to mark as already loaded
+   *   opts.include      names to score whatever the catalog thinks
    *   opts.live         false to stay entirely offline
    *   opts.aboutBudget  how many about.json reads the live pass may do
    *   opts.onPartial    called with the offline result before the fill
@@ -1102,6 +1103,19 @@
     const home = String(post.subreddit || "").toLowerCase();
     const excludeSet = new Set([home].concat((opts.exclude || []).map((s) => String(s).toLowerCase())));
     excludeSet.delete("");
+
+    /* Communities the caller wants ranked whatever the catalog makes
+     * of them. The candidate sources below all reach outward — spheres,
+     * the home sub's siblings, nearest descriptions — which is right
+     * for finding somewhere new but skips right over the communities
+     * the user has already loaded, and those are the only ones with
+     * posts behind them to time. Included names bypass the subscriber
+     * floor and the description requirement, because "the user loaded
+     * it" is a stronger reason to score something than any of the
+     * heuristics that would otherwise drop it. */
+    const includeSet = new Set((opts.include || [])
+      .map((s) => String(s).toLowerCase())
+      .filter((s) => s && !excludeSet.has(s)));
 
     /* Candidate names come from three offline sources: the spheres the
      * post text matches, the spheres the home sub is catalogued under
@@ -1131,6 +1145,7 @@
       for (const hit of SubIndex.nearest(vector, { exclude: [home], limit: 20 })) {
         add(hit.record.display_name, null);
       }
+      for (const name of opts.include || []) add(name, null);
       return { names: names, via: via };
     }
 
@@ -1149,14 +1164,15 @@
       const records = [];
       const stubs = new Set();
       for (const [key, display] of gathered.names.entries()) {
+        const forced = includeSet.has(key);
         const record = SubIndex.get(key);
         if (record) {
           if (record.over18) continue;
-          if ((record.subscribers || 0) < (opts.minSubs == null ? 25 : opts.minSubs)) continue;
+          if (!forced && (record.subscribers || 0) < (opts.minSubs == null ? 25 : opts.minSubs)) continue;
           records.push(record);
           continue;
         }
-        if (!gathered.via.has(key)) continue;
+        if (!forced && !gathered.via.has(key)) continue;
         const stub = SubIndex.makeRecord({ display_name: display }, { partial: true });
         if (!stub) continue;
         stubs.add(key);

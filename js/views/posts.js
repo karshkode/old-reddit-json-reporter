@@ -160,6 +160,16 @@
         sync.textContent = "↻ Sync";
       });
     });
+
+    /* Straight from the post you are reading to where it should go
+       next. The dashboard card can pick any post, but nobody goes
+       looking for a picker while already looking at the post. */
+    const place = Dom.byId("post-detail-place");
+    if (place) place.addEventListener("click", () => {
+      const id = place.dataset.post;
+      const post = id && AppState.posts.find((p) => p.id === id);
+      if (post && window.FocusView) FocusView.focusPost(post);
+    });
   };
 
   Router.register("posts", {
