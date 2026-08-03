@@ -98,6 +98,14 @@
 
     /* ---- Fetch lifecycle ---- */
     pendingChanges: true,
+    /* What kind of change made the data stale. "settings" means the
+     * listing, window or limit moved, which invalidates every sub at
+     * once and can only be answered by a full fetch. "subs" means the
+     * loaded set changed — the existing subs' posts are still perfectly
+     * good and only the new names need reading. Conflating the two is
+     * why adding one subreddit to a hundred and seventy used to
+     * re-read all of them. */
+    pendingScope: "settings",
     fetchToken: 0,
     rendering: { light: false },
     lastErrors: [],

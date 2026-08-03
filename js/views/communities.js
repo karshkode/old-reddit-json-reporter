@@ -366,31 +366,23 @@
     }
   }
 
-  function renderLoaded() {
-    const host = Dom.byId("loaded-subs-grid");
+  /* Split from the grid because ticking a checkbox has to update the
+     selection count and the action bar without replacing the checkbox
+     the user is still touching. Re-rendering the whole grid on every
+     tick meant the second and third taps landed on nodes that had
+     already been thrown away, so selecting three subs selected one. */
+  function renderToolbar() {
     const toolbar = Dom.byId("loaded-subs-toolbar");
-    if (!host) return;
-    pruneSelection();
-
+    if (!toolbar) return;
     const total = AppState.knownSubs.length;
-    if (!total) {
-      if (toolbar) toolbar.innerHTML = "";
-      host.innerHTML = Dom.emptyState({
-        icon: "⌗",
-        title: "No subreddits yet",
-        body: "Search for communities or load a curated sphere to get started.",
-        action: '<button class="btn primary" type="button" data-communities-tab="catalog">Browse the catalog</button>',
-      });
-      return;
-    }
+    if (!total) { toolbar.innerHTML = ""; return; }
 
     const subs = visibleSubs();
     const activeCount = AppState.knownSubs.filter((s) => AppState.activeSubs.has(s)).length;
     const allShownSelected = subs.length > 0 && subs.every((s) => selection.has(s));
     const due = Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s)));
 
-    if (toolbar) {
-      toolbar.innerHTML = `
+    toolbar.innerHTML = `
         <div class="subman-bar">
           <input type="search" id="loaded-subs-filter" class="subman-filter"
                  placeholder="Filter by name or sphere…" aria-label="Filter loaded subreddits"
@@ -415,8 +407,25 @@
             <button class="btn small danger-soft" type="button" data-action="bulk-remove">Remove</button>
             <button class="btn small ghost" type="button" data-action="clear-selection">Clear</button>
           </div>` : ""}`;
+  }
+
+  function renderLoaded() {
+    const host = Dom.byId("loaded-subs-grid");
+    if (!host) return;
+    pruneSelection();
+    renderToolbar();
+
+    if (!AppState.knownSubs.length) {
+      host.innerHTML = Dom.emptyState({
+        icon: "⌗",
+        title: "No subreddits yet",
+        body: "Search for communities or load a curated sphere to get started.",
+        action: '<button class="btn primary" type="button" data-communities-tab="catalog">Browse the catalog</button>',
+      });
+      return;
     }
 
+    const subs = visibleSubs();
     if (!subs.length) {
       host.innerHTML = `<p class="hint">Nothing matches “${esc(loadedFilter)}”. Filtering also matches sphere names, so try “healthcare” or a state.</p>`;
       return;
@@ -455,7 +464,7 @@
      repaint, one invalidation, however many subs moved. */
   function afterSubChange(message) {
     App.renderChips();
-    App.markPending();
+    App.markPending(null, { scope: "subs" });
     Router.invalidate(["dashboard", "posts"]);
     View.render();
     if (message) Util.toast(message);
@@ -468,7 +477,7 @@
   function bulkAdd(names, label) {
     const added = AppState.addSubs(names);
     App.renderChips();
-    App.markPending();
+    App.markPending(null, { scope: "subs" });
     View.render();
     Router.invalidate(["dashboard", "posts"]);
     if (added.length) {
@@ -590,7 +599,7 @@
     Dom.delegate(document, "click", '[data-action="remove-sub"]', (e, btn) => {
       AppState.removeSub(btn.dataset.sub);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       View.render();
       Router.invalidate(["dashboard", "posts"]);
     });
@@ -598,7 +607,7 @@
     Dom.delegate(document, "click", '[data-action="toggle-active-sub"]', (e, btn) => {
       AppState.toggleSub(btn.dataset.sub);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       renderLoaded();
     });
 
@@ -614,10 +623,14 @@
       if (next) { next.focus(); try { next.setSelectionRange(at, at); } catch (_) {} }
     });
 
+    /* Only the toolbar and this one row repaint. The grid stays put so
+       the next tick lands on a checkbox that still exists. */
     Dom.delegate(document, "change", '[data-action="select-sub"]', (e, input2) => {
       const name = input2.dataset.sub;
       if (input2.checked) selection.add(name); else selection.delete(name);
-      renderLoaded();
+      const row = input2.closest(".loaded-sub");
+      if (row) row.classList.toggle("picked", input2.checked);
+      renderToolbar();
     });
 
     Dom.delegate(document, "click", '[data-action="select-shown"]', () => {
@@ -682,7 +695,7 @@
       if (AppState.hasSub(name)) AppState.removeSub(name);
       else AppState.addSubs([name]);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       renderCatalog();
     });
 

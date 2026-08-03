@@ -797,7 +797,7 @@
     Dom.delegate(document, "click", '[data-action="add-sub"]', (e, btn) => {
       const added = AppState.addSubs([btn.dataset.sub]);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       Util.toast(added.length ? `Added r/${btn.dataset.sub} — tap Go to load it` : `r/${btn.dataset.sub} is already in your dashboard`);
     });
     Dom.delegate(document, "click", '[data-action="delete-campaign"]', () => {

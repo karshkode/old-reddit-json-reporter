@@ -385,12 +385,25 @@
    * the fetch when they're ready. Called whenever filters, sub list,
    * listing, time window, or limit change — anything that would have
    * previously auto-fired refreshData(). */
-  function markPending(reason) {
+  /* @param opts.scope  "subs" when only the loaded set moved. Those
+   *        changes leave every already-fetched sub's posts valid, so
+   *        the banner offers to read the new names rather than
+   *        demanding the whole sweep again. Defaults to "settings",
+   *        which does invalidate everything. */
+  function markPending(reason, opts) {
+    const scope = (opts && opts.scope) || "settings";
     state.pendingChanges = true;
+    state.pendingScope = scope;
     /* Don't override the loading phase mid-fetch; pendingChanges will
      * be re-checked when the fetch completes. */
     const banner = document.getElementById("action-banner");
     if (banner && banner.classList.contains("phase-loading")) return;
+    if (scope === "subs" && state.posts.length) {
+      const d = Refresh.describeState();
+      Util.setActionPhase(d.phase, reason ? `${reason} — ${d.text}` : d.text,
+        { label: d.label, icon: d.icon, action: d.action });
+      return;
+    }
     const tail = describePendingFetch();
     Util.setActionPhase("pending", reason ? `${reason} — ${tail}` : tail);
   }
@@ -1699,6 +1712,9 @@
     state.subProfiles = {};
     state.crossPosts = [];
     state.campaignSummaries = {};
+    /* Nothing has been read if nothing is held, and a ledger claiming
+     * otherwise would make the next sync skip every sub as fresh. */
+    state.clearSubSync();
     if (opts.silent) return;
     rerenderAll();
     Util.toast("All cached posts cleared. Tap Go to fetch fresh data.", "ok");
@@ -3292,14 +3308,14 @@
         if (state.activeSubs.has(sub)) state.activeSubs.delete(sub); else state.activeSubs.add(sub);
         persist();
         renderChips();
-        markPending(`Toggled r/${sub}`);
+        markPending(`Toggled r/${sub}`, { scope: "subs" });
       },
       (sub) => {
         state.knownSubs = state.knownSubs.filter((s) => s !== sub);
         state.activeSubs.delete(sub);
         persist();
         renderChips();
-        markPending(`Removed r/${sub}`);
+        markPending(`Removed r/${sub}`, { scope: "subs" });
       },
       {
         onOverflow: () => {

@@ -192,9 +192,12 @@
   Refresh.subs = async function (names, opts) {
     opts = opts || {};
     const s = state();
+    /* Normalised the same way state.addSubs normalises on the way in,
+     * so a name reaching this from a chip, a catalog row or a raw
+     * "r/foo" string all resolve to the one ledger key. */
     const list = Util.uniqBy(
       [].concat(names || []).map((n) => Util.normalizeSubName(n)).filter(Boolean),
-      (n) => n.toLowerCase()
+      (n) => n
     );
     if (!list.length) return null;
     const key = "subs:" + list.map((n) => n.toLowerCase()).sort().join(",");
@@ -237,6 +240,13 @@
       });
 
       s.persistSubSync();
+      /* If the only thing making the dataset stale was subs that had
+       * never been read, and none are left, it is not stale any more.
+       * Leaving the flag set would keep offering a full sweep that has
+       * nothing to find. */
+      if (s.pendingChanges && s.pendingScope === "subs" && !Refresh.staleSubs().length) {
+        s.pendingChanges = false;
+      }
       const patch = apply(collected, opts);
       const line = summarize(label, patch, errors);
       if (showProgress) Util.hideProgress(line);
@@ -451,10 +461,12 @@
       return { phase: "pending", action: "go", label: "Go", icon: "▶",
         text: "Add at least one subreddit, then tap Go." };
     }
-    /* Nothing fetched yet, or the settings changed underneath what was
-     * fetched: every sub is equally out of date, so the narrow option
-     * would be the wide one anyway. */
-    if (!s.posts.length || s.pendingChanges) {
+    /* Nothing fetched yet, or the listing / window / limit changed
+     * underneath what was fetched: every sub is equally out of date,
+     * so the narrow option would be the wide one anyway. A change to
+     * the loaded set is different — the subs already read are still
+     * fine, and the new ones show up as unread below. */
+    if (!s.posts.length || (s.pendingChanges && s.pendingScope !== "subs")) {
       return { phase: "pending", action: "go", label: "Go", icon: "▶",
         text: App.describePendingFetch() };
     }
