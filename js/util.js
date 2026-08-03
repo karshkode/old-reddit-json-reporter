@@ -293,6 +293,16 @@
       if (label) label.textContent = "Loading…";
       if (btn) btn.setAttribute("aria-label", "Loading…");
     } else if (phase === "loaded") {
+      /* hideProgress lands here 600ms after a fetch finishes, with the
+       * summary line but no opts — and it used to hand the button back
+       * its generic "Refresh", which ran the full sweep. So every
+       * scoped sync quietly rearmed the widest possible one. The offer
+       * is Refresh's to decide, so ask it rather than guessing; the
+       * caller's own opts still win when it has an opinion. */
+      if (!opts || !opts.label) {
+        const offer = typeof Util.actionOffer === "function" ? Util.actionOffer() : null;
+        if (offer) opts = Object.assign({}, offer, opts);
+      }
       const text = (opts && opts.label) || "Refresh";
       if (icon) icon.textContent = (opts && opts.icon) || "↻";
       if (label) label.textContent = text;
@@ -303,7 +313,7 @@
       if (label) label.textContent = (opts && opts.label) || "Go";
       if (btn) btn.setAttribute("aria-label", "Run search");
     }
-    if (btn) btn.dataset.refreshAction = (opts && opts.action) || (phase === "loaded" ? "all" : "go");
+    if (btn) btn.dataset.refreshAction = (opts && opts.action) || (phase === "loaded" ? "new" : "go");
   };
 
   Util.setProgress = function (percent, message) {

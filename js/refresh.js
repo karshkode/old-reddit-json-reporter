@@ -258,6 +258,28 @@
     }
   };
 
+  /* Every loaded subreddit's listing again, folded in rather than
+   * swapped for. Reading a listing is the only way to learn a post
+   * exists, so "check for new posts" is unavoidably one read per sub —
+   * the same request count as the full sweep. What differs is what
+   * survives it: this patches, so a post that has since fallen off the
+   * front page, or arrived by import or by pasted link, is still there
+   * afterwards, and the answer can be counted ("+12 new, 40 updated")
+   * because the before and after are comparable. Refresh.everything
+   * empties the inventory first and can say nothing of the sort. */
+  Refresh.newPosts = function (opts) {
+    opts = opts || {};
+    const s = state();
+    const list = Array.from(s.activeSubs);
+    if (!list.length) {
+      if (opts.toast !== false) Util.toast("No subreddits loaded to sync.");
+      return Promise.resolve(null);
+    }
+    return Refresh.subs(list, Object.assign({
+      label: `${list.length} subreddit${list.length === 1 ? "" : "s"}`,
+    }, opts));
+  };
+
   /* Everything that has not been read inside the stale window,
    * including everything that has never been read at all. This is the
    * one the main button runs, so it has to be honest when there is
@@ -477,9 +499,16 @@
     const due = f.unread.length + f.stale.length;
     const total = f.unread.length + f.stale.length + f.fresh.length;
     const posts = `${Util.fmtNum(s.posts.length)} posts loaded`;
+    /* Nothing overdue, but "nothing overdue" is not "nothing new" —
+     * subreddits keep posting inside the fifteen-minute window. So the
+     * button still offers a fetch; it just offers the one that adds to
+     * the inventory instead of the one that empties it and starts
+     * over. Wiping several thousand posts to re-collect them is a
+     * thing to choose on purpose, from the menu, not the thing that
+     * happens when someone taps the only button on screen. */
     if (!due) {
-      return { phase: "loaded", action: "all", label: "Refresh", icon: "↻",
-        text: `All ${total} subreddit${total === 1 ? "" : "s"} up to date · ${posts}.` };
+      return { phase: "loaded", action: "new", label: "Sync new", icon: "↻",
+        text: `All ${total} subreddit${total === 1 ? "" : "s"} read recently · ${posts}.` };
     }
     const what = f.unread.length && !f.stale.length
       ? `${f.unread.length} subreddit${f.unread.length === 1 ? "" : "s"} not fetched yet`
@@ -495,11 +524,20 @@
     Util.setActionPhase(d.phase, d.text, { label: d.label, icon: d.icon, action: d.action });
   };
 
+  /* What the button should say when something else is driving the
+   * banner and has only a message to write — the end of a fetch, say,
+   * which owns the line but has no business deciding the next offer. */
+  Util.actionOffer = function () {
+    const d = Refresh.describeState();
+    return { label: d.label, icon: d.icon, action: d.action };
+  };
+
   /* What the main button does depends on what the banner is currently
    * offering, so the two can never disagree. */
   Refresh.runPrimary = function () {
     const d = Refresh.describeState();
     if (d.action === "stale") return Refresh.stale();
+    if (d.action === "new") return Refresh.newPosts();
     return Refresh.everything(true);
   };
 
