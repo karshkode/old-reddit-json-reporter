@@ -329,8 +329,8 @@
     if (campBtn) {
       campBtn.disabled = false;
       campBtn.textContent = where.length
-        ? `+ Campaign from these ${where.length + 1} posts`
-        : "+ Campaign from this post";
+        ? `＋ Campaign · ${where.length + 1} posts`
+        : "＋ Campaign";
     }
   }
 
@@ -427,6 +427,14 @@
       }
       if (t.closest && t.closest("#analyze-go")) { e.preventDefault(); submit(); return; }
       if (t.closest && t.closest("#analyze-campaign-btn")) { e.preventDefault(); makeCampaign(); return; }
+      /* Straight from "here is the post" to "here is where it goes",
+         without making the user find it again in the inventory. */
+      if (t.closest && t.closest("#analyze-place-btn") && current) {
+        e.preventDefault();
+        Analyze.close();
+        if (window.FocusView) FocusView.focusPost(current.post);
+        return;
+      }
       const open = t.closest && t.closest('[data-action="analyze-open-post"]');
       if (open && current) {
         e.preventDefault();

@@ -452,11 +452,11 @@
     });
 
     if (!posts.length) {
-      tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No posts match the current filter.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No posts match the current filter.</div></td></tr>`;
       return;
     }
     if (!visible.length) {
-      tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No posts on this page — try Prev or change filters.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No posts on this page — try Prev or change filters.</div></td></tr>`;
       return;
     }
 
@@ -534,14 +534,21 @@
         <td data-label="Score" class="num">${Util.fmtNum(p.score)}</td>
         <td data-label="UV %" class="num">${p.upvote_ratio == null ? "—" : Util.fmtPct(p.upvote_ratio)}</td>
         <td data-label="Comments" class="num">${Util.fmtNum(p.num_comments)}</td>
-        <td data-label="ID"><code>${Util.escapeHtml(p.id)}</code></td>
-        <td data-label="Action" class="row-action">
-          <button class="btn small primary"
-                  type="button"
-                  data-action="make-campaign-from-post"
-                  data-post-id="${Util.escapeHtml(p.id)}"
-                  title="Create a campaign from this post and search for recommended subreddits to cross-post to"
-                  aria-label="Make a campaign from this post">+ Campaign</button>
+        <td data-label="Actions" class="row-action">
+          <div class="row-actions">
+            <button class="btn small"
+                    type="button"
+                    data-action="place-post"
+                    data-post-id="${Util.escapeHtml(p.id)}"
+                    title="Rank the communities this post should go to next, with the hour to post and how much better it typically does there"
+                    aria-label="Find where this post should go next">Where next</button>
+            <button class="btn small"
+                    type="button"
+                    data-action="make-campaign-from-post"
+                    data-post-id="${Util.escapeHtml(p.id)}"
+                    title="Start a campaign that tracks this post and its cross-posts, and search for communities to target"
+                    aria-label="Start a campaign from this post">＋ Campaign</button>
+          </div>
         </td>
       `;
       tr.addEventListener("click", (ev) => {
@@ -549,13 +556,13 @@
          * click was actually on:
          *   - a.title-text         (opens Reddit permalink)
          *   - .post-thumb          (opens media-preview modal)
-         *   - the + Campaign button + its inline form
+         *   - the row's action pair + the campaign form it opens
          *
          * Without these exclusions the title-link's new-tab open
          * would also expand the detail pane underneath, which is
          * confusing — the user sees their click open Reddit AND
          * the detail card scroll into focus simultaneously. */
-        if (ev.target.closest && ev.target.closest('[data-action="make-campaign-from-post"], .post-make-form, .post-make-form-row, a.title-text, .post-thumb')) return;
+        if (ev.target.closest && ev.target.closest('.row-actions, .post-make-form, .post-make-form-row, a.title-text, .post-thumb')) return;
         onRowClick(p);
       });
       tr.addEventListener("keydown", (e) => {
@@ -615,7 +622,8 @@
       ${opts.actions === false ? "" : `
         <div class="post-related-actions">
           <button class="btn small" type="button" data-action="load-related-subs">Load the checked communities</button>
-          <button class="btn small primary" type="button" data-action="campaign-from-detail" data-post-id="${Util.escapeHtml(result.post.id)}">Make a campaign from this post</button>
+          <button class="btn small" type="button" data-action="place-post" data-post-id="${Util.escapeHtml(result.post.id)}">Where next</button>
+          <button class="btn small primary" type="button" data-action="campaign-from-detail" data-post-id="${Util.escapeHtml(result.post.id)}">＋ Campaign</button>
         </div>`}
     `;
   };
@@ -645,7 +653,7 @@
 
   /* Insert an inline form-row below `rowEl` (the post's <tr>) so the
    * user can name a campaign + set goals before saving. The form-row
-   * is itself a <tr><td colspan="9"> so the table layout stays sane.
+   * is itself a <tr><td colspan="8"> so the table layout stays sane.
    * Mirrors the cross-post → campaign form pattern. */
   UI.renderPostMakeCampaignForm = function (rowEl, post, opts) {
     if (!rowEl || !post) return;
@@ -656,7 +664,7 @@
     formRow.className = "post-make-form-row";
     formRow.dataset.forPost = post.id;
     const cell = document.createElement("td");
-    cell.colSpan = 9;
+    cell.colSpan = 8;
     cell.innerHTML = UI.postMakeCampaignFormHtml(post);
     formRow.appendChild(cell);
 
@@ -838,7 +846,8 @@
         <ol class="post-related-howto">
           <li>Check the communities worth reaching — the score is out of 100, and every row says why it matched.</li>
           <li><strong>Load the checked communities</strong> pulls their posts, which is what gives each one its own posting-time panel on the Dashboard.</li>
-          <li><strong>Make a campaign from this post</strong> does that and tracks the post, then runs full discovery against Reddit's search for communities the catalog does not know.</li>
+          <li><strong>Where next</strong> ranks them by more than subject: it folds in each community's own posting clock and how much better a typical post does there, so the answer is a community and an hour.</li>
+          <li><strong>＋ Campaign</strong> loads them and tracks this post, then runs full discovery against Reddit's search for communities the catalog does not know.</li>
         </ol>
         <div id="post-related-body"></div>
         <div id="post-related-form" hidden></div>
