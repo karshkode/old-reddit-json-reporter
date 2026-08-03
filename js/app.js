@@ -670,6 +670,8 @@
    * refresh is. */
   function runSync(scope, el) {
     switch (scope) {
+      case "new":
+        return Refresh.newPosts();
       case "stale":
         return Refresh.stale();
       case "campaigns":
@@ -1791,7 +1793,7 @@
       const f = Refresh.freshness();
       const due = f.unread.length + f.stale.length;
       note.textContent = state.activeSubs.size
-        ? `${due} of ${state.activeSubs.size} subreddits are out of date. A full refresh re-reads all ${state.activeSubs.size}.`
+        ? `${due} of ${state.activeSubs.size} subreddits are out of date. Syncing keeps the ${Util.fmtNum(state.posts.length)} posts already collected; starting over discards them.`
         : "No subreddits loaded yet.";
     });
 
