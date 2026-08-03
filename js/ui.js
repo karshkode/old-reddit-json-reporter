@@ -30,7 +30,7 @@
     const when = watch.at ? Util.relTime(watch.at / 1000) : "now";
     host.hidden = false;
     host.className = "watch-badge";
-    host.innerHTML = `<span class="live-dot"></span><span>Live · ${watch.count} recent post${watch.count === 1 ? "" : "s"} · ${Dom.esc(when)}</span>`;
+    host.innerHTML = `<span class="live-dot"></span><span>Live · ${watch.count} recent post${watch.count === 1 ? "" : "s"} · ${Util.escapeHtml(when)}</span>`;
     host.title = "Posts under 36 hours old are read straight from Reddit, because the archive still reports them as 1 upvote.";
   };
 

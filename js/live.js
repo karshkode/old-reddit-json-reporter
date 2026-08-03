@@ -170,19 +170,27 @@
 
   async function mintToken() {
     const body = new URLSearchParams({ grant_type: GRANT, device_id: DEVICE_ID });
-    const res = await fetch(TOKEN_URL, {
-      method: "POST",
-      credentials: "omit",
-      /* The grant wants HTTP basic with the client id as the username
-       * and an empty password. There is no secret: an installed app is
-       * a public client by definition, which is what makes this usable
-       * from a page anyone can view the source of. */
-      headers: {
-        Authorization: "Basic " + btoa(Live.clientId() + ":"),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: body.toString(),
-    });
+    let res;
+    try {
+      res = await fetch(TOKEN_URL, {
+        method: "POST",
+        credentials: "omit",
+        /* The grant wants HTTP basic with the client id as the username
+         * and an empty password. There is no secret: an installed app
+         * is a public client by definition, which is what makes this
+         * usable from a page anyone can view the source of. */
+        headers: {
+          Authorization: "Basic " + btoa(Live.clientId() + ":"),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+    } catch (netErr) {
+      /* Same blind spot as the API call: no CORS header on the refusal
+       * means the browser reports a bare network failure. */
+      blocked = true;
+      throw new Error("reddit is not issuing tokens to this network right now");
+    }
     if (!res.ok) {
       const err = new Error("reddit refused a token (" + res.status + ")");
       err.status = res.status;
@@ -264,12 +272,33 @@
     const url = API + "/api/info?raw_json=1&id=" + fullnames.join(",");
     const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
     const tid = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
+    let res;
     try {
-      const res = await fetch(url, {
+      res = await fetch(url, {
         credentials: "omit",
         headers: { Authorization: "bearer " + bearer, Accept: "application/json" },
         signal: controller && controller.signal,
       });
+    } catch (netErr) {
+      /* A browser cannot see the status of a response that carries no
+       * CORS headers — fetch just throws "Failed to fetch", the same
+       * words it uses for being offline. Reddit's bot wall is served
+       * from its edge as bare HTML with no such header, so this is what
+       * being blocked actually looks like from a page.
+       *
+       * The token was minted moments earlier from a different host that
+       * does send the header, so the credential is not the problem and
+       * re-minting would not help. Treat it as the network refusing us,
+       * which is both what it is and the only thing the user could act
+       * on. */
+      if (netErr && netErr.name === "AbortError") throw new Error("reddit took too long to answer");
+      blocked = true;
+      throw new Error("reddit is not accepting anonymous reads from this network right now");
+    } finally {
+      if (tid) clearTimeout(tid);
+    }
+
+    {
       note(res);
 
       /* Two different 403s wear the same status code and want opposite
@@ -307,8 +336,6 @@
         if (c && c.kind === "t3" && c.data) out.push(c.data);
       }
       return out;
-    } finally {
-      if (tid) clearTimeout(tid);
     }
   }
 
