@@ -1133,8 +1133,14 @@
       const lead = timing.nextUp;
       out.push({
         label: "When",
+        /* "Post now" when the recommended window is already running.
+           The alternative — naming the peak minute and how far off it
+           is — told people to wait from inside the very window being
+           recommended. */
         value: lead && lead.next
-          ? `<strong>${esc(lead.next.label)}</strong> in r/${esc(lead.subreddit)}, ${esc(lead.next.inLabel)}`
+          ? (lead.next.open
+            ? `<strong>Post now</strong> in r/${esc(lead.subreddit)} — window open until ${esc(lead.next.closesAt)}`
+            : `<strong>${esc(lead.next.label)}</strong> in r/${esc(lead.subreddit)}, ${esc(lead.next.inLabel)}`)
           : `${ranked.length} communit${ranked.length === 1 ? "y has" : "ies have"} a slot worth waiting for`,
         note: (timing.agree
           ? `all ${ranked.length} peak within ${timing.spreadMinutes} minutes of each other, so one slot serves them`

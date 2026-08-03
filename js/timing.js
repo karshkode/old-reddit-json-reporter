@@ -731,23 +731,74 @@
 
   /* ---------- when to actually post next ---------- */
 
+  /* Below this much of the window left, "post now" is not worth saying:
+     by the time anything is written the window has shut. */
+  const OPEN_FLOOR_MIN = 5;
+
   /* The recommendation is a clock time; this turns it into a date.
-     Honours a significant day-of-week effect by rolling forward to
-     that weekday, and never suggests a slot less than `leadMinutes`
-     away, since advice you cannot act on is not advice. */
+     Honours a significant day-of-week effect by rolling forward to that
+     weekday.
+
+     The peak minute is the middle of a tied window, not a deadline —
+     everything inside `row.window` scored statistically the same, which
+     is why the row reports "19:45–21:15 window" beside it. So the first
+     question is not "when does the peak next come round" but "am I
+     standing in the window right now", and if the answer is yes the
+     answer to "when should I post" is now.
+
+     Asking only about the peak, as this used to, produced the worst
+     possible reading of a good moment: at 20:26, with a window running
+     19:45–21:15 and a peak at 20:45, it reported "tomorrow 20:45, in 1d
+     0h" — advice to wait 24 hours from inside the window it was
+     recommending. Two things conspired. The peak was 19 minutes off and
+     a 20-minute lead guard rolled anything nearer than that to the next
+     day, turning a near miss into a whole day's wait; and the window,
+     which was the part that made the moment fine, was never consulted.
+
+     The lead guard is gone with it. It existed so the tool would not
+     propose a slot too soon to act on, but a day's delay is a far worse
+     answer than "in 3 minutes", and inside a ninety-minute window the
+     exact minute never mattered anyway. */
   Timing.nextOccurrence = function (row, now, opts) {
     opts = opts || {};
-    const leadMinutes = opts.leadMinutes == null ? 20 : opts.leadMinutes;
     if (!row || row.slot == null) return null;
     const base = now instanceof Date ? new Date(now.getTime()) : new Date();
-    const target = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+    const midnight = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+    const nowMin = (base.getTime() - midnight.getTime()) / 60000;
+    const wantDay = (row.dowDay != null && row.dowDay >= 0) ? row.dowDay : null;
+
+    const win = row.window && row.window.minutes > 0 && row.window.slots < SLOTS
+      ? row.window : null;
+    if (win) {
+      /* Two candidates: the window that started today, and the one that
+         started yesterday and is still running past midnight. */
+      for (const daysBack of [0, 1]) {
+        const start = win.start - daysBack * 1440;
+        const end = start + win.minutes;
+        if (nowMin < start || nowMin >= end) continue;
+        const day = new Date(midnight.getTime() - daysBack * 86400000);
+        if (wantDay != null && day.getDay() !== wantDay) continue;
+        const left = Math.round(end - nowMin);
+        /* Nearly shut. Fall through and name the next one instead. */
+        if (left < OPEN_FLOOR_MIN) break;
+        return {
+          date: new Date(base.getTime()),
+          open: true,
+          inMinutes: 0,
+          closesInMinutes: left,
+          closesAt: Timing.formatSlot(win.end),
+          inLabel: `open until ${Timing.formatSlot(win.end)}`,
+          dayWord: "today",
+          label: "now",
+        };
+      }
+    }
+
+    const target = new Date(midnight.getTime());
     target.setMinutes(row.slot);
+    while (target <= base) target.setDate(target.getDate() + 1);
 
-    const earliest = new Date(base.getTime() + leadMinutes * 60000);
-    while (target < earliest) target.setDate(target.getDate() + 1);
-
-    const wantDay = row.dowDay;
-    if (wantDay != null && wantDay >= 0) {
+    if (wantDay != null) {
       let guard = 0;
       while (target.getDay() !== wantDay && guard++ < 8) target.setDate(target.getDate() + 1);
     }
@@ -759,6 +810,7 @@
 
     return {
       date: target,
+      open: false,
       inMinutes: deltaMin,
       inLabel: humanDelta(deltaMin),
       dayWord: dayWord,
@@ -767,6 +819,7 @@
   };
 
   function humanDelta(minutes) {
+    if (minutes < 1) return "in under a minute";
     if (minutes < 60) return `in ${minutes} min`;
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
