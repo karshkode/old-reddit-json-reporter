@@ -15,6 +15,25 @@
    * opts.onOverflow what the overflow chip opens */
   const CHIP_LIMIT = 10;
 
+  /* Whether the numbers on screen are current, shown only when there is
+   * something young enough for the distinction to matter. On an
+   * inventory of month-old posts the archive is authoritative and a
+   * "live" badge would be noise claiming to be reassurance. */
+  UI.renderWatchBadge = function (watch) {
+    const host = document.getElementById("watch-badge");
+    if (!host) return;
+    if (!watch || !watch.on || !watch.count) {
+      host.hidden = true;
+      host.textContent = "";
+      return;
+    }
+    const when = watch.at ? Util.relTime(watch.at / 1000) : "now";
+    host.hidden = false;
+    host.className = "watch-badge";
+    host.innerHTML = `<span class="live-dot"></span><span>Live · ${watch.count} recent post${watch.count === 1 ? "" : "s"} · ${Dom.esc(when)}</span>`;
+    host.title = "Posts under 36 hours old are read straight from Reddit, because the archive still reports them as 1 upvote.";
+  };
+
   UI.renderSubChips = function (subs, active, onToggle, onRemove, opts) {
     const container = document.getElementById("subreddit-chips");
     if (!container) return;
@@ -531,7 +550,7 @@
           ${p.flair ? `<span class="tag flair">${Util.escapeHtml(p.flair)}</span>` : ""}${flagsHtml}
         </td>
         <td data-label="Author">${Util.escapeHtml(p.author || "")}</td>
-        <td data-label="Score" class="num">${Util.fmtNum(p.score)}</td>
+        <td data-label="Score" class="num">${Util.fmtNum(p.score)}${p.score_live ? '<span class="live-dot" title="Read from Reddit just now"></span>' : ""}</td>
         <td data-label="UV %" class="num">${p.upvote_ratio == null ? "—" : Util.fmtPct(p.upvote_ratio)}</td>
         <td data-label="Comments" class="num">${Util.fmtNum(p.num_comments)}</td>
         <td data-label="Actions" class="row-action">
