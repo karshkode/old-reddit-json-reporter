@@ -506,8 +506,8 @@
       : Object.assign({}, item, { term: SubIndex.surfaceOf(item.term) })));
   };
 
-  function countDf(vectors, into) {
-    const df = into || {};
+  function countDf(vectors) {
+    const df = {};
     let n = 0;
     for (const vec of vectors || []) {
       if (!vec) continue;
@@ -565,7 +565,7 @@
   let corpusCache = null;
   let corpusKey = "";
 
-  function corpusDf() {
+  function corpusIdf() {
     const posts = (window.AppState && Array.isArray(AppState.posts) ? AppState.posts : []);
     const sample = Math.min(posts.length, CORPUS_POST_CAP);
     const key = mem.size + ":" + sample;
@@ -591,26 +591,31 @@
       for (const term in vec) df[term] = (df[term] || 0) + 1;
     }
 
-    corpusCache = n >= CORPUS_MIN ? { df: df, n: n } : null;
+    corpusCache = n >= CORPUS_MIN ? { idf: idfFromDf(df, n), n: n } : null;
     corpusKey = key;
     return corpusCache;
   }
 
   SubIndex.corpusSize = function () {
-    const c = corpusDf();
+    const c = corpusIdf();
     return c ? c.n : 0;
   };
 
-  /* The IDF a scorer should use: the corpus if there is one, pooled
-   * with the documents of this particular run so nothing goes
-   * uncounted. Falls back to exactly the old behaviour when the index
-   * is too small to say anything. */
+  /* The IDF a scorer should use. Falls back to exactly the old
+   * behaviour when the index is too small to say anything.
+   *
+   * The run's own candidates are not pooled in, for two reasons. They
+   * are already in the corpus — scoring is preceded by SubIndex.ensure,
+   * which files every candidate that has a description — so counting
+   * them again would count them twice. And the table is built once per
+   * corpus rather than once per call, which at a few hundred thousand
+   * terms is the difference between a tenth of a second and nothing.
+   * The one document genuinely outside the corpus is the query itself,
+   * and a term it alone uses falls to __default, which is what a term
+   * seen in no document should be worth. */
   SubIndex.idfFor = function (vectors) {
-    const corpus = corpusDf();
-    if (!corpus) return SubIndex.buildIdf(vectors);
-    const df = Object.assign({}, corpus.df);
-    const local = countDf(vectors, df);
-    return idfFromDf(df, corpus.n + local.n);
+    const corpus = corpusIdf();
+    return corpus ? corpus.idf : SubIndex.buildIdf(vectors);
   };
 
   /* ==================================================================
