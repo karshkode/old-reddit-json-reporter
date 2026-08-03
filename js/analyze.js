@@ -104,19 +104,31 @@
     });
 
     stage("duplicates", "Looking for it in other communities…");
-    let dupeError = null;
-    const dupes = await Reddit.fetchDuplicates(post.id).catch((err) => {
-      console.warn("[analyze] duplicate search failed:", err && err.message);
-      dupeError = (err && err.message) || String(err);
-      return { original: null, duplicates: [] };
-    });
 
-    /* The original counts as somewhere this content already is, unless
-     * the original is the post we were handed. */
-    const elsewhere = [];
-    if (dupes.original && dupes.original.id !== post.id) elsewhere.push(dupes.original);
-    for (const d of dupes.duplicates || []) elsewhere.push(d);
+    /* Three sources, deliberately independent. The archive's site-wide
+     * search over crosspost_parent_id and url is the one with real
+     * coverage, and the one that goes down; the other two need only
+     * post lookups and the posts already on this machine, so the
+     * feature degrades to "narrower" rather than to "broken". */
+    const [remote, parent] = await Promise.all([
+      Reddit.fetchDuplicates(post.id).then(
+        (r) => ({ posts: [].concat(r.original ? [r.original] : [], r.duplicates || []) }),
+        (err) => {
+          console.warn("[analyze] duplicate search failed:", err && err.message);
+          return { err: (err && err.message) || String(err) };
+        }),
+      fetchParent(post),
+    ]);
+
+    const elsewhere = Util.uniqBy(
+      [].concat(remote.posts || [], parent, Analyze.findLocally(post))
+        .filter((x) => x && x.id && x.id !== post.id),
+      (x) => x.id
+    );
+    elsewhere.sort((a, b) => (b.score || 0) - (a.score || 0));
     for (const p of elsewhere) p.imported = true;
+
+    const dupeError = remote.err || null;
 
     current = {
       post: post,
@@ -130,6 +142,49 @@
     };
     stage("done", "");
     return current;
+  };
+
+  /* The post this one was crossposted from, if it was. Costs one ID
+   * lookup, which is a different archive endpoint from the search that
+   * finds the siblings — so the original still turns up on days when
+   * the search does not. */
+  async function fetchParent(post) {
+    const parentId = post.crosspost_parent_id;
+    if (!parentId) return [];
+    return Reddit.fetchPostsByIds([parentId]).catch((err) => {
+      console.warn("[analyze] parent lookup failed:", err && err.message);
+      return [];
+    });
+  }
+
+  /* The same content among the posts already loaded on this machine.
+   *
+   * Free, offline, and for someone tracking 170 communities it covers
+   * the subs they actually care about — which is where a crosspost
+   * matters. It uses the same three tests the cross-post detector uses
+   * on the dashboard, so a group found here is a group found there. */
+  Analyze.findLocally = function (post) {
+    const state = window.AppState;
+    if (!state || !Array.isArray(state.posts)) return [];
+
+    const parent = post.crosspost_parent_id || null;
+    const self = "t3_" + post.id;
+    const url = !post.is_self && (post.url_canonical || post.url) || null;
+    const fp = Analysis.isPlaceholderTitle(post) ? "" : Analysis.titleFingerprint(post.title);
+
+    const out = [];
+    for (const other of state.posts) {
+      if (!other || other.id === post.id) continue;
+      const otherParent = other.crosspost_parent_id || null;
+      const sameChain = (parent && otherParent === parent)
+        || otherParent === self
+        || (parent && "t3_" + other.id === parent);
+      const sameLink = url && !other.is_self && (other.url_canonical || other.url) === url;
+      const sameStory = fp && !Analysis.isPlaceholderTitle(other)
+        && Analysis.titleFingerprint(other.title) === fp;
+      if (sameChain || sameLink || sameStory) out.push(other);
+    }
+    return out;
   };
 
   /* Share links (reddit.com/r/sub/s/XXXX) do not contain the post ID —
@@ -230,12 +285,8 @@
       </div>
 
       <div class="analyze-block">
-        <h3>${result.elsewhereError && !where.length
-          ? "Couldn't check for other postings"
-          : `Already posted in ${spread ? `${spread} other communit${spread === 1 ? "y" : "ies"}` : "no other community"}`}</h3>
-        ${result.elsewhereError && !where.length ? `
-          <p class="hint">The archive's search did not answer (${esc(result.elsewhereError)}). The recommendations below are unaffected — they read the post itself.</p>
-        ` : where.length ? `
+        <h3>Already posted in ${spread ? `${spread} other communit${spread === 1 ? "y" : "ies"}` : "no other community"}</h3>
+        ${where.length ? `
           <ul class="analyze-elsewhere">
             ${where.slice(0, 8).map((x) => `
               <li>
@@ -245,7 +296,10 @@
           </ul>
           ${where.length > 8 ? `<p class="hint">and ${where.length - 8} more</p>` : ""}
           <p class="hint">These come into the campaign with the post, so its totals start from what the content has already earned.</p>
-        ` : `<p class="hint">No crossposts and no other submissions of the same link. Everything below is a first move, not a repeat.</p>`}
+        ` : `<p class="hint">Nothing found in your loaded posts, and no crossposts of it. Everything below is a first move, not a repeat.</p>`}
+        ${result.elsewhereError ? `
+          <p class="hint">The archive's site-wide search is not answering right now, so this covers your own loaded posts and the post's own crosspost link only. There may be more elsewhere on Reddit.</p>
+        ` : ""}
       </div>
 
       <div class="analyze-block">

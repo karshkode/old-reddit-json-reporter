@@ -143,15 +143,16 @@
    *
    * "+220% (+20% to +758%)" asks the reader to know what a confidence
    * interval is and then to do something with both ends of it. The part
-   * that actually changes a decision is the bottom end: whether the
-   * worst plausible case is still a gain. So say that, and when the
-   * bottom end is a loss, say that instead of printing the arithmetic.
+   * that changes a decision is the bottom end: whether the worst
+   * plausible case is still a gain.
    *
-   * Returns "" when there is no interval to speak of. */
+   * Only the reassuring case is worth a phrase. A floor below zero is
+   * what "likely" and "weak" already mean, and printing "could go
+   * either way" beside every one of them is a warning stamped on rows
+   * that are already labelled — it makes the badge say nothing and the
+   * list read as uniformly hopeless. Returns "" in that case. */
   function rangeWords(r) {
-    if (r.liftLow == null) return "";
-    if (r.liftLow <= 0) return "could go either way";
-    if (r.liftLow < 0.05) return "";
+    if (r.liftLow == null || r.liftLow < 0.05) return "";
     return `at least ${signed(r.liftLow)}`;
   }
 
@@ -228,7 +229,7 @@
     if (r.window && r.window.minutes > 60 && r.window.slots < Timing.SLOTS) {
       bits.push(`${Util.escapeHtml(Timing.windowLabel(r))} window`);
     }
-    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts then`);
+    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts around then`);
     if (r.ratioAt != null && r.ratioBase != null && Math.abs(r.ratioAt - r.ratioBase) >= 0.01) {
       bits.push(`${Util.fmtPct(r.ratioAt)} upvoted vs ${Util.fmtPct(r.ratioBase)} usual`);
     }

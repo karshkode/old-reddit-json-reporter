@@ -329,7 +329,7 @@
   Reddit.fetchDuplicates = async function (postId, opts) {
     opts = opts || {};
     const id = String(postId).replace(/^t3_/, "");
-    const json = await fetchJson(`/duplicates/${id}.json`, { limit: opts.limit || 100 });
+    const json = await fetchJson(`/duplicates/${id}.json`, { limit: opts.limit || 50 });
     if (!Array.isArray(json) || json.length < 2) return { original: null, duplicates: [] };
 
     const kids = (envelope) => ((envelope && envelope.data && envelope.data.children) || [])

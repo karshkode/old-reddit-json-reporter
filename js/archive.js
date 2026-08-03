@@ -96,7 +96,30 @@
    * TRANSPORT
    * ================================================================== */
 
+  /* The archive answers the same query with a 500 and then with data
+   * seconds apart — its heavier indexes fall over under load rather
+   * than queueing. Treating the first 500 as the answer throws away a
+   * result that is usually one short wait away, so 5xx gets a couple of
+   * quick retries before it counts as a failure. 4xx does not: a bad
+   * argument stays bad however often it is asked. */
+  const RETRY_BACKOFF_MS = [350, 900];
+
   async function get(path, params, signal) {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+      try {
+        return await getOnce(path, params, signal);
+      } catch (err) {
+        lastErr = err;
+        if (!(err && err.status >= 500)) throw err;
+        if (attempt === RETRY_BACKOFF_MS.length) break;
+        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS[attempt]));
+      }
+    }
+    throw lastErr;
+  }
+
+  async function getOnce(path, params, signal) {
     const url = new URL(BASE + path);
     for (const [k, v] of Object.entries(params || {})) {
       if (v != null && v !== "") url.searchParams.set(k, v);
@@ -275,13 +298,25 @@
    *
    * Both are asked from the root of the chain rather than from whatever
    * link the user happened to paste, so pasting a crosspost finds its
-   * siblings and its original instead of nothing. */
+   * siblings and its original instead of nothing.
+   *
+   * Both are also unscoped, which is the expensive kind of query here
+   * and the first to fail when the archive is struggling — at the time
+   * of writing they answer with a 500 while every subreddit-scoped
+   * search is fine. Callers must treat this as best-effort: Analyze
+   * pairs it with the crosspost parent (an ID lookup, a different
+   * endpoint) and a scan of the posts already loaded. */
   function settle(promise) {
     return promise.then((value) => ({ value: value }), (err) => ({ err: err }));
   }
 
   async function duplicates(id, q, signal) {
-    const limit = Math.min(parseInt(q.get("limit"), 10) || 100, MAX_PAGE);
+    /* Deliberately below MAX_PAGE. These two searches are unscoped —
+     * they scan the whole archive rather than one subreddit — and are
+     * the first thing to time out under load. Fifty is far more
+     * crossposts than any real post has, so the larger page buys
+     * nothing but a slower query. */
+    const limit = Math.min(parseInt(q.get("limit"), 10) || 50, 50);
     const asked = String(id).replace(/^t3_/, "");
 
     const found = await get("/posts/ids", { ids: "t3_" + asked }, signal);
