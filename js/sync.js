@@ -55,6 +55,20 @@
     try { activeSubs = JSON.parse(safe("rj.active") || "[]"); } catch (_) {}
     try { activeSpheres = JSON.parse(safe("rj.activeSpheres") || "[]"); } catch (_) {}
 
+    /* Live state wins over what is on disk. Reading storage alone was
+     * enough while every mutation persisted immediately, but it exports
+     * nothing at all in states where the two can differ — a session
+     * loaded from fixtures, or a browser refusing to write — and the
+     * reset dialog now offers this payload as the way to undo itself,
+     * so an export that quietly omits the subreddits is worse than one
+     * that fails loudly. */
+    const live = window.AppState;
+    if (live) {
+      if (Array.isArray(live.knownSubs) && live.knownSubs.length) knownSubs = live.knownSubs.slice();
+      if (live.activeSubs && live.activeSubs.size) activeSubs = Array.from(live.activeSubs);
+      if (Array.isArray(live.activeSpheres) && live.activeSpheres.length) activeSpheres = live.activeSpheres.slice();
+    }
+
     return {
       v: Sync.VERSION,
       ts: Date.now(),
