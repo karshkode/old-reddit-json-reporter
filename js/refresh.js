@@ -532,6 +532,133 @@
     return { label: d.label, icon: d.icon, action: d.action };
   };
 
+  /* ------------------------------------------------------------------
+   * WATCHING A POST THAT IS STILL MOVING
+   * ------------------------------------------------------------------ */
+
+  /* Every scope above is something the user asked for. This one is not:
+   * it is the answer to "I just posted, is it going anywhere", which is
+   * a question nobody wants to press a button to re-ask every ninety
+   * seconds.
+   *
+   * It only covers posts in the window where the archive is blind —
+   * under about a day and a half old — because those are the only ones
+   * whose numbers are wrong, and it only runs while the tab is in front
+   * of you, because polling on behalf of a tab nobody is looking at is
+   * how a well-meaning feature becomes rude. */
+  const WATCH_MS = 90 * 1000;
+  const WATCH_CAP = 200;
+
+  let watchTimer = null;
+  let watching = false;
+  let lastWatch = { at: 0, count: 0, moved: 0 };
+
+  Refresh.watchState = function () {
+    return {
+      on: watching && !!(window.Live && Live.available()),
+      count: Refresh.watchSet().length,
+      at: lastWatch.at,
+      moved: lastWatch.moved,
+    };
+  };
+
+  /* Campaign posts first, because a campaign is a statement that these
+   * particular posts matter. Anything else young enough to be moving
+   * comes after, up to the cap. */
+  Refresh.watchSet = function () {
+    if (!window.Live || !Live.available()) return [];
+    const s = state();
+    const byId = new Map();
+    for (const p of s.posts || []) if (p && p.id) byId.set(String(p.id), p);
+
+    const picked = [];
+    const seen = new Set();
+    const take = (post) => {
+      if (!post || seen.has(post.id)) return;
+      if (!Live.inBlindWindow(post)) return;
+      seen.add(post.id);
+      picked.push(post);
+    };
+
+    for (const c of (window.Campaigns ? Campaigns.list() : [])) {
+      for (const id of c.postIds || []) take(byId.get(String(id)));
+    }
+    for (const p of s.posts || []) {
+      if (picked.length >= WATCH_CAP) break;
+      take(p);
+    }
+    return picked.slice(0, WATCH_CAP);
+  };
+
+  async function tick() {
+    if (document.visibilityState === "hidden") return;
+    if (Refresh.busy()) return;
+    const set = Refresh.watchSet();
+    if (!set.length) return;
+
+    const fresh = await Live.lookup(set.map((p) => p.id));
+    if (!fresh || !fresh.length) return;
+
+    /* Silent by design. This did not happen because anybody asked, so
+     * it must not take over the banner, raise a toast, or move the page
+     * under someone mid-read. It patches, notes what changed, and lets
+     * the next render pick it up. */
+    const patch = apply(fresh, { render: false, toast: false, adopt: "existing" });
+    lastWatch = { at: Date.now(), count: set.length, moved: patch.updated };
+    if (patch.updated) {
+      App.rerenderAll();
+      for (const c of (window.Campaigns ? Campaigns.list() : [])) {
+        if (state().campaignSummaries && state().campaignSummaries[c.id]) {
+          App.publishCampaign(c, fresh).catch(() => {});
+        }
+      }
+    }
+    Refresh.repaintWatch();
+  }
+
+  Refresh.repaintWatch = function () {
+    if (window.UI && UI.renderWatchBadge) UI.renderWatchBadge(Refresh.watchState());
+  };
+
+  Refresh.startWatching = function () {
+    if (watchTimer) return;
+    watching = true;
+    watchTimer = setInterval(() => { tick().catch(() => {}); }, WATCH_MS);
+    document.addEventListener("visibilitychange", () => {
+      /* Coming back to the tab is the moment the number on screen is
+       * most likely to be wrong, so read it then rather than waiting
+       * out the rest of the interval. */
+      if (document.visibilityState === "visible") tick().catch(() => {});
+    });
+    tick().catch(() => {});
+    Refresh.repaintWatch();
+  };
+
+  Refresh.stopWatching = function () {
+    watching = false;
+    if (watchTimer) clearInterval(watchTimer);
+    watchTimer = null;
+    Refresh.repaintWatch();
+  };
+
+  /* A one-off read of everything currently worth watching, for the
+   * button that says so. */
+  Refresh.watchNow = async function () {
+    if (!window.Live || !Live.available()) {
+      Util.toast("Live scores are off — turn them on in Settings.");
+      return null;
+    }
+    const set = Refresh.watchSet();
+    if (!set.length) {
+      Util.toast("Nothing new enough to watch. The archive already has real numbers for everything here.");
+      return null;
+    }
+    return Refresh.postIds(set.map((p) => p.id), {
+      label: set.length === 1 ? "this post" : `${set.length} recent posts`,
+      adopt: "existing",
+    });
+  };
+
   /* What the main button does depends on what the banner is currently
    * offering, so the two can never disagree. */
   Refresh.runPrimary = function () {
