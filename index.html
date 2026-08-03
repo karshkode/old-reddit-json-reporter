@@ -96,7 +96,12 @@
       </div>
 
       <div class="topbar-search">
-        <input id="search-input" type="search" placeholder="Search posts by title, author or flair…" autocomplete="off" aria-label="Search loaded posts" />
+        <input id="search-input" type="search" placeholder="Search posts, or paste a Reddit link…" autocomplete="off" aria-label="Search loaded posts, or paste a Reddit post link to analyse it" />
+        <!-- Appears only when what was typed is a link to a post, since
+             searching the inventory for a URL will always find nothing. -->
+        <div id="search-analyze-offer" class="search-analyze-offer" hidden>
+          <button type="button" class="btn small primary" data-action="open-analyze">Analyse this post</button>
+        </div>
       </div>
 
       <div class="topbar-actions">
@@ -156,7 +161,7 @@
                   <h2>What this data is telling you</h2>
                   <span class="hint">Where and when to post next, read from your own loaded posts</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one is scoped to a named community rather than pooled across them. Communities are compared on the median post, not on totals — a sub does not become the better place to post because more of its posts happen to be loaded. A line is left out entirely when there is not enough data to support it. Under When, every percentage is the lift on a typical post against that community's own baseline, with a 95% confidence interval beside it; the p-value comes from reshuffling the same scores across the same timestamps a few hundred times and asking how often chance produces a peak that good. A community whose scores do not track the clock is listed as having no signal rather than being assigned an hour. The badge on each row grades that evidence: STRONG means p is .05 or better with a confidence interval that stays above zero and at least 5 posts near the slot, so on pure noise it would fire about 1 time in 20; LIKELY means p is .15 or better with a lift of at least 15%, which is probably real but may still have an interval crossing zero; WEAK means p is .25 or better with a lift of at least 25%, worth knowing but not worth rearranging a day for. Nothing under 8 posts is graded at all. The totals themselves are in the row above, and the full breakdowns are on the other tabs.">?</button>
+                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one names a community rather than averaging across them. Communities are compared on their typical post, not on totals — a sub does not become the better place to post just because more of its posts happen to be loaded, and a line is left out entirely when there is not enough data behind it. Under When, each percentage is how much better a typical post does at that time than that community's own average, and 'at least +20%' is how far it might realistically fall short. Where the whole day is much the same, the community is listed as having no pattern rather than being handed an hour. The badge grades how much to trust it: STRONG means the pattern held up when tested against chance and even the worst case is a gain, so about a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, about 1-in-7; WEAK means worth knowing but easily chance. Communities with fewer than 8 posts are not graded at all. Totals are in the row above and the full breakdowns are on the other tabs.">?</button>
               </header>
               <ul id="dash-briefing" class="briefing"></ul>
             </div>
@@ -195,7 +200,7 @@
                   <h2>Best times to post, per subreddit</h2>
                   <span class="hint">One panel per community, on its own clock — each dot is one post, the line is what a typical post scores at that time of day</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How to read this card" data-help="Each panel plots one community's posts by time of day, not by date: the x axis is the 24-hour clock and the y axis is upvotes on a log scale, so a breakout post and an ordinary one both stay on screen. The curve is what a typical post earns at that time of day — it is fitted in log space with extremes capped, so it is deliberately NOT dragged up to whatever hour a single viral post happened to land in. The dashed line is the community's all-day average, and the highlighted stretch of curve is the recommended window. Every figure is against that sub's own baseline, never a figure pooled across communities. The badge beside each community grades the evidence for its slot: STRONG means p is .05 or better with a confidence interval that stays above zero and at least 5 posts near the slot, so on pure noise it would fire about 1 time in 20; LIKELY means p is .15 or better with a lift of at least 15%, probably real but with an interval that may still cross zero; WEAK means p is .25 or better with a lift of at least 25%, worth knowing but not worth rearranging a day for. A slot is graded only if the community has at least 8 posts and the statistically tied window is under 12 hours — below that the model cannot tell a time of day from the order the posts arrived in. Subs with too few posts are listed at the bottom rather than given a peak they haven't earned.">?</button>
+                <button class="card-help" type="button" aria-label="How to read this card" data-help="Each panel plots one community's posts by time of day, not by date: across the bottom is the 24-hour clock, up the side is upvotes, squashed so that a breakout post and an ordinary one both stay on screen. The curve is what a typical post earns at that time of day, with runaway posts capped, so it is deliberately NOT dragged up to whatever hour one viral post happened to land in. The dashed line is the community's all-day average, and the highlighted stretch is the recommended window — any time inside it works about as well. Every figure compares that sub against itself, never against the others. The badge grades how much to trust the time: STRONG means the pattern held up when tested against chance and even the worst case is a gain, roughly a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, roughly 1-in-7; WEAK means worth knowing but easily chance. A community is only graded if it has at least 8 posts and the good stretch is under 12 hours wide — any wider and there is no real time of day to point at. Subs with too few posts are listed at the bottom rather than given a peak they haven't earned.">?</button>
               </header>
               <div id="posting-times"></div>
             </div>
@@ -574,6 +579,14 @@
            POSTS — the raw explorer
            ============================================================ -->
       <section id="view-posts" class="view" role="region" aria-label="Posts">
+        <div class="card analyze-invite">
+          <div>
+            <h2>Analyse a post</h2>
+            <span class="hint">Paste a Reddit link and find out where else it belongs — read from the title and the body, not just the headline</span>
+          </div>
+          <button class="btn primary" type="button" data-action="open-analyze">Paste a link</button>
+        </div>
+
         <div class="card">
           <header class="card-header">
             <div>
@@ -811,6 +824,36 @@
   </div>
 </div>
 
+<!-- Analyse one pasted post. The only flow in the app that starts from
+     a post rather than from a set of subreddits, and the only one that
+     works with nothing loaded at all. -->
+<div id="analyze-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="analyze-modal-title">
+  <div class="modal-backdrop" data-action="close-analyze-modal"></div>
+  <div class="modal-card is-wide" role="document">
+    <header class="modal-header">
+      <h2 id="analyze-modal-title">Analyse a post</h2>
+      <button type="button" class="btn ghost small" data-action="close-analyze-modal" aria-label="Close the analysis panel">×</button>
+    </header>
+    <div class="modal-body">
+      <p class="modal-hint">Paste a link to any Reddit post. It goes into your posts, and its title and body decide which communities are worth trying next.</p>
+      <div class="analyze-form">
+        <label class="visually-hidden" for="analyze-input">Reddit post link</label>
+        <input id="analyze-input" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://www.reddit.com/r/…/comments/…" />
+        <button type="button" class="btn primary" id="analyze-go">Analyse</button>
+      </div>
+      <p id="analyze-status" class="analyze-status" role="status" aria-live="polite"></p>
+      <div id="analyze-result" class="analyze-result"></div>
+      <div id="analyze-actions" class="analyze-actions" hidden>
+        <button type="button" class="btn small ghost" data-action="analyze-open-post">Open in Posts</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn small" data-action="close-analyze-modal">Done</button>
+        <button type="button" class="btn small primary" id="analyze-campaign-btn">+ Campaign from this post</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Media lightbox for post thumbnails -->
 <div id="media-preview" class="media-preview" hidden role="dialog" aria-modal="true" aria-label="Media preview">
   <button class="media-preview-close" type="button" aria-label="Close preview" data-action="close-media-preview">×</button>
@@ -989,6 +1032,7 @@
 <script src="./js/charts.js?v=20260804"></script>
 <script src="./js/campaigns.js?v=20260804"></script>
 <script src="./js/reset.js?v=20260804"></script>
+<script src="./js/analyze.js?v=20260804"></script>
 <script src="./js/sidebar.js?v=20260804"></script>
 <script src="./js/composer.js?v=20260804"></script>
 <script src="./js/ui.js?v=20260804"></script>

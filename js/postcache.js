@@ -348,12 +348,16 @@
     for (const p of cached || []) {
       if (!p || !p.id) continue;
       if (map.has(p.id)) { replaced++; continue; }
-      if (activeSet) {
+      /* A post the user pasted in by hand is theirs, not a by-product
+       * of which subreddits happen to be loaded. Unloading the sub it
+       * came from, or letting it get old, must not silently delete it
+       * from the inventory they added it to. */
+      if (activeSet && !p.imported) {
         const sub = String(p.subreddit || "").toLowerCase();
         if (sub && !activeSet.has(sub)) { droppedSub++; continue; }
       }
       const createdMs = p.created_utc ? Number(p.created_utc) * 1000 : 0;
-      if (createdMs && (now - createdMs) > maxAgeMs) { droppedAge++; continue; }
+      if (!p.imported && createdMs && (now - createdMs) > maxAgeMs) { droppedAge++; continue; }
       map.set(p.id, p);
       kept++;
     }
@@ -379,7 +383,9 @@
     if (!Array.isArray(cached) || !cached.length) return [];
     if (!Array.isArray(activeSubs) || !activeSubs.length) return cached.slice();
     const set = new Set(activeSubs.map((s) => String(s).toLowerCase()));
-    return cached.filter((p) => p && p.subreddit && set.has(String(p.subreddit).toLowerCase()));
+    /* Hand-added posts survive regardless of which subs are loaded —
+     * see the note in Cache.merge. */
+    return cached.filter((p) => p && (p.imported || (p.subreddit && set.has(String(p.subreddit).toLowerCase()))));
   };
 
   /* ------------------------- relative time ----------------------- */

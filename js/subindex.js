@@ -158,6 +158,41 @@
     return SubIndex.addText({}, text, weight == null ? 1 : weight);
   };
 
+  SubIndex.mass = function (vec) {
+    let m = 0;
+    for (const k in vec) m += vec[k];
+    return m;
+  };
+
+  /* Add a passage whose influence is set by the caller rather than by
+   * how long it is.
+   *
+   * addText gives every occurrence the same weight, so a 3,000-word
+   * body outvotes an 8-word title forty to one purely on length. That
+   * is the wrong reading of a post: the body says more, but it is not
+   * forty times more about the subject. Two corrections:
+   *
+   *   - repetition saturates. The tenth "eviction" says much less than
+   *     the first, so counts are damped to 1 + ln(n) before they are
+   *     weighed. Otherwise one word hammered through a rant carries the
+   *     passage on its own.
+   *   - length is then normalised away. Whatever survives is rescaled
+   *     so the passage contributes `mass` in total, and a longer body
+   *     spreads that same say across more terms rather than shouting. */
+  SubIndex.addTextWithMass = function (vec, text, mass) {
+    if (!text || !(mass > 0)) return vec;
+    const sub = SubIndex.vectorFromText(text, 1);
+    let total = 0;
+    for (const t in sub) {
+      sub[t] = 1 + Math.log(sub[t]);
+      total += sub[t];
+    }
+    if (!total) return vec;
+    const k = mass / total;
+    for (const t in sub) vec[t] = (vec[t] || 0) + sub[t] * k;
+    return vec;
+  };
+
   /* Cosine similarity, with an optional inverse-document-frequency
    * weight so that terms appearing in half the index (e.g. "political")
    * count for less than a term appearing in three subs. */

@@ -139,43 +139,63 @@
   /* Everything the estimate rests on, collapsed into a hover/long-press
    * title. The visible row stays scannable; the justification is one
    * gesture away rather than four lines of prose away. */
+  /* The floor of the estimate, in words rather than as an interval.
+   *
+   * "+220% (+20% to +758%)" asks the reader to know what a confidence
+   * interval is and then to do something with both ends of it. The part
+   * that changes a decision is the bottom end: whether the worst
+   * plausible case is still a gain.
+   *
+   * Only the reassuring case is worth a phrase. A floor below zero is
+   * what "likely" and "weak" already mean, and printing "could go
+   * either way" beside every one of them is a warning stamped on rows
+   * that are already labelled — it makes the badge say nothing and the
+   * list read as uniformly hopeless. Returns "" in that case. */
+  function rangeWords(r) {
+    if (r.liftLow == null || r.liftLow < 0.05) return "";
+    return `at least ${signed(r.liftLow)}`;
+  }
+
+  /* Everything the estimate rests on, collapsed into a hover/long-press
+   * title. The visible row stays scannable; the justification is one
+   * gesture away rather than four lines of prose away. */
   function evidenceTitle(r) {
     const bits = [];
-    if (r.liftLow != null && r.liftHigh != null) {
-      bits.push(`Typical post scores ${signed(r.lift)} against this community's own baseline (95% CI ${signed(r.liftLow)} to ${signed(r.liftHigh)})`);
+    if (r.lift > 0) {
+      const range = r.liftLow == null ? ""
+        : r.liftLow > 0
+          ? `, and unlikely to be worse than ${signed(r.liftLow)}`
+          : ", though it could turn out to be no better than usual";
+      bits.push(`A typical post here scores ${signed(r.lift)} more at this time than this community's own average${range}`);
     }
     if (r.window && r.window.slots < Timing.SLOTS) {
-      bits.push(`Statistically tied window ${Timing.windowLabel(r)} — any minute inside it is as good`);
+      bits.push(`Any time between ${Timing.windowLabel(r)} works about as well`);
     }
     if (r.effectiveN != null) {
-      bits.push(`${r.effectiveN.toFixed(1)} effective posts inside a ${r.bandwidthHours.toFixed(1)}h smoothing window`);
+      bits.push(`Based on about ${r.effectiveN.toFixed(0)} post${r.effectiveN.toFixed(0) === "1" ? "" : "s"} posted around that time`);
     }
     if (r.ratioAt != null && r.ratioBase != null) {
-      bits.push(`Upvote ratio ${Util.fmtPct(r.ratioAt)} at that moment against ${Util.fmtPct(r.ratioBase)} overall`);
+      bits.push(`${Util.fmtPct(r.ratioAt)} of votes are upvotes at that time, against ${Util.fmtPct(r.ratioBase)} the rest of the day`);
     }
     if (r.ratioDecided) {
-      bits.push("Reception picked the minute inside the tied window");
+      bits.push("Within the window, the exact time was picked by which minute gets the friendliest reception");
     }
     if (r.clipped) {
-      bits.push(`${r.clipped} extreme score${r.clipped === 1 ? "" : "s"} capped, so a single breakout post cannot set the peak`);
+      bits.push(`${r.clipped} runaway post${r.clipped === 1 ? " was" : "s were"} capped, so one viral hit cannot set the time`);
     }
     if (r.excluded) {
       bits.push(`${r.excluded} pinned or removed post${r.excluded === 1 ? "" : "s"} left out`);
     }
-    if (r.p != null) {
-      bits.push(`Permutation test against ${r.permutations || 250} reshuffles of the same posts: ${Timing.pLabel(r.p)}`);
-    }
     return bits.join(". ");
   }
 
-  /* Signal strength as a word, not a colour alone. */
   /* What the band on a row actually asserts. The words on their own
-   * invite everyone to supply their own scale, and the numbers beside
-   * them do not say which one earns which label. */
+   * invite everyone to supply their own scale, so each one says how
+   * much of a bet it is in terms of odds rather than thresholds. */
   const SIGNAL_TITLES = {
-    strong: "Strong: the shuffle test put this at p ≤ .05, the confidence interval stays above zero, and at least 5 posts sit near the slot. On pure noise this band fires about 1 time in 20.",
-    likely: "Likely: p ≤ .15 and at least a 15% lift. Probably real, but the interval may still cross zero. On pure noise this band fires about 1 time in 7.",
-    weak: "Weak: p ≤ .25 and at least a 25% lift. Worth knowing, not worth rearranging a day for.",
+    strong: "Strong — the pattern held up when we tested it against chance, and the worst case is still a gain. Roughly a 1-in-20 chance this is a fluke.",
+    likely: "Likely — probably a real pattern, but the payoff is less certain. Roughly a 1-in-7 chance this is a fluke.",
+    weak: "Weak — worth knowing, not worth rearranging your day for. This one could easily be chance.",
   };
 
   function signalBadge(r) {
@@ -186,20 +206,22 @@
   }
 
   /* The one-line justification under each community. Ordered by how
-   * much it should change your mind: effect size, then how much data
-   * is behind it, then whether the shuffle test believed it. */
+   * much it should change your mind: the size of the gain, how far it
+   * might fall short, when to post, and how much data says so. */
   function timingFacts(r) {
     if (r.ambient) {
       return `read from the sub's own ${Util.fmtNum(r.count)} loaded posts — your ${r.campaignCount} campaign post${r.campaignCount === 1 ? "" : "s"} there ${r.campaignCount === 1 ? "is" : "are"} too few to measure`;
     }
     const bits = [];
     if (r.lift > 0) {
-      /* The interval is not optional detail. A "+50%" that could just
-       * as easily be -8% is a different instruction from a "+50%"
-       * that bottoms out at +20%, and only one of them is worth
-       * rearranging an afternoon for. */
-      bits.push(`<strong>${signed(r.lift)}</strong>`
-        + (r.liftLow != null ? ` <span class="timing-ci">(${signed(r.liftLow)} to ${signed(r.liftHigh)})</span>` : ""));
+      /* How far the estimate might fall short is not optional detail. A
+       * "+50%" that could just as easily be -8% is a different
+       * instruction from a "+50%" that bottoms out at +20%, and only
+       * one of them is worth rearranging an afternoon for — but that is
+       * a sentence, not an interval. */
+      bits.push(`<strong>${signed(r.lift)}</strong>`);
+      const range = rangeWords(r);
+      if (range) bits.push(`<span class="timing-ci">${range}</span>`);
     }
     /* Anything inside the tied window is as good, and those windows
      * are often hours wide. Showing only the quarter hour would read
@@ -207,10 +229,9 @@
     if (r.window && r.window.minutes > 60 && r.window.slots < Timing.SLOTS) {
       bits.push(`${Util.escapeHtml(Timing.windowLabel(r))} window`);
     }
-    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts near it`);
-    if (r.p != null) bits.push(Util.escapeHtml(Timing.pLabel(r.p)));
+    if (r.effectiveN != null) bits.push(`${r.effectiveN.toFixed(0)} posts around then`);
     if (r.ratioAt != null && r.ratioBase != null && Math.abs(r.ratioAt - r.ratioBase) >= 0.01) {
-      bits.push(`ratio ${Util.fmtPct(r.ratioAt)} vs ${Util.fmtPct(r.ratioBase)}`);
+      bits.push(`${Util.fmtPct(r.ratioAt)} upvoted vs ${Util.fmtPct(r.ratioBase)} usual`);
     }
     if (r.dowName) bits.push(`${Util.escapeHtml(r.dowName)}s`);
     if (r.next) bits.push(Util.escapeHtml(r.next.inLabel));
@@ -222,7 +243,7 @@
   function flatNote(model) {
     if (!model.flat || !model.flat.length) return "";
     const names = model.flat.map((r) => `<span class="tag">r/${Util.escapeHtml(r.subreddit)}</span>`).join(" ");
-    return `<p class="timing-skipped">No time-of-day effect worth acting on in ${names} — across ${model.flat.length === 1 ? "its" : "their"} loaded posts, score does not track the clock. Post when the draft is ready.</p>`;
+    return `<p class="timing-skipped">Timing does not seem to matter in ${names} — across ${model.flat.length === 1 ? "its" : "their"} loaded posts, when you post makes no measurable difference. Post when the draft is ready.</p>`;
   }
 
   /* The compact all-communities list. Deliberately not the Timing
@@ -289,7 +310,7 @@
 
     let lead;
     if (!ranked.length && model.measured && model.measured.length) {
-      lead = `Score does not track the clock in ${model.measured.length === 1 ? "the one community with enough posts" : `any of the ${model.measured.length} communities with enough posts`}. Reshuffling the same posts against the same timestamps produces day curves as uneven as the real one, so there is no hour here worth waiting for.`;
+      lead = `Time of day makes no difference in ${model.measured.length === 1 ? "the one community with enough posts" : `any of the ${model.measured.length} communities with enough posts`}. Their good and bad hours look no different from what you would get by chance, so there is no hour here worth waiting for.`;
     } else if (!ranked.length) {
       lead = `None of your ${model.rows.length} communities has ${model.minSample} posts loaded yet — that is the floor for calling a slot a peak rather than a coincidence.`;
     } else if (ranked.length === 1) {
@@ -335,7 +356,7 @@
     if (!model) return "";
     if (!model.ranked.length) {
       if (model.measured && model.measured.length) {
-        return `<p class="timing-lead">Nothing here posts better at one time than another. ${model.measured.length === 1 ? "The one community" : `All ${model.measured.length} communities`} with enough posts to test came back flat — shuffling the scores across the same timestamps produces day curves just as uneven as the real one.</p>${flatNote(model)}`;
+        return `<p class="timing-lead">Nothing here posts better at one time than another. ${model.measured.length === 1 ? "The one community" : `All ${model.measured.length} communities`} with enough posts to test came back flat — their busy and quiet hours look no different from chance.</p>${flatNote(model)}`;
       }
       return `<p class="timing-lead">No community here has ${model.minSample} posts yet, so a peak would be a coin flip. Add more of the campaign's posts, or load the subreddit itself to borrow its ambient rhythm.</p>`;
     }
@@ -366,20 +387,20 @@
         <span><i class="tk-line"></i>what a typical post scores at that time</span>
         <span><i class="tk-win"></i>recommended window</span>
         <span><i class="tk-base"></i>this community's all-day average</span>
-        <span class="timing-key-note">x: hour of day · y: upvotes, log scale. The curve tracks the typical post, so a single breakout does not move it.</span>
+        <span class="timing-key-note">Across: hour of day. Up: upvotes, squashed so every post fits. The curve tracks the typical post, so a single breakout does not move it.</span>
       </p>`;
   }
 
   function timingPanel(r, tz) {
     const facts = [];
     if (r.lift > 0) {
-      facts.push(`<strong>${signed(r.lift)}</strong> on a typical post${r.liftLow != null ? ` (95% CI ${signed(r.liftLow)} to ${signed(r.liftHigh)})` : ""}`);
+      const range = rangeWords(r);
+      facts.push(`<strong>${signed(r.lift)}</strong> on a typical post${range ? ` — ${range}` : ""}`);
     }
-    if (r.window && r.window.slots < Timing.SLOTS) facts.push(`tied window ${Timing.windowLabel(r)}`);
-    if (r.effectiveN != null) facts.push(`${r.effectiveN.toFixed(0)} of ${Util.fmtNum(r.count)} posts near that time`);
-    if (r.p != null) facts.push(Util.escapeHtml(Timing.pLabel(r.p)));
+    if (r.window && r.window.slots < Timing.SLOTS) facts.push(`anywhere in ${Timing.windowLabel(r)}`);
+    if (r.effectiveN != null) facts.push(`${r.effectiveN.toFixed(0)} of ${Util.fmtNum(r.count)} posts went up around then`);
     if (r.ratioAt != null && r.ratioBase != null) {
-      facts.push(`${Util.fmtPct(r.ratioAt)} upvote ratio there vs ${Util.fmtPct(r.ratioBase)}`);
+      facts.push(`${Util.fmtPct(r.ratioAt)} upvoted there vs ${Util.fmtPct(r.ratioBase)} usual`);
     }
     if (r.dowName) facts.push(`best on ${Util.escapeHtml(r.dowName)}${r.dowLift > 0 ? ` (${signed(r.dowLift)})` : ""}`);
     else if (r.bestDow >= 0) facts.push(`busiest on ${DOW_SHORT[r.bestDow]}`);
@@ -1231,11 +1252,19 @@
           } catch (_) {}
           source = bits.join(" · ");
         } else {
-          /* No oEmbed title — pick the most common post title. */
+          /* No oEmbed title — pick the most common post title, ignoring
+           * any member still wearing a removal placeholder. A single
+           * real title in the group describes the story better than the
+           * placeholder does even if the placeholder is the majority. */
           const titleCounts = {};
           for (const p of g.posts) {
+            if (Analysis.isPlaceholderTitle(p)) continue;
             const t = (p.title || "").trim();
             if (t) titleCounts[t] = (titleCounts[t] || 0) + 1;
+          }
+          for (const p of g.posts) {
+            const t = (p.crosspost_parent_title || "").trim();
+            if (t && !titleCounts[t]) titleCounts[t] = 0.5;
           }
           const top = Object.entries(titleCounts).sort((a, b) => b[1] - a[1])[0];
           if (top && top[0]) {
@@ -1244,6 +1273,11 @@
               const host = new URL(g.key).host.replace(/^www\./, "");
               if (host) source = host;
             } catch (_) {}
+          } else if (g.kind === "native") {
+            /* Every member is a removal placeholder, so the group is
+             * real but nameless. The bare fullname means nothing to a
+             * reader; say what the group is instead. */
+            headline = "Cross-posted thread — title not archived";
           } else {
             headline = truncate(g.key, 90);
           }
@@ -1512,7 +1546,7 @@
       const skewLabel = p.karmaSkew >= 20 ? "all-or-nothing — a few posts run away with all the karma"
                       : p.karmaSkew >= 8  ? "skewed — a few breakouts dominate"
                       : p.karmaSkew >= 3  ? "mixed — most posts modest, occasional hit"
-                                          : "broadly engaged — even median posts get traction";
+                                          : "broadly engaged — even ordinary posts get traction";
       const stickyWarn = p.stickyShare >= 0.05
         ? `<span class="badge warn" title="Mod-pinned posts inflate the baseline metrics for this sub.">${Math.round(p.stickyShare * 100)}% pinned</span>`
         : "";
