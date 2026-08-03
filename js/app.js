@@ -729,10 +729,11 @@
     const card = document.getElementById("post-detail");
     const body = document.getElementById("post-detail-body");
     card.hidden = false;
-    const syncBtn = document.getElementById("post-detail-sync");
-    if (syncBtn) {
-      syncBtn.hidden = false;
-      syncBtn.dataset.post = post.id;
+    for (const id of ["post-detail-sync", "post-detail-place"]) {
+      const btn = document.getElementById(id);
+      if (!btn) continue;
+      btn.hidden = false;
+      btn.dataset.post = post.id;
     }
     body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
     try {

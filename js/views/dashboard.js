@@ -122,7 +122,17 @@
   function paintSection() {
     const section = activeSection();
     Dom.paintRail(RAIL, "dash-tab", section, "dash-", ".dash-section");
-    if (!bundle || painted.has(section)) return;
+    if (!bundle) return;
+
+    /* Outside the paint-once guard. The focus card holds a post the
+     * user picked and re-ranks it against whatever is loaded now, so
+     * it has to hear about every visit to the tab — but it renders
+     * itself, so repainting it costs nothing when nothing moved. */
+    if (section === "summary" && window.FocusView) {
+      safe("focus", () => FocusView.paint(timingModel, signature));
+    }
+
+    if (painted.has(section)) return;
     painted.add(section);
 
     const posts = bundle.posts;
@@ -163,6 +173,14 @@
    * to reach it — far enough and no further. Jumping straight to "all"
    * would be simpler, but someone with a hundred loaded subreddits
    * would pay for a hundred charts to look at one of them. */
+  /* Whether revealTiming would land anywhere. Callers that render a
+   * link to a community's chart ask first, because a control that
+   * silently does nothing is worse than one that was never drawn. */
+  View.canRevealTiming = function (key) {
+    if (!timingModel || !key) return false;
+    return (timingModel.ranked || []).some((r) => r.key === key);
+  };
+
   View.revealTiming = function (key) {
     if (!timingModel || !key) return;
     const ranked = timingModel.ranked || [];
@@ -287,6 +305,8 @@
       e.preventDefault();
       View.revealTiming(el.dataset.timingGoto);
     });
+
+    if (window.FocusView) FocusView.mount();
 
     Dom.wireRail(RAIL, "dash-tab", View.goToSection);
 
