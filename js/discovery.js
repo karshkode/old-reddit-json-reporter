@@ -286,14 +286,14 @@
       .filter((s) => (opts.includeStates ? true : s.kind !== "state"));
     if (!profiles.length) return [];
 
-    const idf = SubIndex.buildIdf(profiles.map((s) => s.vector));
+    const idf = SubIndex.idfFor(profiles.map((s) => s.vector));
     const ranked = profiles.map((sphere) => ({
       key: sphere.key,
       kind: sphere.kind,
       label: sphere.label,
       subs: sphere.subs,
       score: SubIndex.cosine(vector, sphere.vector, idf),
-      terms: SubIndex.overlapTerms(vector, sphere.vector, 5).map((t) => t.term),
+      terms: SubIndex.overlapTerms(vector, sphere.vector, 5, idf).map((t) => t.term),
     }));
 
     ranked.sort((a, b) => b.score - a.score);
@@ -463,7 +463,7 @@
     raw -= 0.26 * offtopicPenalty;
 
     const composite = clamp01(raw);
-    const overlap = SubIndex.overlapTerms(ctx.vector, vec, 6);
+    const overlap = SubIndex.overlapTerms(ctx.vector, vec, 6, ctx.idf);
 
     return {
       key: record.key,
@@ -750,7 +750,7 @@
     }
     const records = Array.from(byKey.values());
 
-    const idf = SubIndex.buildIdf(records.map((r) => r.vector).concat([vector]));
+    const idf = SubIndex.idfFor(records.map((r) => r.vector).concat([vector]));
     const ctx = {
       vector: vector,
       idf: idf,
@@ -772,21 +772,32 @@
       spheres: activeSpheres,
       autoSpheres: autoSpheres,
       vector: vector,
-      topTerms: Discovery.topTerms(vector, 12),
+      topTerms: Discovery.topTerms(vector, 12, idf),
     };
 
     report(100, "Done");
     return Discovery.refilter(result, opts.strict !== false);
   };
 
-  /* The highest-weight terms in a vector, single words only (bigrams
-   * make poor search queries against Reddit's index). */
-  Discovery.topTerms = function (vector, limit) {
-    return Object.entries(vector || {})
+  /* The most telling terms in a vector, single words only (bigrams make
+   * poor search queries against Reddit's index).
+   *
+   * "Most telling" used to mean "written most often", which is how a
+   * campaign about a data-centre protest reported itself as being about
+   * "remember", "article" and "part". Frequency answers a different
+   * question from the one both callers are asking: the line under
+   * Discover is claiming these words are what the match was made on,
+   * and the search queries want the words most likely to find a
+   * community rather than the words every community uses. Both want
+   * rarity, so both get it — and the terms come back spelled the way
+   * they were written, since a search for "organiz" finds nothing. */
+  Discovery.topTerms = function (vector, limit, idf) {
+    const weight = (term) => (idf ? (idf[term] || idf.__default || 1) : 1);
+    const ranked = Object.entries(vector || {})
       .filter(([term]) => term.indexOf(" ") === -1)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit || 10)
-      .map(([term]) => term);
+      .map(([term, v]) => ({ term: term, weight: v * weight(term) }))
+      .sort((a, b) => b.weight - a.weight);
+    return SubIndex.presentable(ranked, limit || 10).map((t) => t.term);
   };
 
   /* Split the campaign's vocabulary into several independent search
@@ -797,15 +808,23 @@
     const count = n || 6;
     const queries = [];
 
+    /* Candidates do not exist yet, so there is no run-local corpus to
+     * pool — but the standing one is the whole point here: these are
+     * the words being sent to Reddit's search, and searching for the
+     * words every community uses returns every community. */
+    const idf = SubIndex.idfFor([vector]);
+    const weigh = (term) => idf[term] || idf.__default || 1;
+
     /* Phrases first — they are the most specific thing we know. */
     const phrases = Object.entries(vector || {})
-      .filter(([term]) => term.indexOf(" ") > -1)
-      .sort((a, b) => b[1] - a[1])
+      .filter(([term]) => term.indexOf(" ") > -1 && !SubIndex.isWeak(term))
+      .map(([term, v]) => ({ term: term, weight: v * weigh(term) }))
+      .sort((a, b) => b.weight - a.weight)
       .slice(0, 3)
-      .map(([term]) => term);
+      .map((t) => SubIndex.surfaceOf(t.term));
     for (const phrase of phrases) queries.push(`"${phrase}"`);
 
-    const terms = Discovery.topTerms(vector, 12);
+    const terms = Discovery.topTerms(vector, 12, idf);
     /* Pair terms up so each query has enough specificity to avoid
      * returning the default-front-page subs. */
     for (let i = 0; i < terms.length && queries.length < count; i += 2) {
@@ -926,7 +945,7 @@
     await SubIndex.ensure(shortlist.map((e) => e.name), { limit: 24, concurrency: 4 });
 
     const records = shortlist.map((e) => SubIndex.get(e.name)).filter(Boolean);
-    const idf = SubIndex.buildIdf(records.map((r) => r.vector).concat([target.vector]));
+    const idf = SubIndex.idfFor(records.map((r) => r.vector).concat([target.vector]));
 
     const out = [];
     for (const entry of shortlist) {
@@ -942,7 +961,7 @@
         similarity: rescale(sim),
         score: Math.round(clamp01(rescale(sim) * 0.7 * agreement + Math.min(0.3, entry.weight * 0.3)) * 100),
         sources: Array.from(entry.sources),
-        terms: SubIndex.overlapTerms(target.vector, record.vector, 4).map((t) => t.term),
+        terms: SubIndex.overlapTerms(target.vector, record.vector, 4, idf).map((t) => t.term),
       });
     }
 
@@ -1006,7 +1025,7 @@
     }
 
     const entries = Array.from(byKey.values());
-    const idf = SubIndex.buildIdf(entries.map((e) => e.record.vector));
+    const idf = SubIndex.idfFor(entries.map((e) => e.record.vector));
 
     const results = entries.map((entry) => {
       const record = entry.record;
@@ -1179,7 +1198,7 @@
         records.push(stub);
       }
 
-      const idf = SubIndex.buildIdf(records.map((r) => r.vector).concat([vector]));
+      const idf = SubIndex.idfFor(records.map((r) => r.vector).concat([vector]));
       const ctx = {
         vector: vector,
         idf: idf,
@@ -1206,7 +1225,7 @@
       return {
         post: post,
         vector: vector,
-        terms: Discovery.topTerms(vector, 8),
+        terms: Discovery.topTerms(vector, 8, idf),
         spheres: spheres,
         home: SubIndex.get(home) || null,
         communities: scored.slice(0, opts.limit || 12),

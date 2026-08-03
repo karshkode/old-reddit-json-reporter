@@ -120,9 +120,47 @@
    * which reads as noise. */
   if (window.SubIndex && SubIndex.STOP) for (const w of SubIndex.STOP) STOPWORDS.add(w);
 
+  /* Words that are grammar rather than subject: see the note on
+   * SubIndex.WEAK. They are not dropped, because "far right" and "young
+   * voters" need them, but they never stand as a keyword or a theme of
+   * their own. Kept apart from STOPWORDS deliberately — folding them in
+   * would take the phrases with them. */
+  function isWeak(term) {
+    if (!window.SubIndex || !SubIndex.WEAK) return false;
+    return SubIndex.WEAK.has(term) || SubIndex.WEAK.has(SubIndex.stem(term));
+  }
+
+  const CLAUSE = /[.,;:!?()\[\]{}"|/\\\u2013\u2014\u2022\n\r]+/;
+
   function tokenize(text) {
-    return ((text || "").toLowerCase().match(/[a-z][a-z'-]{2,}/g) || [])
-      .filter((t) => !STOPWORDS.has(t) && t.length >= 3 && t.length <= 28);
+    const runs = tokenizeRuns(text);
+    return runs.length === 1 ? runs[0] : [].concat.apply([], runs);
+  }
+
+  /* Stretches of words that really were next to each other, so phrases
+   * are only built from adjacency that exists. Without this, dropping
+   * the stopwords out of "wage theft and the fight for better pay"
+   * leaves every survivor touching every other one and the phrase list
+   * fills up with pairs nobody wrote. */
+  function tokenizeRuns(text) {
+    const runs = [];
+    for (const clause of String(text || "").toLowerCase().split(CLAUSE)) {
+      let run = [];
+      for (const word of clause.split(/[^a-z'-]+/)) {
+        /* "here's" is not a word the way "here" is, and no stoplist
+         * will ever hold every contraction. */
+        const bare = word.replace(/^['-]+|['-]+$/g, "").replace(/'(s|re|ve|ll|d|m|t)$/, "");
+        const t = /^[a-z][a-z'-]{2,}$/.test(bare) ? bare : "";
+        if (t && !STOPWORDS.has(t) && t.length <= 28) {
+          run.push(t);
+        } else if (run.length) {
+          runs.push(run);
+          run = [];
+        }
+      }
+      if (run.length) runs.push(run);
+    }
+    return runs;
   }
 
   /* The words of a post, headline and body alike. Counted once per post
@@ -145,6 +183,7 @@
       for (const t of postTerms(p)) counts[t] = (counts[t] || 0) + 1;
     }
     return Object.entries(counts)
+      .filter(([word]) => !isWeak(word))
       .map(([word, count]) => ({ word, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, limit || 30);
@@ -153,15 +192,17 @@
   Analysis.extractBigrams = function (posts, limit) {
     const counts = {};
     for (const p of posts) {
-      const toks = tokenize(Util.postText(p, BODY_SCAN));
       const seen = new Set();
-      for (let i = 0; i < toks.length - 1; i++) {
-        const a = toks[i], b = toks[i + 1];
-        if (STOPWORDS.has(a) || STOPWORDS.has(b)) continue;
-        const k = a + " " + b;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        counts[k] = (counts[k] || 0) + 1;
+      for (const toks of tokenizeRuns(Util.postText(p, BODY_SCAN))) {
+        for (let i = 0; i < toks.length - 1; i++) {
+          const k = toks[i] + " " + toks[i + 1];
+          /* Only a phrase of two grammar words is worthless. One of
+             each is the useful case: "far right", "young voters". */
+          if (isWeak(toks[i]) && isWeak(toks[i + 1])) continue;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          counts[k] = (counts[k] || 0) + 1;
+        }
       }
     }
     return Object.entries(counts)
