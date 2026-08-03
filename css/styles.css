@@ -899,6 +899,10 @@ tbody td .title-text {
   color: var(--accent-2);
   font-size: 14px;
 }
+.campaign-post-row .cpr-place {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .campaign-post-row .cpr-remove {
   appearance: none;
   border: 1px solid var(--border-strong);

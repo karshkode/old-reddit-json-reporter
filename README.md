@@ -122,15 +122,14 @@ same message cross-posted to several communities.
 
 The list view shows every campaign as a tile with goal progress, plus a
 14-day calendar strip and a two-campaign comparison. Opening one gives
-you a KPI row and goal bars above seven tabs:
+you a KPI row and goal bars above six tabs:
 
 | Section | What is in it |
 |---|---|
 | **Overview** | How the campaign is doing in plain English, what separates its best posts from its worst, and the fingerprint it presents to a new community |
 | **Trends** | Campaign-scoped charts: activity over time by subreddit, score vs comments, title tone and score spread |
-| **Subreddits** | When to post community by community, then a trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. |
-| **Posts** | Every tracked post, with paste-to-add and per-row removal |
-| **Targeting** | Discovery — see below — plus a ranking of the subs already in your dashboard by how well they fit this campaign |
+| **Subreddits** | When to post community by community, then a trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. Discovery — see below — sits at the foot of the tab: the communities this campaign has reached, then the ones it has not. |
+| **Posts** | Every tracked post, with paste-to-add, per-row removal, and **Where next** on each one |
 | **Plan** | Cross-post cascade scheduling, title prediction and rewriting, volunteer coverage |
 | **Settings** | Goals, digest export, delete |
 
@@ -455,7 +454,7 @@ index and current view.
 | `js/postcache.js` | IndexedDB post cache |
 | `js/subindex.js` | IndexedDB subreddit index: metadata, derived term vectors, stemming, 30-day TTL |
 | `js/seeds.js` | The curated catalog — issue, state and audience spheres, starter bundles |
-| `js/analysis.js` | Aggregates, activism-tuned lexicon sentiment, keywords and bigrams, themes, per-sub profiles and per-sub posting times, campaign profiles, targeting, comment-side analysis, title quality |
+| `js/analysis.js` | Aggregates, activism-tuned lexicon sentiment, keywords and bigrams, themes, per-sub profiles and per-sub posting times, campaign profiles, comment-side analysis, title quality |
 | `js/discovery.js` | The discovery pipeline: campaign and single-post vectors, sphere ranking, candidate scoring, filtering, similar communities |
 | `js/charts.js` | Chart.js wrappers plus dynamic mount/destroy for cards that come and go |
 | `js/campaigns.js` | Campaign storage with an in-memory mirror for blocked-storage browsers |

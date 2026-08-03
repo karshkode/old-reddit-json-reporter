@@ -711,7 +711,7 @@
 }
 
 /* =====================================================================
-   DISCOVERY — sphere picker on the campaign targeting section
+   DISCOVERY — sphere picker at the foot of the campaign Subreddits tab
    ===================================================================== */
 
 .sphere-picker {
@@ -1358,50 +1358,6 @@ body.sheet-open {
 .focus-reach-n {
   color: var(--text-mute);
   font-variant-numeric: tabular-nums;
-}
-
-/* ---- picking which post to place, from a campaign ---- */
-
-.place-picker {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--s-2);
-}
-.place-pick-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  padding: var(--s-2) var(--s-3);
-  background: var(--bg-elev-2);
-  border-radius: var(--radius-xs);
-}
-.place-pick-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.place-pick-title {
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-.place-pick-meta {
-  font-size: var(--fs-xs);
-  color: var(--text-mute);
-}
-.place-pick-row .btn { flex: 0 0 auto; }
-
-@media (max-width: 560px) {
-  .place-pick-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--s-2);
-  }
-  .place-pick-row .btn { width: 100%; justify-content: center; }
 }
 
 /* ---- did you post it? ---- */

@@ -68,19 +68,12 @@
     activeSpheres: [],
     lastDiscoverResult: null,
     lastDiscoverCtx: null,
-    targetingFor: { ai: null, campaigns: null },
     recommend: {
-      targeting: {
-        inline: { page: 0, pageSize: 25 },
-        ai: { page: 0, pageSize: 25 },
-        campaigns: { page: 0, pageSize: 25 },
-      },
       discover: {
         new: { page: 0, pageSize: 25 },
         already: { page: 0, pageSize: 25 },
       },
     },
-    lastRenderedTargeting: { inline: null, ai: null, campaigns: null },
 
     /* ---- Campaign workspace ---- */
     openCampaignId: null,

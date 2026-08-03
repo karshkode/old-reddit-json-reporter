@@ -977,7 +977,6 @@
         profile: Analysis.profile([], { label: campaign.name }),
         perSub: [],
         comparison: null,
-        targets: [],
         narrative: "<p>No resolved posts yet — nothing to analyze.</p>",
       };
     }
@@ -1002,13 +1001,9 @@
     })).sort((a, b) => b.totalScore - a.totalScore);
 
     const comparison = Analysis.compareTopBottom(agg.posts);
-    /* Was 8. Now full ranked tail so the inline targeting card in
-     * the campaign detail can paginate through the entire ranked
-     * list of loaded subs, not just the top handful. */
-    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 200 });
     const narrative = buildCampaignNarrative(campaign, profile, perSubArr, comparison);
 
-    return { profile, perSub: perSubArr, comparison, targets, narrative };
+    return { profile, perSub: perSubArr, comparison, narrative };
   }
 
   function buildCampaignNarrative(campaign, profile, perSub, comparison) {
@@ -1096,65 +1091,6 @@
     paintCalendar();
   }
 
-  function refreshTargeting(which) {
-    const id = which === "ai" ? "targeting-campaign" : "campaigns-targeting-campaign";
-    const resultId = which === "ai" ? "targeting-results" : "campaigns-targeting-results";
-    const select = document.getElementById(id);
-    const out = document.getElementById(resultId);
-    if (!select || !out) return;
-    const campaignId = select.value || state.targetingFor[which];
-    if (!campaignId) {
-      out.innerHTML = '<div class="empty">Pick a campaign above to see targeting recommendations.</div>';
-      return;
-    }
-    state.targetingFor[which] = campaignId;
-    const campaign = Campaigns.get(campaignId);
-    if (!campaign) {
-      out.innerHTML = '<div class="empty">Campaign not found.</div>';
-      return;
-    }
-    const summary = state.campaignSummaries[campaign.id];
-    if (!summary || !summary.posts || !summary.posts.length) {
-      out.innerHTML = `<div class="empty">"${Util.escapeHtml(campaign.name)}" has no resolved posts. Open it on the Campaigns tab and tap Refresh, then revisit.</div>`;
-      return;
-    }
-    const profile = Analysis.campaignProfile(summary.posts, campaign);
-    /* Was 10. Full ranked list so the AI Insights / Campaigns-tab
-     * targeting card has plenty of depth for pagination. */
-    const targets = Analysis.recommendTargets(profile, state.subProfiles, { limit: 200 });
-    /* Reset to page 0 on a fresh recompute (campaign change, etc.) so
-     * the user lands on the top of the new ranking instead of being
-     * stranded on page 5 of the previous campaign's results. */
-    if (state.recommend.targeting[which]) state.recommend.targeting[which].page = 0;
-    renderTargetingInto(which, campaign, targets, out, { heading: true });
-  }
-
-  /* Render a ranked target list and register it as a pageable surface,
-   * so the pagination handler can repaint it later without recomputing
-   * the ranking. The views call this rather than UI.renderTargeting
-   * directly — bookkeeping the caller should not have to remember. */
-  function renderTargetingInto(surfaceKey, campaign, targets, container, opts) {
-    opts = opts || {};
-    state.lastRenderedTargeting[surfaceKey] = { campaign, targets, container, opts };
-    UI.renderTargeting(campaign, targets, container, Object.assign({}, opts, {
-      surfaceKey: surfaceKey,
-      paging: state.recommend.targeting[surfaceKey] || { page: 0, pageSize: 25 },
-    }));
-  }
-
-  /* Re-render whichever recommendation surface the user just paged
-   * through. Looks up the stashed (campaign, targets, container) and
-   * calls UI.renderTargeting again with the latest paging state.
-   * Avoids re-running Analysis.recommendTargets — pagination is a
-   * pure display concern, the ranked list is unchanged. */
-  function rerenderTargeting(surfaceKey) {
-    const slot = state.lastRenderedTargeting[surfaceKey];
-    if (!slot || !slot.campaign || !slot.container) return;
-    UI.renderTargeting(slot.campaign, slot.targets, slot.container, Object.assign({}, slot.opts || {}, {
-      surfaceKey,
-      paging: state.recommend.targeting[surfaceKey] || { page: 0, pageSize: 25 },
-    }));
-  }
   /* Everything the discovery panel shows comes from one stashed result,
    * so one function paints all of it. A fresh run, a Relevant/All toggle
    * and a page change all land here, which is what keeps the candidate
@@ -3780,16 +3716,14 @@
     });
   }
 
-  /* Pagination handlers for the recommendation surfaces.
+  /* Pagination handlers for the discovery results.
    *
-   * Renderers emit page / size buttons with attributes like
-   *   data-targeting-page="next"   data-targeting-surface="ai"
-   *   data-targeting-size="50"     data-targeting-surface="inline"
+   * The renderer emits page / size buttons with attributes like
    *   data-discover-page="prev"    data-discover-surface="new"
    *   data-discover-size="all"     data-discover-surface="already"
    *
    * Single document-level click handler routes every button into
-   * state.recommend.{targeting|discover}.<slot> and re-renders the
+   * state.recommend.discover.<slot> and re-renders the
    * affected surface from its stashed (campaign, targets, container)
    * triplet. Doing this via delegation means the renderer is free
    * to rebuild its DOM on every render without us having to re-bind
@@ -3797,29 +3731,6 @@
   function wireRecommendPagination() {
     document.addEventListener("click", (e) => {
       const t = e.target;
-
-      const tgtSize = t.closest && t.closest("[data-targeting-size]");
-      if (tgtSize) {
-        const surface = tgtSize.dataset.targetingSurface;
-        const slot = state.recommend.targeting[surface];
-        if (!slot) return;
-        const sz = tgtSize.dataset.targetingSize;
-        slot.pageSize = (sz === "all" ? "all" : Number(sz) || 25);
-        slot.page = 0;
-        rerenderTargeting(surface);
-        return;
-      }
-
-      const tgtPage = t.closest && t.closest("[data-targeting-page]");
-      if (tgtPage) {
-        const surface = tgtPage.dataset.targetingSurface;
-        const slot = state.recommend.targeting[surface];
-        if (!slot) return;
-        slot.page = (slot.page || 0) + (tgtPage.dataset.targetingPage === "next" ? 1 : -1);
-        if (slot.page < 0) slot.page = 0;
-        rerenderTargeting(surface);
-        return;
-      }
 
       const dscSize = t.closest && t.closest("[data-discover-size]");
       if (dscSize) {
@@ -3967,7 +3878,6 @@
     openCampaign: openCampaign,
     publishCampaign: publishCampaign,
     refreshCampaignSummaries: refreshAllCampaignSummaries,
-    renderTargetingInto: renderTargetingInto,
     openComposer: function (id) { return openComposer(id); },
     openPostDetail: openPostDetail,
     renderRelatedForDetail: renderRelatedForDetail,
