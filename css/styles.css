@@ -59,6 +59,21 @@ tbody td {
 }
 tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
 tbody td.title { max-width: 460px; }
+/* The title was taking 460px of a table that had ~1000 to spend across
+ * eight columns, which pushed score, ratio and comments — the numbers
+ * the page exists to show — off the right-hand edge. It still gets the
+ * largest share, just not at the expense of everything after it. Only
+ * while this is a table: below 720px it is a stack of cards and the
+ * title wants the full width of one. */
+@media (min-width: 721px) {
+  #posts-table tbody td.title { max-width: 340px; }
+}
+/* Author is the first thing worth losing when there is no room: it is
+ * repeated down the column and rarely what anyone scans for. */
+@media (min-width: 721px) and (max-width: 1340px) {
+  #posts-table th[data-sort="author"],
+  #posts-table td[data-label="Author"] { display: none; }
+}
 tbody td a.title-text {
   /* Resets the default underlined-blue link appearance so the
    * title looks like the table text it always has — but the
@@ -1618,14 +1633,42 @@ select { max-width: 100%; min-width: 0; }
     display: none;
   }
 }
-/* ---------- Posts-table "+ Campaign" action ---------- */
+/* ---------- Posts-table row actions ---------- */
 
+/* The table is wider than the card it sits in — title and author see
+ * to that — so the last column used to sit a couple of hundred pixels
+ * past the right edge, reachable only by scrolling sideways in a
+ * container with no visible scrollbar. The two things you can do to a
+ * post were, in practice, invisible. Pinning the column to the edge of
+ * the scroll box keeps them where the eye already is; the rest of the
+ * row still scrolls underneath. */
 #posts-table th.action-col,
 #posts-table td.row-action {
   width: 1%;
   white-space: nowrap;
   text-align: right;
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--bg-elev);
+  /* border-collapse eats borders on sticky cells, so the divider that
+   * separates a pinned column from what slides beneath it has to be a
+   * shadow. */
+  box-shadow: -1px 0 0 var(--border), -8px 0 12px -8px rgba(0, 0, 0, 0.18);
 }
+#posts-table th.action-col { z-index: 3; }
+/* The pinned cell paints its own background, so it has to answer the
+ * row's hover itself or it stays pale while the row darkens. */
+#posts-table tbody tr:hover td.row-action,
+#posts-table tbody tr:active td.row-action { background: var(--bg-elev-2); }
+#posts-table tbody tr.editing td.row-action { background: rgba(255, 87, 34, 0.06); }
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.row-actions .btn { white-space: nowrap; }
 #posts-table tr.editing { background: rgba(255, 87, 34, 0.06); }
 /* The inline form-row dropped beneath a post when the user clicks
  * "+ Campaign". Mirrors the cross-post → campaign form so the visual
@@ -1755,16 +1798,31 @@ select { max-width: 100%; min-width: 0; }
   .post-make-form input { font-size: 16px; min-height: 38px; }
   .cand-tracker-row input { font-size: 16px; min-height: 38px; flex-basis: 100%; }
   .cand-tracker-row .btn { flex: 1 1 100%; }
-  /* On mobile, the table is rendered as stacked rows with data-label
-   * showing each cell's label. Make the action button full-width and
-   * a clear primary button so it's the obvious next step. */
+  /* On mobile the table is a stack of cards, so nothing is off to the
+   * right and the pinning above has nothing to pin against. */
   #posts-table td.row-action {
     display: block !important;
     text-align: left;
     width: auto;
-    margin: 8px 0 0;
+    margin: 10px 0 0;
+    position: static;
+    box-shadow: none;
+    background: transparent;
   }
-  #posts-table td.row-action .btn { width: 100%; justify-content: center; }
+  #posts-table tbody tr:hover td.row-action,
+  #posts-table tbody tr:active td.row-action,
+  #posts-table tbody tr.editing td.row-action { background: transparent; }
+  /* Two equal buttons rather than one full-bleed primary. A screen of
+   * twenty-five cards each ending in the same orange bar reads as a
+   * single insistent instruction repeated down the page, which is both
+   * louder than the action deserves and hid the fact that there were
+   * two things to do. */
+  #posts-table td.row-action .row-actions { gap: 8px; }
+  #posts-table td.row-action .row-actions .btn {
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 38px;
+  }
   /* Editing-state highlight survives the mobile card layout */
   #posts-table tbody tr.editing { background: rgba(255, 87, 34, 0.10); }
   /* The form-row is a sibling <tr> rendered as its own card on mobile.

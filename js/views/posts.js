@@ -165,12 +165,33 @@
        next. The dashboard card can pick any post, but nobody goes
        looking for a picker while already looking at the post. */
     const place = Dom.byId("post-detail-place");
-    if (place) place.addEventListener("click", () => {
-      const id = place.dataset.post;
-      const post = id && AppState.posts.find((p) => p.id === id);
-      if (post && window.FocusView) FocusView.focusPost(post);
+    if (place) place.addEventListener("click", () => placePost(place.dataset.post));
+
+    /* The same action from the table, where it is the reason most
+       people are on this page at all. Delegated because the rows are
+       rebuilt on every filter, sort and page change. */
+    document.addEventListener("click", (ev) => {
+      const btn = ev.target.closest && ev.target.closest('[data-action="place-post"]');
+      if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      placePost(btn.dataset.postId);
     });
   };
+
+  /* Hand a post to the dashboard's placement card and go there. The
+     ranking wants timing models for every loaded community, which is
+     the dashboard's business rather than something worth duplicating
+     into a table row. */
+  function placePost(id) {
+    const post = id && AppState.posts.find((p) => p.id === id);
+    if (!post) {
+      Util.toast("That post is no longer loaded — sync and try again.", "error");
+      return;
+    }
+    if (!window.FocusView) return;
+    FocusView.focusPost(post);
+  }
 
   Router.register("posts", {
     title: "Posts",

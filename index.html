@@ -699,8 +699,7 @@
                   <th data-sort="score" class="sortable num">Score</th>
                   <th data-sort="upvote_ratio" class="sortable num">UV %</th>
                   <th data-sort="num_comments" class="sortable num">Comments</th>
-                  <th data-sort="id" class="sortable">ID</th>
-                  <th class="action-col" aria-label="Make campaign from this post"></th>
+                  <th class="action-col" scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody id="posts-tbody"></tbody>
@@ -714,7 +713,7 @@
             <div><h2>Post detail</h2></div>
             <div class="card-actions">
               <button id="post-detail-place" class="btn small" type="button" hidden
-                      title="Rank where this post should go next, by community, hour and how much better it typically does there">Place this post</button>
+                      title="Rank the communities this post should go to next, with the hour to post and how much better it typically does there">Where next</button>
               <button id="post-detail-sync" class="btn small" type="button" hidden
                       title="Re-read this one post's score and comments">↻ Sync</button>
               <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
@@ -897,7 +896,9 @@
         <button type="button" class="btn small ghost" data-action="analyze-open-post">Open in Posts</button>
         <span class="spacer"></span>
         <button type="button" class="btn small" data-action="close-analyze-modal">Done</button>
-        <button type="button" class="btn small primary" id="analyze-campaign-btn">+ Campaign from this post</button>
+        <button type="button" class="btn small" id="analyze-place-btn"
+                title="Rank the communities this post should go to next, with the hour to post">Where next</button>
+        <button type="button" class="btn small primary" id="analyze-campaign-btn">＋ Campaign</button>
       </div>
     </div>
   </div>
