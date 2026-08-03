@@ -205,6 +205,17 @@
     persist();
   };
 
+  /* Drop everything. persist() writes an empty list rather than
+   * removing the key, so a later read cannot fall back to a stale
+   * gzip mirror of the campaigns this just deleted. */
+  Campaigns.clear = function () {
+    ensureMirror();
+    const n = mirror.length;
+    mirror = [];
+    persist();
+    return n;
+  };
+
   Campaigns.get = function (id) {
     return ensureMirror().find((c) => c.id === id) || null;
   };
