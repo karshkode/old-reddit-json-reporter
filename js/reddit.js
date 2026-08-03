@@ -388,6 +388,41 @@
     return n;
   }
 
+  /* Titles the archive substitutes for the real one when a post was
+   * taken down. Reddit itself keeps the title on removal, so these are
+   * a property of the archived record rather than of the post — a post
+   * removed and later reinstated can still come back to us wearing one.
+   *
+   * They have to be recognised because they are not titles and must not
+   * be treated as one. Left alone, every removed post across every
+   * subreddit shares the same "title", which the cross-post detector
+   * duly reads as one story cross-posted to twenty-seven communities. */
+  const PLACEHOLDER_TITLE = /^\s*[\[(]\s*(?:removed|deleted|unavailable)\b[^\])]*[\])]\s*$/i;
+
+  function isPlaceholderTitle(title) {
+    return PLACEHOLDER_TITLE.test(String(title || ""));
+  }
+  Reddit.isPlaceholderTitle = isPlaceholderTitle;
+
+  /* A placeholder is not the only thing we know about a post. A
+   * crosspost carries its parent's title, and a link post carries the
+   * oEmbed title of whatever it points at — either is the actual
+   * subject, and showing it beats showing "[ Removed by moderator ]".
+   * The substitution is recorded in title_source so the UI can say
+   * where the words came from rather than passing them off as the
+   * post's own. */
+  function resolveTitle(d, xpParent, oe, sm) {
+    const raw = d.title;
+    if (!isPlaceholderTitle(raw)) return { title: raw, placeholder: false, source: null };
+    const parent = xpParent && xpParent.title;
+    if (parent && !isPlaceholderTitle(parent)) {
+      return { title: parent, placeholder: true, source: "crosspost" };
+    }
+    const media = oe.title || sm.title;
+    if (media) return { title: media, placeholder: true, source: "link" };
+    return { title: raw, placeholder: true, source: null };
+  }
+
   function normalizePost(d) {
     /* Embedded-media metadata.
      *
@@ -422,12 +457,17 @@
      * crosspost_parent_list[0] when present. */
     const xpParentList = Array.isArray(d.crosspost_parent_list) ? d.crosspost_parent_list : [];
     const xpParent = xpParentList[0] || null;
+    const titled = resolveTitle(d, xpParent, oe, sm);
     return {
       id: d.id,
       fullname: d.name,
       subreddit: d.subreddit,
       subreddit_prefixed: d.subreddit_name_prefixed,
-      title: d.title,
+      title: titled.title,
+      /* True when the archive gave us a removal placeholder where the
+       * title should be, whether or not we found a substitute. */
+      title_placeholder: titled.placeholder,
+      title_source: titled.source,
       author: d.author,
       created_utc: d.created_utc,
       score: d.score,

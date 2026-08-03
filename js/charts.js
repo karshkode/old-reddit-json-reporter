@@ -365,7 +365,7 @@
       data: {
         datasets: [
           {
-            label: capped ? "Posts (extremes capped in the fit)" : "Posts",
+            label: capped ? "Posts (runaway scores capped)" : "Posts",
             data: points,
             showLine: false,
             pointRadius: 2,
@@ -428,7 +428,7 @@
           }),
           y: Object.assign({}, base.scales.y, {
             type: "logarithmic",
-            title: axisTitle(opts, "upvotes (log)", t),
+            title: axisTitle(opts, "upvotes", t),
           }),
         },
       }),

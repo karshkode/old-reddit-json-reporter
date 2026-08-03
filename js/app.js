@@ -171,7 +171,8 @@
       list = list.filter((p) =>
         (p.title || "").toLowerCase().includes(q) ||
         (p.author || "").toLowerCase().includes(q) ||
-        (p.flair || "").toLowerCase().includes(q)
+        (p.flair || "").toLowerCase().includes(q) ||
+        (p.selftext || "").toLowerCase().includes(q)
       );
     }
     if (state.postsSubFilter) {

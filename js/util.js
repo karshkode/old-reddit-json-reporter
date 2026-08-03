@@ -96,6 +96,42 @@
     return t.replace(/[^A-Za-z0-9_]/g, "").toLowerCase();
   };
 
+  /* The readable body of a self post, cleaned up enough to be worth
+   * tokenising. Raw selftext is markdown, and markdown is mostly
+   * punctuation and URLs once you take the words out — a bare link
+   * tokenises to "https www reddit com", which is vocabulary the post
+   * does not actually have. Link text is kept, link targets are not.
+   *
+   * Returns "" for removed posts and for link posts with no body, so
+   * callers can treat "no body" and "nothing worth reading" alike. */
+  Util.postBody = function (post, limit) {
+    if (!post || post.removed) return "";
+    let s = String(post.selftext || "");
+    if (!s || s === "[removed]" || s === "[deleted]") return "";
+    s = s
+      .replace(/```[\s\S]*?```/g, " ")          /* fenced code */
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")    /* images */
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")  /* links: keep the text */
+      .replace(/\bhttps?:\/\/\S+/gi, " ")       /* bare URLs */
+      .replace(/\/?[ru]\/[A-Za-z0-9_-]+/g, " ") /* r/sub and u/user handles */
+      .replace(/^&gt;.*$/gm, " ")               /* quoted text: someone else's words */
+      .replace(/^>.*$/gm, " ")
+      .replace(/&amp;#?\w+;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const cap = limit == null ? 4000 : limit;
+    return s.length > cap ? s.slice(0, cap) : s;
+  };
+
+  /* Everything about a post that carries its subject: the headline, the
+   * framing the community applied, and the body. One accessor so that
+   * "does this analysis read bodies?" has a single answer. */
+  Util.postText = function (post, limit) {
+    if (!post) return "";
+    return [post.title || "", post.flair || "", Util.postBody(post, limit)]
+      .filter(Boolean).join(" ");
+  };
+
   /* Accept Reddit post IDs in any of these forms (mixed in one paste):
    *   1abcd2e
    *   t3_1abcd2e

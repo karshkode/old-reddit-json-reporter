@@ -125,11 +125,24 @@
       .filter((t) => !STOPWORDS.has(t) && t.length >= 3 && t.length <= 28);
   }
 
+  /* The words of a post, headline and body alike. Counted once per post
+   * rather than once per mention, so a term repeated twenty times in
+   * one long body ranks as one post talking about it — which is what a
+   * theme is. Without that, keyword lists from text-post communities
+   * are just whichever author wrote the most. */
+  function postTerms(p) {
+    return new Set(tokenize(Util.postText(p, BODY_SCAN)));
+  }
+
+  /* Bodies are read up to this many characters when mining keywords.
+   * Long enough for the argument, short enough that a copy-pasted
+   * article does not become the campaign's vocabulary. */
+  const BODY_SCAN = 2000;
+
   Analysis.extractKeywords = function (posts, limit) {
     const counts = {};
     for (const p of posts) {
-      const toks = tokenize((p.title || "") + " " + (p.flair || ""));
-      for (const t of toks) counts[t] = (counts[t] || 0) + 1;
+      for (const t of postTerms(p)) counts[t] = (counts[t] || 0) + 1;
     }
     return Object.entries(counts)
       .map(([word, count]) => ({ word, count }))
@@ -140,11 +153,14 @@
   Analysis.extractBigrams = function (posts, limit) {
     const counts = {};
     for (const p of posts) {
-      const toks = tokenize(p.title || "");
+      const toks = tokenize(Util.postText(p, BODY_SCAN));
+      const seen = new Set();
       for (let i = 0; i < toks.length - 1; i++) {
         const a = toks[i], b = toks[i + 1];
         if (STOPWORDS.has(a) || STOPWORDS.has(b)) continue;
         const k = a + " " + b;
+        if (seen.has(k)) continue;
+        seen.add(k);
         counts[k] = (counts[k] || 0) + 1;
       }
     }
@@ -178,12 +194,17 @@
       ...uni.map((x) => ({ kind: "word", term: x.word })),
     ];
 
+    /* Stripping markdown out of a body is not free, and every seed
+     * rescans every post. Twenty seeds against twenty thousand posts is
+     * four hundred thousand rescans of text that has not changed. */
+    const text = posts.map((p) => Util.postText(p, BODY_SCAN));
+
     const out = [];
     for (const seed of seeds) {
       const re = seed.kind === "phrase"
         ? new RegExp("\\b" + escapeRe(seed.term) + "\\b", "i")
         : new RegExp("\\b" + escapeRe(seed.term) + "\\b", "i");
-      const matches = posts.filter((p) => re.test((p.title || "") + " " + (p.flair || "")));
+      const matches = posts.filter((p, i) => re.test(text[i]));
       if (matches.length < minPosts) continue;
 
       const sent = Analysis.aggregateSentiment(matches);
@@ -991,6 +1012,23 @@
   }
   Analysis.titleFingerprint = titleFingerprint;
 
+  /* A post wearing a removal placeholder instead of a title has no
+   * title to match on. Grouping on the placeholder text collects every
+   * removed post in the dataset into one bogus story. Posts here can
+   * still be grouped by URL or by crosspost parent, which are real
+   * evidence of the same content; the placeholder is not.
+   *
+   * The string test covers posts restored from a cache written before
+   * normalisePost started flagging them. */
+  function placeholderTitle(p) {
+    if (p.title_placeholder && !p.title_source) return true;
+    if (p.title_source) return false;
+    return typeof Reddit !== "undefined" && Reddit.isPlaceholderTitle
+      ? Reddit.isPlaceholderTitle(p.title)
+      : false;
+  }
+  Analysis.isPlaceholderTitle = placeholderTitle;
+
   Analysis.detectCrossPosts = function (posts) {
     const byTitle = new Map();
     const byUrl = new Map();
@@ -1001,8 +1039,10 @@
       /* Fuzzy title key (see titleFingerprint above). Falls back to
        * the cleaned full title if the fingerprint comes out empty
        * (e.g. all-stopwords title). */
-      const fp = titleFingerprint(p.title) ||
-                 (p.title || "").toLowerCase().replace(/\s+/g, " ").trim();
+      const fp = placeholderTitle(p)
+        ? ""
+        : (titleFingerprint(p.title) ||
+           (p.title || "").toLowerCase().replace(/\s+/g, " ").trim());
       if (fp) {
         if (!byTitle.has(fp)) byTitle.set(fp, []);
         byTitle.get(fp).push(p);
@@ -1126,7 +1166,7 @@
           ? "Posting time is not what's holding these back"
           : "Not enough posts from any one community yet",
         note: measured.length
-          ? `${measured.length === 1 ? "The one community" : `All ${measured.length} communities`} with enough posts came back flat: reshuffle the same scores across the same timestamps and the day curve is just as uneven`
+          ? `${measured.length === 1 ? "The one community" : `All ${measured.length} communities`} with enough posts came back flat — their good hours look no different from chance`
           : `a posting slot needs ${timing.minSample}+ posts from the same subreddit before it means anything`,
       });
     } else {

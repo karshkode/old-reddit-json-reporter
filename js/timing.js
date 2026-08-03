@@ -1078,24 +1078,10 @@
   };
   Timing.signalLabel = function (signal) { return SIGNAL_LABELS[signal] || "no signal"; };
 
-  /* p-values are rendered as thresholds rather than digits. "p = 0.03"
-     invites a precision that a few hundred resamples do not have. */
-  Timing.pLabel = function (p) {
-    if (p == null) return "";
-    if (p <= 0.01) return "p < .01";
-    if (p <= 0.05) return "p < .05";
-    if (p <= 0.15) return "p < .15";
-    if (p <= 0.25) return "p < .25";
-    return "p > .25";
-  };
-
-  /* "+38% (95% CI +9% to +76%)" */
-  Timing.liftLabel = function (row) {
-    if (!row || row.lift == null) return "";
-    const sign = (v) => (v > 0 ? "+" : "") + Math.round(v) + "%";
-    if (row.liftLow == null || row.liftHigh == null) return sign(row.lift);
-    return `${sign(row.lift)} (95% CI ${sign(row.liftLow)} to ${sign(row.liftHigh)})`;
-  };
+  /* row.p and the interval bounds stay on the row — the signal bands
+     are cut from them, and the tests read them. Nothing renders them as
+     figures: a reader who wants to know whether to trust a time is
+     served by "strong" and "at least +20%", not by "p < .05". */
 
   Timing.windowLabel = function (row) {
     if (!row || !row.window) return "";

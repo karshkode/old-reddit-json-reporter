@@ -122,15 +122,29 @@
    * CAMPAIGN VECTOR
    * ================================================================== */
 
+  /* How much say a self-post's body gets, as a multiple of the mass its
+   * title and flair carry. Slightly under 1: a text post is mostly its
+   * body, but the headline is what the author chose to lead with, and a
+   * body that wanders should not be able to redefine the post. */
+  const BODY_SHARE = 0.9;
+
   /* Build the term vector that represents what a campaign is *about*.
    * Titles carry the message, flair carries the framing the community
-   * itself applied, so both are used at different weights. */
+   * itself applied, bodies carry the argument, so all three are used at
+   * different weights.
+   *
+   * Each post's body is scaled against that post's own title rather
+   * than against the campaign as a whole, so one long text post cannot
+   * outvote nine link posts on what the campaign is about. */
   Discovery.campaignVector = function (posts, profile) {
     const vec = {};
     const subs = new Set();
     for (const p of posts || []) {
-      SubIndex.addText(vec, p.title || "", 3);
-      if (p.flair) SubIndex.addText(vec, p.flair, 1);
+      const one = {};
+      SubIndex.addText(one, p.title || "", 3);
+      if (p.flair) SubIndex.addText(one, p.flair, 1);
+      SubIndex.addTextWithMass(one, Util.postBody(p), SubIndex.mass(one) * BODY_SHARE);
+      for (const t in one) vec[t] = (vec[t] || 0) + one[t];
       if (p.subreddit) subs.add(p.subreddit);
     }
 
@@ -875,9 +889,14 @@
         const posts = await Reddit.fetchSubredditListing(target.display_name, {
           listing: "top", limit: 25, t: "month",
         }) || [];
+        /* Headline and body both count, but only once per post: a term
+         * the sub returns to across several threads is a subject, a
+         * term one author repeated forty times is one author. */
         const titleTerms = {};
         for (const p of posts.slice(0, 15)) {
-          for (const t of SubIndex.tokenize(p.title || "")) titleTerms[t] = (titleTerms[t] || 0) + 1;
+          for (const t of new Set(SubIndex.tokenize(Util.postText(p, 1200)))) {
+            titleTerms[t] = (titleTerms[t] || 0) + 1;
+          }
         }
         /* Only terms the sub returns to repeatedly — a term used once is
          * one story, not a subject the community is organised around. */
@@ -1043,16 +1062,17 @@
    * was slow.
    * ================================================================== */
 
-  /* The term vector for one post. Title carries the message, flair
-   * carries the framing the community itself applied, and the body is
-   * folded in at low weight and truncated — a long self-post otherwise
-   * swamps its own headline. */
+  /* The term vector for one post: what the post is about, in words.
+   * Title carries the message, flair carries the framing the community
+   * itself applied, and the body carries the substance — for a text
+   * post that is most of the post, so it is read in full rather than
+   * sampled, but weighted by share rather than by length. */
   Discovery.postVector = function (post) {
     const vec = {};
     if (!post) return vec;
     SubIndex.addText(vec, post.title || "", 3);
     if (post.flair) SubIndex.addText(vec, post.flair, 2);
-    if (post.selftext) SubIndex.addText(vec, String(post.selftext).slice(0, 1500), 0.8);
+    SubIndex.addTextWithMass(vec, Util.postBody(post), SubIndex.mass(vec) * BODY_SHARE);
     if (post.subreddit) {
       SubIndex.addText(vec, post.subreddit, 1.5);
       const record = SubIndex.get(post.subreddit);
