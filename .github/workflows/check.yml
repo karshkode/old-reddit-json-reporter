@@ -1,0 +1,17 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  stamps:
+    name: Asset stamps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every changed asset is served under a new ?v=
+        run: node tools/stampcheck.js origin/${{ github.event.pull_request.base.ref || 'main' }}

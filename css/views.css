@@ -924,7 +924,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 2px var(--s-3);
   padding: var(--s-2) var(--s-3);
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-xs);
   background: var(--bg-elev-2);
   /* A left edge keyed to how much the evidence supports the slot, so
      strength is readable before any of the numbers are. */
@@ -968,6 +968,12 @@
   align-items: baseline;
   gap: var(--s-2);
   white-space: normal;
+  /* A long community name must push the badge down, not cut it off.
+     .timing-sub clips by default for the fixed-height panel heads; here
+     there is room to wrap, and a half-rendered "weak" reads as a word. */
+  flex-wrap: wrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .timing-signal {
@@ -1068,7 +1074,7 @@
   align-items: baseline;
   gap: 2px var(--s-3);
   padding: var(--s-2) var(--s-3);
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-xs);
   background: var(--bg-elev-2);
 }
 .post-related-row.is-loaded {
