@@ -180,14 +180,21 @@
    * OPENED, BUT NOT YET ACCOUNTED FOR
    * ------------------------------------------------------------------ */
 
+  /* Keyed lowercase so it lines up with everything else that names a
+     subreddit, but the spelling is kept: r/SocialistRA read back as
+     r/socialistra looks like the app got it wrong. */
   Crosspost.markOpened = function (postId, sub) {
     const id = String(postId || "");
-    const name = lower(sub);
-    if (!id || !name) return;
+    const key = lower(sub);
+    if (!id || !key) return;
     if (!opened[id]) opened[id] = {};
-    opened[id][name] = Date.now();
+    opened[id][key] = { at: Date.now(), name: String(sub) };
     write();
   };
+
+  function openedAt(rec) {
+    return (rec && typeof rec === "object" ? rec.at : rec) || 0;
+  }
 
   /* Communities whose submit page was opened and where no copy has
      turned up since. A sub that now has a copy drops off by itself —
@@ -200,7 +207,8 @@
     const done = Crosspost.subsWithCopies(post);
     return Object.keys(rec)
       .filter((sub) => !done.has(sub))
-      .sort((a, b) => rec[b] - rec[a]);
+      .sort((a, b) => openedAt(rec[b]) - openedAt(rec[a]))
+      .map((sub) => (rec[sub] && rec[sub].name) || sub);
   };
 
   Crosspost.clearOpened = function (postId, sub) {

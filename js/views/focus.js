@@ -584,7 +584,12 @@
     const self = post.is_self || (post.url && /\/comments\//.test(post.url));
     const tip = `Open Reddit's submit page for r/${m.name} with this post's title and `
       + (self ? "body" : "link") + " already filled in";
-    return `<a class="btn ${opts.lead ? "small primary" : "tiny"} submit-link focus-xpost"
+    /* Weight follows evidence. A community with nothing loaded has no
+       hour and no comparison behind it, so a row of them all shouting
+       in the same colour as a graded suggestion would be the card
+       pushing hardest exactly where it knows least. */
+    const tone = opts.quiet ? "tiny" : `${opts.lead ? "small primary" : "tiny"} submit-link`;
+    return `<a class="btn ${tone} focus-xpost"
                data-action="focus-crosspost" data-sub="${esc(m.name)}"
                href="${esc(url)}" target="_blank" rel="noopener"
                title="${esc(tip)}">${opts.lead ? `Cross-post to r/${esc(m.name)}` : "Cross-post"}</a>`;
@@ -665,8 +670,8 @@
         <span class="focus-sig"><b>${m.fit}</b> match</span>
         <span class="focus-unmeasured-meta">${esc(m.viaSphere ? `via ${m.viaSphere}` : (m.record && m.record.subscribers ? `${Util.fmtNum(m.record.subscribers)} members` : "in the catalog"))}</span>
         <span class="focus-unmeasured-actions">
-          ${crosspostHtml(m, post)}
-          <button type="button" class="btn tiny ghost" data-action="focus-load-sub" data-sub="${esc(m.name)}"
+          ${crosspostHtml(m, post, { quiet: true })}
+          <button type="button" class="btn tiny" data-action="focus-load-sub" data-sub="${esc(m.name)}"
                   title="Pull this community's posts so it gets a clock and a comparison like the rest">${m.loaded ? "Sync" : "Load"}</button>
         </span>
       </li>
