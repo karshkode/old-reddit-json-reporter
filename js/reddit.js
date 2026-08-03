@@ -369,6 +369,35 @@
     let lastError = null;
     const fetchOpts = opts.fresh ? { fresh: true } : undefined;
 
+    /* Ask Reddit first when it can be asked.
+     *
+     * Everything else in this file reads the archive, and for posts
+     * more than a day and a half old the archive is the better source:
+     * complete, unmetered, and no token to keep alive. But a post from
+     * this morning is filed in the archive at the score it was born
+     * with, which is 1, and no amount of refreshing changes that until
+     * the archive's second pass runs. Fetching by id is exactly the
+     * call that means "tell me how these specific posts are doing right
+     * now", so it is the one that goes to Reddit.
+     *
+     * js/live.js returns null rather than an empty array when it could
+     * not ask — no token, rate limited, switched off — which is what
+     * separates "Reddit says these are gone" from "we did not get to
+     * find out", and only the second falls through to the archive. */
+    if (window.Live && Live.available() && opts.live !== false) {
+      const live = await Live.lookup(cleaned);
+      if (live && live.length) {
+        if (live.length === cleaned.length) return live;
+        /* Reddit did not know about all of them — a post removed, or an
+         * id from a subreddit it will not serve. Keep what it gave and
+         * let the archive answer for the rest. */
+        const got = new Set(live.map((p) => p.id));
+        const missing = cleaned.filter((id) => !got.has(id));
+        const rest = await Reddit.fetchPostsByIds(missing, Object.assign({}, opts, { live: false }));
+        return live.concat(rest);
+      }
+    }
+
     /* Preferred path: batch via /by_id (one request per up-to-100 IDs). */
     try {
       const results = [];
