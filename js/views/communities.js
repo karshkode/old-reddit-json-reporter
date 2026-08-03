@@ -366,30 +366,23 @@
     }
   }
 
-  function renderLoaded() {
-    const host = Dom.byId("loaded-subs-grid");
+  /* Split from the grid because ticking a checkbox has to update the
+     selection count and the action bar without replacing the checkbox
+     the user is still touching. Re-rendering the whole grid on every
+     tick meant the second and third taps landed on nodes that had
+     already been thrown away, so selecting three subs selected one. */
+  function renderToolbar() {
     const toolbar = Dom.byId("loaded-subs-toolbar");
-    if (!host) return;
-    pruneSelection();
-
+    if (!toolbar) return;
     const total = AppState.knownSubs.length;
-    if (!total) {
-      if (toolbar) toolbar.innerHTML = "";
-      host.innerHTML = Dom.emptyState({
-        icon: "⌗",
-        title: "No subreddits yet",
-        body: "Search for communities or load a curated sphere to get started.",
-        action: '<button class="btn primary" type="button" data-communities-tab="catalog">Browse the catalog</button>',
-      });
-      return;
-    }
+    if (!total) { toolbar.innerHTML = ""; return; }
 
     const subs = visibleSubs();
     const activeCount = AppState.knownSubs.filter((s) => AppState.activeSubs.has(s)).length;
     const allShownSelected = subs.length > 0 && subs.every((s) => selection.has(s));
+    const due = Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s)));
 
-    if (toolbar) {
-      toolbar.innerHTML = `
+    toolbar.innerHTML = `
         <div class="subman-bar">
           <input type="search" id="loaded-subs-filter" class="subman-filter"
                  placeholder="Filter by name or sphere…" aria-label="Filter loaded subreddits"
@@ -400,17 +393,39 @@
           <button class="btn small ghost" type="button" data-action="select-shown" ${subs.length ? "" : "disabled"}>
             ${allShownSelected ? "Deselect" : "Select"} ${loadedFilter ? `these ${subs.length}` : "all"}
           </button>
+          ${due.length ? `
+            <button class="btn small primary" type="button" data-sync="stale">
+              Sync ${due.length} out of date
+            </button>` : ""}
         </div>
         ${selection.size ? `
           <div class="subman-actions" role="group" aria-label="Actions for the selected subreddits">
             <strong>${selection.size} selected</strong>
+            <button class="btn small primary" type="button" data-action="bulk-sync">Sync</button>
             <button class="btn small" type="button" data-action="bulk-enable">Include in fetch</button>
             <button class="btn small" type="button" data-action="bulk-disable">Exclude</button>
             <button class="btn small danger-soft" type="button" data-action="bulk-remove">Remove</button>
             <button class="btn small ghost" type="button" data-action="clear-selection">Clear</button>
           </div>` : ""}`;
+  }
+
+  function renderLoaded() {
+    const host = Dom.byId("loaded-subs-grid");
+    if (!host) return;
+    pruneSelection();
+    renderToolbar();
+
+    if (!AppState.knownSubs.length) {
+      host.innerHTML = Dom.emptyState({
+        icon: "⌗",
+        title: "No subreddits yet",
+        body: "Search for communities or load a curated sphere to get started.",
+        action: '<button class="btn primary" type="button" data-communities-tab="catalog">Browse the catalog</button>',
+      });
+      return;
     }
 
+    const subs = visibleSubs();
     if (!subs.length) {
       host.innerHTML = `<p class="hint">Nothing matches “${esc(loadedFilter)}”. Filtering also matches sphere names, so try “healthcare” or a state.</p>`;
       return;
@@ -421,6 +436,8 @@
       const picked = selection.has(s);
       const record = SubIndex.get(s);
       const posts = AppState.postsForSub(s).length;
+      const age = AppState.syncAgeOf(s);
+      const stale = age == null || age > Refresh.STALE_MS;
       return `
         <div class="loaded-sub ${on ? "" : "off"}${picked ? " picked" : ""}">
           <label class="loaded-sub-toggle">
@@ -430,8 +447,11 @@
           </label>
           <div class="loaded-sub-meta">
             ${record && record.subscribers ? `${num(record.subscribers)} members · ` : ""}${posts ? `${num(posts)} posts loaded` : "no posts loaded"}
+            · <span class="loaded-sub-age${stale ? " is-stale" : ""}">${esc(Refresh.ageLabel(s))}</span>
           </div>
           <div class="loaded-sub-actions">
+            <button class="btn tiny ghost" type="button" data-sync="sub" data-sub="${esc(s)}"
+                    aria-label="Sync r/${esc(s)}" title="Re-read r/${esc(s)} on its own, without touching the others">↻</button>
             <button class="btn tiny ${on ? "" : "ghost"}" type="button" data-action="toggle-active-sub" data-sub="${esc(s)}"
                     aria-pressed="${on}" title="${on ? "Included in the next fetch" : "Excluded from the next fetch"}">${on ? "On" : "Off"}</button>
             <button class="btn tiny danger-soft" type="button" data-action="remove-sub" data-sub="${esc(s)}" aria-label="Remove r/${esc(s)}">Remove</button>
@@ -444,7 +464,7 @@
      repaint, one invalidation, however many subs moved. */
   function afterSubChange(message) {
     App.renderChips();
-    App.markPending();
+    App.markPending(null, { scope: "subs" });
     Router.invalidate(["dashboard", "posts"]);
     View.render();
     if (message) Util.toast(message);
@@ -457,7 +477,7 @@
   function bulkAdd(names, label) {
     const added = AppState.addSubs(names);
     App.renderChips();
-    App.markPending();
+    App.markPending(null, { scope: "subs" });
     View.render();
     Router.invalidate(["dashboard", "posts"]);
     if (added.length) {
@@ -579,7 +599,7 @@
     Dom.delegate(document, "click", '[data-action="remove-sub"]', (e, btn) => {
       AppState.removeSub(btn.dataset.sub);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       View.render();
       Router.invalidate(["dashboard", "posts"]);
     });
@@ -587,7 +607,7 @@
     Dom.delegate(document, "click", '[data-action="toggle-active-sub"]', (e, btn) => {
       AppState.toggleSub(btn.dataset.sub);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       renderLoaded();
     });
 
@@ -603,10 +623,14 @@
       if (next) { next.focus(); try { next.setSelectionRange(at, at); } catch (_) {} }
     });
 
+    /* Only the toolbar and this one row repaint. The grid stays put so
+       the next tick lands on a checkbox that still exists. */
     Dom.delegate(document, "change", '[data-action="select-sub"]', (e, input2) => {
       const name = input2.dataset.sub;
       if (input2.checked) selection.add(name); else selection.delete(name);
-      renderLoaded();
+      const row = input2.closest(".loaded-sub");
+      if (row) row.classList.toggle("picked", input2.checked);
+      renderToolbar();
     });
 
     Dom.delegate(document, "click", '[data-action="select-shown"]', () => {
@@ -621,6 +645,28 @@
     Dom.delegate(document, "click", '[data-action="clear-selection"]', () => {
       selection.clear();
       renderLoaded();
+    });
+
+    /* Fetch exactly the ticked subs. The bar already lets someone
+       narrow to a sphere and select it in one tap, so this is the
+       shortest route to "re-read just the housing communities". */
+    Dom.delegate(document, "click", '[data-action="bulk-sync"]', () => {
+      const names = Array.from(selection);
+      if (!names.length) return;
+      /* Excluded subs are excluded from fetching, so syncing one would
+         quietly contradict the switch the user set. */
+      const fetchable = names.filter((s) => AppState.activeSubs.has(s));
+      if (!fetchable.length) {
+        Util.toast("All of those are excluded from fetching. Include them first.");
+        return;
+      }
+      const held = names.length - fetchable.length;
+      Refresh.subs(fetchable, {
+        label: fetchable.length === 1 ? "r/" + fetchable[0] : `${fetchable.length} selected`,
+      }).then(() => {
+        if (held) Util.toast(`${held} of those are excluded from fetching, so they were skipped.`);
+        renderLoaded();
+      });
     });
 
     Dom.delegate(document, "click", '[data-action="bulk-enable"]', () => {
@@ -649,7 +695,7 @@
       if (AppState.hasSub(name)) AppState.removeSub(name);
       else AppState.addSubs([name]);
       App.renderChips();
-      App.markPending();
+      App.markPending(null, { scope: "subs" });
       renderCatalog();
     });
 

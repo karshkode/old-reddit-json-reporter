@@ -185,7 +185,15 @@
     inflight.set(key, promise);
   }
 
-  async function fetchJson(path, params) {
+  /* @param opts.fresh  Skip the cache READ for this call. A scoped sync
+   *                    exists to find out what changed, and the whole
+   *                    point is defeated if a five-minute-old response
+   *                    answers instead. It cannot use clearCache()
+   *                    either: emptying the cache to re-read one
+   *                    subreddit makes the other hundred and seventy
+   *                    pay for it on their next touch. The write still
+   *                    happens, so everyone downstream benefits. */
+  async function fetchJson(path, params, opts) {
     const url = new URL(BASE + path);
     url.searchParams.set("raw_json", "1");
     if (params) {
@@ -195,7 +203,8 @@
     }
     const redditUrl = url.toString();
     const key = url.pathname + "?" + url.searchParams.toString();
-    const cached = cacheGet(key);
+    const wantFresh = !!(opts && opts.fresh);
+    const cached = wantFresh ? null : cacheGet(key);
     if (cached && cached.fresh) return cached.v;
     /* Stale-while-revalidate: return stale data immediately, but
      * kick off a background revalidate so the next call gets fresh
@@ -261,13 +270,14 @@
     const listing = opts.listing || "hot";
     const time = opts.t || "week";
     const target = Math.max(1, Math.min(opts.limit || 100, 1000));
+    const fetchOpts = opts.fresh ? { fresh: true } : undefined;
     const out = [];
     let after = null;
     const pageSize = Math.min(100, target);
     while (out.length < target) {
       const params = { limit: pageSize, t: time };
       if (after) params.after = after;
-      const json = await fetchJson(`/r/${sub}/${listing}.json`, params);
+      const json = await fetchJson(`/r/${sub}/${listing}.json`, params, fetchOpts);
       const children = (json && json.data && json.data.children) || [];
       if (!children.length) break;
       const newOnThisPage = [];
@@ -299,7 +309,7 @@
     const json = await fetchJson(`/comments/${id}.json`, {
       limit: opts.commentLimit || 50,
       sort: opts.sort || "top",
-    });
+    }, opts.fresh ? { fresh: true } : undefined);
     if (!Array.isArray(json) || json.length < 2) return null;
     const postData = json[0].data && json[0].data.children && json[0].data.children[0] && json[0].data.children[0].data;
     if (!postData) return null;
@@ -357,13 +367,14 @@
      * Attached to the returned array as a non-enumerable property
      * so existing array consumers keep working. */
     let lastError = null;
+    const fetchOpts = opts.fresh ? { fresh: true } : undefined;
 
     /* Preferred path: batch via /by_id (one request per up-to-100 IDs). */
     try {
       const results = [];
       for (let i = 0; i < cleaned.length; i += 100) {
         const batch = cleaned.slice(i, i + 100).map((id) => "t3_" + id);
-        const json = await fetchJson(`/by_id/${batch.join(",")}.json`, {});
+        const json = await fetchJson(`/by_id/${batch.join(",")}.json`, {}, fetchOpts);
         const children = (json && json.data && json.data.children) || [];
         for (const c of children) {
           if (c && c.kind === "t3" && c.data) results.push(normalizePost(c.data));
@@ -383,7 +394,7 @@
     const results = [];
     await Util.pmap(cleaned, 3, async (id) => {
       try {
-        const json = await fetchJson(`/comments/${id}.json`, { limit: 1 });
+        const json = await fetchJson(`/comments/${id}.json`, { limit: 1 }, fetchOpts);
         const postData = Array.isArray(json) && json[0] && json[0].data && json[0].data.children && json[0].data.children[0] && json[0].data.children[0].data;
         if (postData) results.push(normalizePost(postData));
       } catch (e) {

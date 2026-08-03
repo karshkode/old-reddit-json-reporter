@@ -258,7 +258,16 @@
    *
    * The banner stays visible after init — it's the primary action
    * surface for the page, not a transient toast. */
-  Util.setActionPhase = function (phase, message) {
+  /* @param opts.label / opts.icon  Override what the button says. The
+   *        phase alone used to decide, which was fine while there was
+   *        one thing the button could do. Now that it offers the
+   *        narrowest useful scope — "Sync 4" when four subs are stale,
+   *        "Refresh" when none are — the label is a property of the
+   *        offer rather than of the lifecycle.
+   * @param opts.action  Recorded on the button as data-refresh-action
+   *        so the click handler runs whatever the label promised
+   *        rather than re-deriving it and possibly disagreeing. */
+  Util.setActionPhase = function (phase, message, opts) {
     const banner = document.getElementById("action-banner");
     if (!banner) return;
     banner.hidden = false;
@@ -284,15 +293,17 @@
       if (label) label.textContent = "Loading…";
       if (btn) btn.setAttribute("aria-label", "Loading…");
     } else if (phase === "loaded") {
-      if (icon) icon.textContent = "↻";
-      if (label) label.textContent = "Refresh";
-      if (btn) btn.setAttribute("aria-label", "Refresh data");
+      const text = (opts && opts.label) || "Refresh";
+      if (icon) icon.textContent = (opts && opts.icon) || "↻";
+      if (label) label.textContent = text;
+      if (btn) btn.setAttribute("aria-label", text === "Refresh" ? "Refresh data" : text);
     } else {
       /* pending or empty */
-      if (icon) icon.textContent = "▶";
-      if (label) label.textContent = "Go";
+      if (icon) icon.textContent = (opts && opts.icon) || "▶";
+      if (label) label.textContent = (opts && opts.label) || "Go";
       if (btn) btn.setAttribute("aria-label", "Run search");
     }
+    if (btn) btn.dataset.refreshAction = (opts && opts.action) || (phase === "loaded" ? "all" : "go");
   };
 
   Util.setProgress = function (percent, message) {
