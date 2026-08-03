@@ -92,11 +92,16 @@
               : timing ? `needs ${timing.minSample}+ posts in one sub` : "needs more posts",
           };
         }
-        const when = (lead.slotLabel || "—") + (tz ? " " + tz : "");
+        /* A window that is open right now leads with "Now" rather than
+         * its peak minute. Showing the peak while the window is running
+         * reads as an instruction to wait for a time that has either
+         * passed or is beside the point. */
+        const open = lead.next && lead.next.open;
+        const when = open ? "Now" : (lead.slotLabel || "—") + (tz ? " " + tz : "");
         const bits = [`r/${Util.escapeHtml(lead.subreddit)}`];
         if (lead.next) bits.push(lead.next.inLabel.replace(/^in /, ""));
         if (lead.lift > 0) bits.push(signed(lead.lift));
-        return { label: "Next posting slot", value: when, sub: bits.join(" · ") };
+        return { label: open ? "Post now" : "Next posting slot", value: when, sub: bits.join(" · ") };
       })(),
       { label: "Top score", value: Util.fmtNum(agg.topPost ? agg.topPost.score : 0), sub: agg.topPost ? `r/${Util.escapeHtml(agg.topPost.subreddit)}` : "" },
     ];
