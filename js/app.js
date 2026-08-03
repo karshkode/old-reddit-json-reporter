@@ -3129,6 +3129,12 @@
         persist();
         renderChips();
         markPending(`Removed r/${sub}`);
+      },
+      {
+        onOverflow: () => {
+          Router.go("communities");
+          CommunitiesView.goToTab("loaded");
+        },
       }
     );
   }
