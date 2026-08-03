@@ -72,6 +72,84 @@
     "give given gives put keep let may might must would could shall around",
   ].join(" ")).split(/\s+/).filter(Boolean));
 
+  /* The second tier, and the more useful one.
+   *
+   * A blocklist is the wrong shape for this problem. Every word it does
+   * not contain reads as a topic, so junk like "against", "raising" and
+   * "far" ranked as subject matter; and every word it does contain is
+   * gone everywhere, so blocking "far" to be rid of it would take "far
+   * right" with it. Both failures come from one decision being asked to
+   * cover two different cases.
+   *
+   * These words are kept in the token stream, so phrases still form
+   * across them, but they are worth almost nothing standing alone and
+   * are never shown to anyone as a keyword. "far" scores 0.1; "far
+   * right" scores like any other phrase. The same escape hatch is why
+   * this list can afford to be generous: a word listed here that turns
+   * out to matter still reaches the vector through its phrase, so the
+   * cost of a wrong call is small and the cost of an omission is a junk
+   * keyword in someone's face. Anything doubtful belongs here rather
+   * than above.
+   *
+   * Written in plain English and stemmed on the way in, so "raising",
+   * "raised" and "raise" are one entry rather than three chances to
+   * miss one. */
+  const WEAK = weakSet([
+    /* Prepositions and particles the hard list never covered. These are
+     * the ones that produced "against" as a topic. */
+    "against toward towards beyond despite among amongst within without along",
+    "behind below beneath beside besides between during except inside outside",
+    "near onto past since through throughout until till unto upon versus",
+    "amid amidst plus minus per via off out onto above",
+    /* Discourse connectives. */
+    "although though however therefore thus hence meanwhile moreover furthermore",
+    "nevertheless nonetheless otherwise instead whereas whether while whilst",
+    "unless yet still else whenever wherever whatever whoever regardless",
+    "either neither rather already soon later earlier recently currently",
+    "finally eventually immediately suddenly again once twice ago",
+    /* Degree and scope. Never a subject, frequently a modifier: "far
+     * right", "deeply unpopular", "widely reported". */
+    "far highly deeply widely heavily largely mostly mainly fully partly",
+    "barely hardly nearly almost quite fairly somewhat extremely incredibly",
+    "totally completely entirely absolutely utterly slightly especially",
+    "particularly generally usually sometimes occasionally rarely seldom",
+    "enough merely simply indeed certainly probably possibly definitely",
+    /* Light verbs. The ones that describe an action without naming a
+     * subject — "raising" was the complaint, and it has fifty siblings. */
+    "raising raise remember bring brought holding hold held showing show",
+    "shown showed finding find found seeming seem becoming become began",
+    "begin beginning starting start stopping stop continue trying try",
+    "turning turn calling call leaving leave came remain remaining appear",
+    "happen occur exist include including involve provide receive report",
+    "reporting announce reveal claim suggest consider allow according",
+    "follow following expect believe decide explain describe mention",
+    "adding added ending ended hit cut miss beat broke break drop dropped",
+    "fall fell rise rose grow grew move moved put gave gone plan planned",
+    "pass passed passing filed filing sent send got getting",
+    /* Number words. "three" was already on the hard list and the rest
+     * of the count was not, so "six" read as a subject. */
+    "four five six seven eight nine ten eleven twelve twenty thirty",
+    "forty fifty sixty seventy eighty ninety hundred",
+    /* Light nouns. Nouns by grammar, subjects by nobody's reckoning. */
+    "article part piece story point level number amount side end top bottom",
+    "line list area term form type set fact idea reason result example",
+    "sense view note item matter detail aspect factor element feature",
+    "process situation condition position status effect impact",
+    "percent percentage total figure",
+    /* Quantity and size. "young" and "low" stay here rather than in the
+     * hard list precisely because "young voters" and "low income" are
+     * real, and this tier gives them back through the phrase. */
+    "several various multiple numerous plenty couple dozen half whole",
+    "entire overall general specific particular certain common different",
+    "similar actual real true main major minor big small large huge tiny",
+    "high low long short old young full empty little least",
+  ].join(" ").split(/\s+/).filter(Boolean));
+
+  /* What a weak word is worth on its own. Not zero: a description made
+   * entirely of them should still be comparable to another one, and a
+   * hard zero would make its vector empty. */
+  const WEAK_WEIGHT = 0.1;
+
   /* Conservative suffix stripping. Full Porter stemming over-merges
    * civic vocabulary (organise/organic), so this only folds the endings
    * that reliably preserve meaning. */
@@ -94,31 +172,151 @@
 
   SubIndex.stem = stem;
 
+  function weakSet(words) {
+    const out = new Set();
+    for (const w of words) {
+      if (!w) continue;
+      out.add(w);
+      out.add(stem(w));
+    }
+    return out;
+  }
+
   /* Exposed so the post-title tokenizer in analysis.js can share one
    * curated list rather than drifting from this one. */
   SubIndex.STOP = STOP;
+  SubIndex.WEAK = WEAK;
+
+  /* True for a term that should never be offered as a keyword. Phrases
+   * are judged by their parts: "far right" is not weak, "old news" is. */
+  SubIndex.isWeak = function (term) {
+    const t = String(term || "");
+    if (t.indexOf(" ") < 0) return WEAK.has(t);
+    return t.split(" ").every((w) => WEAK.has(w));
+  };
+
+  /* stem -> the spelling it was most often written as. Stems are index
+   * keys, not words: showing someone that their post matched on
+   * "organiz" is showing them the plumbing. This costs one map write
+   * per token and turns the whole UI back into English. */
+  const surface = new Map();
+  const SURFACE_MAX = 20000;
+
+  /* The spelling people actually use, by count. Shortest-wins was the
+   * obvious rule and the wrong one: it renders the stem of
+   * "bargaining" as "bargain" the moment the shorter word appears once
+   * anywhere, which is a different word. Whichever form was written
+   * most is the form the reader will recognise. */
+  function noteSurface(stemmed, word) {
+    let counts = surface.get(stemmed);
+    if (!counts) {
+      if (surface.size >= SURFACE_MAX) return;
+      counts = {};
+      surface.set(stemmed, counts);
+    }
+    counts[word] = (counts[word] || 0) + 1;
+  }
+
+  function bestSurface(stemmed) {
+    const counts = surface.get(stemmed);
+    if (!counts) return stemmed;
+    let best = stemmed, bestN = -1;
+    for (const word in counts) {
+      const n = counts[word];
+      /* Ties to the shorter form, so a stem seen once each way still
+       * settles on one answer rather than on iteration order. */
+      if (n > bestN || (n === bestN && word.length < best.length)) {
+        best = word;
+        bestN = n;
+      }
+    }
+    return best;
+  }
+
+  /* A term as a person would write it. Falls back to the stem, which is
+   * what it was before, so nothing can end up blank. */
+  SubIndex.surfaceOf = function (term) {
+    const t = String(term || "");
+    if (t.indexOf(" ") < 0) return bestSurface(t);
+    return t.split(" ").map(bestSurface).join(" ");
+  };
 
   /* Split text into stemmed, stopword-filtered terms. CamelCase in
    * subreddit names is split too, so `MedicareForAll` contributes
-   * `medicare` and `all` rather than one opaque token. */
+   * `medicare` and `all` rather than one opaque token.
+   *
+   * Weak words stay in. They are nearly weightless on their own — see
+   * addText — but dropping them here would splice unrelated words into
+   * neighbours: "vote against the bill" would form the phrase "vote
+   * bill", which nobody wrote. */
+  /* Where one phrase stops and the next begins. Bigrams used to be
+   * formed straight down the token stream, so a sidebar reading "wage
+   * theft, fight for better pay" produced the phrase "theft fight" —
+   * two words that were never next to each other in anything anyone
+   * wrote, scored at 1.5x for being a phrase, and then offered to the
+   * user as the reason for a match. */
+  const CLAUSE = /[.,;:!?()\[\]{}"|/\\\u2013\u2014\u2022\n\r]+/;
+
+  /* Flat list of terms, adjacency discarded. Callers that build phrases
+   * from curated text — a sphere's trigger list, where the author wrote
+   * "right to work" meaning it as a unit — want this, because there the
+   * words either side of a dropped "to" really do belong together. */
   SubIndex.tokenize = function (text) {
+    const runs = SubIndex.tokenizeRuns(text);
+    return runs.length === 1 ? runs[0] : [].concat.apply([], runs);
+  };
+
+  /* The same terms, grouped into stretches that were genuinely next to
+   * each other in the source. Only these should form phrases.
+   *
+   * The chain "theft fight, fight better, better conditions, conditions
+   * job" was being offered as the reason a post matched r/antiwork.
+   * None of those phrases exists. The sidebar says "wage theft and the
+   * fight for better conditions on the job", and because every word
+   * between them was dropped as a stopword, every survivor ended up
+   * adjacent to every other one — then scored at the 1.5x a phrase
+   * earns for being more specific than its parts. A run therefore ends
+   * at punctuation and at any word that does not survive tokenizing.
+   * "wage theft" and "better conditions" come through; the four
+   * inventions do not. */
+  SubIndex.tokenizeRuns = function (text) {
     if (!text) return [];
     const spaced = String(text)
       .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
       .replace(/_/g, " ")
       .toLowerCase();
-    const raw = spaced.match(/[a-z][a-z'-]{1,}/g) || [];
-    const out = [];
-    for (const word of raw) {
-      const clean = word.replace(/^['-]+|['-]+$/g, "");
-      if (clean.length < 3) continue;
-      if (STOP.has(clean)) continue;
-      const s = stem(clean);
-      if (s.length < 3 || STOP.has(s)) continue;
-      out.push(s);
+    const runs = [];
+    for (const clause of spaced.split(CLAUSE)) {
+      let run = [];
+      for (const word of clause.split(/[^a-z'-]+/)) {
+        const s = accept(word);
+        if (s) {
+          run.push(s);
+        } else if (run.length) {
+          runs.push(run);
+          run = [];
+        }
+      }
+      if (run.length) runs.push(run);
     }
-    return out;
+    return runs;
   };
+
+  /* The stemmed term this word contributes, or "" if it contributes
+   * nothing — which is also the signal to end the run. */
+  function accept(word) {
+    if (!word) return "";
+    /* Possessives and contracted verbs are not part of the word.
+     * Without this, "here's" survives as a term of its own — "here" is
+     * on the hard list, "here's" was not, and no list will ever catch
+     * every clitic. */
+    const clean = word.replace(/^['-]+|['-]+$/g, "").replace(/'(s|re|ve|ll|d|m|t)$/, "");
+    if (clean.length < 3 || STOP.has(clean)) return "";
+    const s = stem(clean);
+    if (s.length < 3 || STOP.has(s)) return "";
+    noteSurface(s, clean);
+    return s;
+  }
 
   SubIndex.bigrams = function (terms) {
     const out = [];
@@ -134,10 +332,19 @@
    * weight lets callers say "the name matters three times as much as the
    * sidebar blurb". */
   SubIndex.addText = function (vec, text, weight) {
-    const terms = SubIndex.tokenize(text);
     const w = weight == null ? 1 : weight;
-    for (const t of terms) vec[t] = (vec[t] || 0) + w;
-    for (const b of SubIndex.bigrams(terms)) vec[b] = (vec[b] || 0) + w * 1.5;
+    for (const terms of SubIndex.tokenizeRuns(text)) {
+      for (const t of terms) {
+        vec[t] = (vec[t] || 0) + (WEAK.has(t) ? w * WEAK_WEIGHT : w);
+      }
+      /* Within the clause only, and a phrase is only as weak as its
+       * weakest reading. "far right" and "young voter" pair a modifier
+       * with a subject and mean something neither half does; "old news"
+       * is two nothings in a row. */
+      for (const b of SubIndex.bigrams(terms)) {
+        vec[b] = (vec[b] || 0) + (SubIndex.isWeak(b) ? w * WEAK_WEIGHT : w * 1.5);
+      }
+    }
     return vec;
   };
 
@@ -240,20 +447,66 @@
   };
 
   /* The terms two vectors share, strongest first. Used to explain a
-   * match in the UI instead of asserting a bare score. */
-  SubIndex.overlapTerms = function (a, b, limit) {
+   * match in the UI instead of asserting a bare score.
+   *
+   * Ranked by informativeness, not by how often the word appears. Those
+   * came apart badly: the words two documents use most are the words
+   * everyone uses, so the explanation for every match was drawn from
+   * the same handful of unremarkable words while the terms that
+   * actually drove the score sat below the cut. Weighting by the same
+   * IDF the score itself uses puts the reason and the score back in
+   * agreement. */
+  SubIndex.overlapTerms = function (a, b, limit, idf) {
+    const weight = (term) => (idf ? (idf[term] || idf.__default || 1) : 1);
     const out = [];
     for (const [term, va] of Object.entries(a || {})) {
       const vb = (b || {})[term];
-      if (vb) out.push({ term: term, weight: va * vb });
+      if (!vb) continue;
+      const w = weight(term);
+      out.push({ term: term, weight: va * w * vb * w });
     }
     out.sort((x, y) => y.weight - x.weight);
-    return out.slice(0, limit || 6);
+    return SubIndex.presentable(out, limit || 6);
   };
 
-  /* Build an IDF table over a collection of vectors. Terms present in
-   * many documents get a low weight. */
-  SubIndex.buildIdf = function (vectors) {
+  /* Turn ranked internal terms into something worth showing a person.
+   *
+   * Three things are wrong with the raw list. It is in stems, so
+   * "organizing" reads as "organiz". It contains weak words, which are
+   * near-weightless in the score but can still float to the top of a
+   * short list when little else overlaps. And it repeats itself:
+   * "organiz", "workplace organiz" and "organiz union" are one idea
+   * printed three times, which crowds out the second idea entirely.
+   *
+   * Phrases win over the words inside them, because a phrase says more
+   * and costs the same to read. */
+  SubIndex.presentable = function (ranked, limit) {
+    const phrases = [];
+    const kept = [];
+    const covered = new Set();
+
+    for (const item of ranked || []) {
+      const term = item.term || item;
+      if (term.indexOf(" ") < 0) continue;
+      if (SubIndex.isWeak(term)) continue;
+      phrases.push(item);
+      for (const w of term.split(" ")) covered.add(w);
+    }
+
+    for (const item of ranked || []) {
+      const term = item.term || item;
+      if (SubIndex.isWeak(term)) continue;
+      if (term.indexOf(" ") < 0 && covered.has(term)) continue;
+      kept.push(item);
+      if (kept.length >= (limit || 6)) break;
+    }
+
+    return kept.map((item) => (typeof item === "string"
+      ? SubIndex.surfaceOf(item)
+      : Object.assign({}, item, { term: SubIndex.surfaceOf(item.term) })));
+  };
+
+  function countDf(vectors) {
     const df = {};
     let n = 0;
     for (const vec of vectors || []) {
@@ -261,13 +514,108 @@
       n++;
       for (const term of Object.keys(vec)) df[term] = (df[term] || 0) + 1;
     }
+    return { df: df, n: n };
+  }
+
+  function idfFromDf(df, n) {
     const idf = { __default: 1 };
     if (!n) return idf;
-    for (const [term, count] of Object.entries(df)) {
-      idf[term] = Math.log(1 + n / count);
-    }
+    for (const term in df) idf[term] = Math.log(1 + n / df[term]);
     idf.__default = Math.log(1 + n);
     return idf;
+  }
+
+  /* Build an IDF table over a collection of vectors. Terms present in
+   * many documents get a low weight. */
+  SubIndex.buildIdf = function (vectors) {
+    const counted = countDf(vectors);
+    return idfFromDf(counted.df, counted.n);
+  };
+
+  /* ------------------------------------------------------------------
+   * HOW COMMON IS THIS WORD, REALLY
+   * ------------------------------------------------------------------ */
+
+  /* Rarity was being measured against the wrong thing.
+   *
+   * buildIdf was only ever handed the forty candidates of the run in
+   * progress, and those forty are alike by construction — they were
+   * shortlisted for resembling the query. A word every one of them uses
+   * looks common and gets discounted; a word specific to the subject
+   * they share looks common for exactly the same reason and gets
+   * discounted too. With forty documents the whole scale spans a factor
+   * of five, so it could not separate much in either direction.
+   *
+   * The app already holds a real corpus: every subreddit description it
+   * has ever cached, plus every post loaded. Hundreds to thousands of
+   * documents, spanning subjects rather than one, which is what a
+   * statement like "this word is unremarkable" needs to be measured
+   * against. Counted once and reused, and pooled with the documents of
+   * the run so a term the corpus has never met is still counted rather
+   * than treated as unheard-of. */
+
+  /* Below this there is no corpus worth the name, and the local
+   * documents are the better estimate. */
+  const CORPUS_MIN = 80;
+  /* Document frequency is a statistic; a large sample answers it as
+   * well as the whole population and does not grow without bound. */
+  const CORPUS_POST_CAP = 2500;
+  const POST_SCAN = 600;
+
+  let corpusCache = null;
+  let corpusKey = "";
+
+  function corpusIdf() {
+    const posts = (window.AppState && Array.isArray(AppState.posts) ? AppState.posts : []);
+    const sample = Math.min(posts.length, CORPUS_POST_CAP);
+    const key = mem.size + ":" + sample;
+    if (corpusCache && corpusKey === key) return corpusCache;
+
+    const df = {};
+    let n = 0;
+
+    for (const record of mem.values()) {
+      if (!record.vector) record.vector = SubIndex.vectorFor(record);
+      n++;
+      for (const term in record.vector) df[term] = (df[term] || 0) + 1;
+    }
+
+    for (let i = 0; i < sample; i++) {
+      const p = posts[i];
+      if (!p) continue;
+      const vec = {};
+      SubIndex.addText(vec, p.title || "", 1);
+      if (p.flair) SubIndex.addText(vec, p.flair, 1);
+      if (window.Util && Util.postBody) SubIndex.addText(vec, Util.postBody(p, POST_SCAN), 1);
+      n++;
+      for (const term in vec) df[term] = (df[term] || 0) + 1;
+    }
+
+    corpusCache = n >= CORPUS_MIN ? { idf: idfFromDf(df, n), n: n } : null;
+    corpusKey = key;
+    return corpusCache;
+  }
+
+  SubIndex.corpusSize = function () {
+    const c = corpusIdf();
+    return c ? c.n : 0;
+  };
+
+  /* The IDF a scorer should use. Falls back to exactly the old
+   * behaviour when the index is too small to say anything.
+   *
+   * The run's own candidates are not pooled in, for two reasons. They
+   * are already in the corpus — scoring is preceded by SubIndex.ensure,
+   * which files every candidate that has a description — so counting
+   * them again would count them twice. And the table is built once per
+   * corpus rather than once per call, which at a few hundred thousand
+   * terms is the difference between a tenth of a second and nothing.
+   * The one document genuinely outside the corpus is the query itself,
+   * and a term it alone uses falls to __default, which is what a term
+   * seen in no document should be worth. */
+  SubIndex.idfFor = function (vectors) {
+    const corpus = corpusIdf();
+    return corpus ? corpus.idf : SubIndex.buildIdf(vectors);
   };
 
   /* ==================================================================
@@ -516,7 +864,7 @@
     opts = opts || {};
     const exclude = new Set((opts.exclude || []).map((s) => String(s).toLowerCase()));
     const records = SubIndex.all().filter((r) => !exclude.has(r.key));
-    const idf = opts.idf || SubIndex.buildIdf(records.map((r) => r.vector));
+    const idf = opts.idf || SubIndex.idfFor(records.map((r) => r.vector));
     const scored = [];
     for (const record of records) {
       const score = SubIndex.cosine(vector, record.vector, idf);

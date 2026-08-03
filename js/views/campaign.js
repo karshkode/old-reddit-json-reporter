@@ -114,7 +114,7 @@
 
   const Workspace = {};
 
-  const SECTIONS = ["overview", "trends", "subreddits", "posts", "targeting", "plan", "settings"];
+  const SECTIONS = ["overview", "trends", "subreddits", "posts", "plan", "settings"];
 
   /* Communities listed in the Subreddits tab's timing card before it
    * truncates. Its expander used to emit the dashboard's action, which
@@ -255,7 +255,6 @@
     if (section === "trends") return renderTrends(campaign, agg);
     if (section === "subreddits") return renderSubreddits(campaign, agg);
     if (section === "posts") return renderPosts(campaign, agg);
-    if (section === "targeting") return renderTargeting(campaign, agg);
     if (section === "settings") return renderSettings(campaign, agg);
     /* Plan is static markup wired by app.js. */
   }
@@ -425,6 +424,12 @@
     const tableHost = Dom.byId("campaign-sub-table");
     const compareWrap = Dom.byId("campaign-sub-compare-wrap");
     const timingHost = Dom.byId("campaign-posting-times");
+
+    /* The discovery pipeline reads its campaign from this control. It is
+     * visually hidden because the workspace already establishes which
+     * campaign we are in; app.js owns its options. */
+    const discoverFor = Dom.byId("discover-campaign");
+    if (discoverFor) discoverFor.value = campaign.id;
 
     if (timingHost) {
       timingHost.innerHTML = !posts.length ? "" : `
@@ -712,79 +717,10 @@
           <span>💬 ${num(p.num_comments)}</span>
           ${p.upvote_ratio != null ? `<span>${Util.fmtPct(p.upvote_ratio)}</span>` : ""}
         </div>
+        <button class="btn tiny cpr-place" type="button" data-action="campaign-place" data-post-id="${esc(p.id)}"
+                title="Rank communities for this post, with the hour to post and a cross-post link">Where next</button>
         <button class="cpr-remove" type="button" data-action="remove-post" data-id="${esc(p.id)}" title="Remove from campaign" aria-label="Remove from campaign">×</button>
       </div>`;
-  }
-
-  /* ------------------------------------------------------------------
-   * TARGETING — the section markup is static; this fills the "best fits
-   * among loaded subs" list and keeps the hidden campaign select in
-   * step with whichever campaign is open.
-   * ------------------------------------------------------------------ */
-
-  function renderTargeting(campaign, agg) {
-    /* The discovery pipeline reads its campaign from this control. It is
-     * visually hidden because the workspace already establishes which
-     * campaign we are in; app.js owns its options. */
-    const select = Dom.byId("discover-campaign");
-    if (select) select.value = campaign.id;
-
-    renderPlacePicker(campaign, agg);
-
-    const deep = AppState.campaignDeep;
-    const host = Dom.byId("campaign-detail-targets");
-    if (!host) return;
-
-    if (!deep || !deep.targets || !deep.targets.length) {
-      host.innerHTML = Dom.emptyState({
-        icon: "◎",
-        title: "No loaded subreddits to rank yet",
-        body: "This list ranks the subs already in your dashboard by how well they fit this campaign. Load some posts with <strong>Go</strong>, or use <strong>Find subreddits</strong> above to discover new ones.",
-      });
-      return;
-    }
-
-    App.renderTargetingInto("campaigns", campaign, deep.targets, host, {
-      bestCampaignPost: bestPost(agg.posts),
-    });
-  }
-
-  /* A campaign's discovery reads every post at once and answers "which
-     communities suit this campaign". The placement card reads one post
-     and answers "where does this go next, and when" — different
-     question, different answer, and seeing the second list after
-     pressing a button on the first is what made them look like the
-     same engine disagreeing with itself. This routes to the per-post
-     one rather than reimplementing it, so there is only ever one
-     ranking for a post and it is the one with an hour attached. */
-  function renderPlacePicker(campaign, agg) {
-    const host = Dom.byId("campaign-place-body");
-    if (!host) return;
-    const posts = (agg && agg.posts) || [];
-
-    if (!posts.length) {
-      host.innerHTML = `<p class="hint">Once this campaign has resolved posts, each one can be placed
-        in a community with an hour and a cross-post link.</p>`;
-      return;
-    }
-
-    const ranked = posts.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
-    host.innerHTML = `
-      <ul class="place-picker">
-        ${ranked.map((p) => `
-          <li class="place-pick-row">
-            <div class="place-pick-main">
-              <span class="place-pick-title">${esc(trunc(p.title || "(untitled)", 72))}</span>
-              <span class="place-pick-meta">r/${esc(p.subreddit)} · ${Util.fmtNum(p.score || 0)} pts</span>
-            </div>
-            <button type="button" class="btn small" data-action="campaign-place" data-post-id="${esc(p.id)}"
-                    title="Rank communities for this one post, with the hour to post and how much better it typically does there">Where next</button>
-          </li>`).join("")}
-      </ul>
-      ${posts.length > ranked.length
-        ? `<p class="hint">Showing the ${ranked.length} best-performing of ${posts.length}. Any post can be placed from the Posts tab.</p>`
-        : ""}
-    `;
   }
 
   /* ------------------------------------------------------------------
