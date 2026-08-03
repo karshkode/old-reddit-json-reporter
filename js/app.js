@@ -160,6 +160,21 @@
 
   /* ---------- Filtering ---------- */
 
+  /* Someone who pastes a post link into the search box is not searching
+   * — no title, author or body contains a URL, so the result is always
+   * an empty table. Offer them the thing they clearly wanted instead,
+   * carrying the link across so they do not paste it twice. */
+  function offerAnalyze(text) {
+    const offer = document.getElementById("search-analyze-offer");
+    if (!offer) return;
+    const ok = typeof Analyze !== "undefined" && Analyze.looksLikePost(text);
+    offer.hidden = !ok;
+    if (ok) {
+      const btn = offer.querySelector("[data-action]");
+      if (btn) btn.setAttribute("data-prefill", String(text).trim());
+    }
+  }
+
   function filteredPosts() {
     let list = state.posts;
     if (state.postIdFilter.length) {
@@ -1735,6 +1750,7 @@
       state.postsPage = 0;
       const tabSearch = document.getElementById("posts-title-search");
       if (tabSearch && tabSearch.value !== e.target.value) tabSearch.value = e.target.value;
+      offerAnalyze(e.target.value);
       debouncedFilter();
     });
 
@@ -3732,6 +3748,7 @@
     });
     safeRun("wireSyncSession", wireSyncSession);
     safeRun("wireReset", () => Reset.wire());
+    safeRun("wireAnalyze", () => Analyze.wire());
     safeRun("renderChips", renderChips);
     safeRun("router", () => Router.start());
     safeRun("hydratePostCache", () => {
@@ -3790,6 +3807,7 @@
     setSettingsOpen: setSettingsOpen,
     clearCachedPosts: clearCachedPosts,
     describePendingFetch: describePendingFetch,
+    populateCampaignSelectors: populateCampaignSelectors,
   };
 
   /* ============================================================

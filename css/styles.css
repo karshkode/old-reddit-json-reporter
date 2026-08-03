@@ -2017,6 +2017,132 @@ select { max-width: 100%; min-width: 0; }
 .reset-actions .spacer { flex: 1 1 auto; }
 #reset-confirm[disabled] { opacity: 0.5; cursor: not-allowed; }
 
+/* ---- Analyse a post --------------------------------------------------
+   Wider than the other dialogs because it holds a ranked list of
+   communities with a reason against each, and wrapping those onto three
+   lines apiece turns a scan into a read. */
+.modal-card.is-wide { max-width: 680px; }
+
+.analyze-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.analyze-invite h2 { margin: 0 0 2px; font-size: 15px; }
+.analyze-invite .hint { display: block; max-width: 62ch; }
+
+.analyze-form { display: flex; gap: 8px; }
+.analyze-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono, monospace);
+  font-size: 13px;
+}
+.analyze-form .btn { flex: 0 0 auto; }
+
+.analyze-status:empty { display: none; }
+.analyze-status {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.analyze-status.is-err {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--border));
+  background: color-mix(in srgb, var(--bad) 8%, transparent);
+}
+.analyze-status.is-ok {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 40%, var(--border));
+  background: color-mix(in srgb, var(--good) 8%, transparent);
+}
+
+.analyze-result:empty { display: none; }
+.analyze-result { display: flex; flex-direction: column; gap: 16px; }
+
+.analyze-post {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-sunken, var(--bg));
+}
+.analyze-post-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.analyze-post-title { font-weight: 600; line-height: 1.35; }
+.analyze-post-meta { margin-top: 4px; font-size: 12px; color: var(--text-dim); }
+.analyze-post-body {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.analyze-read { margin: 8px 0 0; font-size: 12px; color: var(--text-faint, var(--text-dim)); }
+
+.analyze-block h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+}
+.analyze-elsewhere { list-style: none; margin: 0; padding: 0; }
+.analyze-elsewhere li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.analyze-elsewhere li:last-child { border-bottom: 0; }
+.analyze-elsewhere-meta { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+
+.analyze-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.analyze-actions .spacer { flex: 1 1 auto; }
+
+/* The offer that appears under the top search box when what was typed
+   turns out to be a link rather than a search. */
+.search-analyze-offer {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 6px);
+  box-shadow: var(--shadow);
+}
+.search-analyze-offer .btn { width: 100%; }
+
+@media (max-width: 640px) {
+  .analyze-form { flex-wrap: wrap; }
+  .analyze-form .btn { width: 100%; }
+  .analyze-invite .btn { width: 100%; }
+  .analyze-actions .btn { flex: 1 1 auto; }
+  .analyze-actions .spacer { display: none; }
+}
+
 /* Sync action buttons inside the modal — wrap on mobile, stack flush. */
 .modal .sync-actions {
   display: flex;

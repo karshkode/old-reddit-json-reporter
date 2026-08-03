@@ -115,7 +115,16 @@
       err.status = 429;
       throw err;
     }
-    if (!res.ok) throw new Error("archive HTTP " + res.status);
+    /* The archive says what went wrong in the body on failures too, and
+     * its own words ("Timeout. Maybe slow down a bit") are worth more
+     * to a reader than the status code we would otherwise report. */
+    if (!res.ok) {
+      let said = null;
+      try { said = (await res.json()).error; } catch (_) {}
+      const err = new Error(said ? "archive: " + said : "archive HTTP " + res.status);
+      err.status = res.status;
+      throw err;
+    }
 
     const json = await res.json();
     /* The archive reports argument errors as 200 + {data:null,error}. */
@@ -250,6 +259,79 @@
     return listing(posts.map(stamp), "t3", null);
   }
 
+  /* /duplicates/<id>.json — every other posting of the same content.
+   *
+   * Reddit answers this with the original followed by its duplicates.
+   * The archive has no such endpoint, but it holds the two things the
+   * answer is made of and will search either one site-wide, without the
+   * subreddit scope free-text search demands:
+   *
+   *   crosspost_parent_id  posts made with Reddit's crosspost button,
+   *                        which is the deliberate case — someone
+   *                        carried this to another community.
+   *   url                  posts pointing at the same link, which
+   *                        catches the same story submitted separately
+   *                        to five subs by five people.
+   *
+   * Both are asked from the root of the chain rather than from whatever
+   * link the user happened to paste, so pasting a crosspost finds its
+   * siblings and its original instead of nothing. */
+  function settle(promise) {
+    return promise.then((value) => ({ value: value }), (err) => ({ err: err }));
+  }
+
+  async function duplicates(id, q, signal) {
+    const limit = Math.min(parseInt(q.get("limit"), 10) || 100, MAX_PAGE);
+    const asked = String(id).replace(/^t3_/, "");
+
+    const found = await get("/posts/ids", { ids: "t3_" + asked }, signal);
+    const post = found[0];
+    if (!post) throw new Error("archive has no post " + asked);
+
+    const rootId = post.crosspost_parent || "t3_" + asked;
+    const rootIsAsked = rootId === "t3_" + asked;
+
+    /* The original, when the pasted link was a crosspost of it. */
+    const rootPromise = rootIsAsked
+      ? Promise.resolve([post])
+      : get("/posts/ids", { ids: rootId }, signal).catch(() => []);
+
+    const kids = get("/posts/search",
+      { crosspost_parent_id: rootId, limit: limit, sort: "desc" }, signal);
+
+    /* Only for link posts: two self posts sharing the empty string as a
+     * URL are not the same content, and Reddit's own permalink is the
+     * "url" of a self post, which no one else can share. */
+    const wantsLink = !post.is_self && post.url && String(post.url).length >= 14;
+    const link = wantsLink
+      ? get("/posts/search", { url: post.url, limit: limit, sort: "desc" }, signal)
+      : Promise.resolve([]);
+
+    const [roots, kidsRes, linkRes] = await Promise.all([
+      rootPromise, settle(kids), settle(link),
+    ]);
+
+    /* "Found nothing" and "could not look" are different answers, and
+     * only one of them means the post is not posted anywhere else. If
+     * neither search ran, say so rather than reporting an empty list. */
+    if (kidsRes.err && (linkRes.err || !wantsLink)) throw kidsRes.err;
+
+    const children = kidsRes.value || [];
+    const sameLink = linkRes.value || [];
+
+    const root = roots[0] || post;
+    const seen = new Set([root.id]);
+    const dupes = [];
+    for (const r of [].concat(children, sameLink)) {
+      if (!r || seen.has(r.id)) continue;
+      seen.add(r.id);
+      dupes.push(r);
+    }
+    dupes.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    return [listing([stamp(root)], "t3", null), listing(dupes.map(stamp), "t3", null)];
+  }
+
   /* /subreddits/search.json and /api/subreddit_autocomplete_v2.json.
    *
    * The archive matches on a name prefix rather than Reddit's fuzzy
@@ -322,6 +404,9 @@
     }
     if ((m = path.match(/^\/r\/([^/]+)$/i))) {
       return subredditListing(m[1], "hot", q, signal);
+    }
+    if ((m = path.match(/^\/duplicates\/([a-z0-9]+)/i))) {
+      return duplicates(m[1], q, signal);
     }
     if ((m = path.match(/^\/comments\/([a-z0-9]+)/i))) {
       return postWithComments(m[1], q, signal);

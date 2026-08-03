@@ -320,6 +320,26 @@
     return { post: normalizePost(postData), comments };
   };
 
+  /* Everywhere else this post already exists: the original it was
+   * crossposted from, its sibling crossposts, and separate submissions
+   * of the same link. Returns { original, duplicates[] } with the
+   * pasted post filtered out of the duplicates.
+   *
+   * Empty is a normal answer — most posts are only posted once. */
+  Reddit.fetchDuplicates = async function (postId, opts) {
+    opts = opts || {};
+    const id = String(postId).replace(/^t3_/, "");
+    const json = await fetchJson(`/duplicates/${id}.json`, { limit: opts.limit || 100 });
+    if (!Array.isArray(json) || json.length < 2) return { original: null, duplicates: [] };
+
+    const kids = (envelope) => ((envelope && envelope.data && envelope.data.children) || [])
+      .filter((c) => c && c.kind === "t3" && c.data)
+      .map((c) => normalizePost(c.data));
+
+    const original = kids(json[0])[0] || null;
+    return { original: original, duplicates: kids(json[1]).filter((p) => p.id !== id) };
+  };
+
   /* Bulk fetch lightweight post info by IDs using the by_id endpoint.
    * Reddit allows up to 100 IDs per call.
    */
