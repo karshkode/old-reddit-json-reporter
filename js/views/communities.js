@@ -450,7 +450,7 @@
             · <span class="loaded-sub-age${stale ? " is-stale" : ""}">${esc(Refresh.ageLabel(s))}</span>
           </div>
           <div class="loaded-sub-actions">
-            <button class="btn tiny ${stale ? "primary" : "ghost"}" type="button" data-sync="sub" data-sub="${esc(s)}"
+            <button class="btn tiny ghost" type="button" data-sync="sub" data-sub="${esc(s)}"
                     aria-label="Sync r/${esc(s)}" title="Re-read r/${esc(s)} on its own, without touching the others">↻</button>
             <button class="btn tiny ${on ? "" : "ghost"}" type="button" data-action="toggle-active-sub" data-sub="${esc(s)}"
                     aria-pressed="${on}" title="${on ? "Included in the next fetch" : "Excluded from the next fetch"}">${on ? "On" : "Off"}</button>

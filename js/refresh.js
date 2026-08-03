@@ -470,18 +470,23 @@
       return { phase: "pending", action: "go", label: "Go", icon: "▶",
         text: App.describePendingFetch() };
     }
+    /* The line leads with whatever the button is about, because it is
+     * one line and it ellipsises on a phone — the post count is
+     * context, the thing needing a fetch is the point. */
     const f = Refresh.freshness();
     const due = f.unread.length + f.stale.length;
+    const total = f.unread.length + f.stale.length + f.fresh.length;
+    const posts = `${Util.fmtNum(s.posts.length)} posts loaded`;
     if (!due) {
       return { phase: "loaded", action: "all", label: "Refresh", icon: "↻",
-        text: `${Util.fmtNum(s.posts.length)} posts · all ${f.fresh.length} subreddit${f.fresh.length === 1 ? "" : "s"} synced within the last ${Math.round(STALE_MS / 60000)} min.` };
+        text: `All ${total} subreddit${total === 1 ? "" : "s"} up to date · ${posts}.` };
     }
     const what = f.unread.length && !f.stale.length
       ? `${f.unread.length} subreddit${f.unread.length === 1 ? "" : "s"} not fetched yet`
-      : `${due} of ${f.unread.length + f.stale.length + f.fresh.length} subreddits need a sync`;
+      : `${due} of ${total} subreddits out of date`;
     return {
       phase: "loaded", action: "stale", label: `Sync ${due}`, icon: "↻",
-      text: `${Util.fmtNum(s.posts.length)} posts · ${what}.`,
+      text: `${what} · ${posts}.`,
     };
   };
 

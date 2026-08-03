@@ -675,7 +675,7 @@
   /* The label is the selection target, so give it the whole row width
      and a finger-sized box rather than the 16px checkbox alone. */
   min-height: 32px;
-  padding-right: 96px;
+  padding-right: 134px;
 }
 .loaded-sub-toggle input {
   flex: 0 0 auto;
