@@ -164,29 +164,69 @@
   state.addSubs = function (names, opts) {
     opts = opts || {};
     const added = [];
-    const known = new Set(state.knownSubs.map((s) => s.toLowerCase()));
+    /* Keyed by lowercase but holding the spelling already in
+     * knownSubs. Re-adding a sub that is on the list under a different
+     * casing used to put the normalised spelling into activeSubs
+     * alongside the original, so the set outgrew the list it is
+     * supposed to be a subset of and the chip — matched against the
+     * knownSubs spelling — rendered as inactive right after the user
+     * added it. */
+    const known = new Map();
+    for (const s of state.knownSubs) known.set(s.toLowerCase(), s);
     for (const raw of [].concat(names || [])) {
       const name = window.Util ? Util.normalizeSubName(raw) : String(raw || "").trim();
       if (!name) continue;
       const lc = name.toLowerCase();
       if (!known.has(lc)) {
         state.knownSubs.push(name);
-        known.add(lc);
+        known.set(lc, name);
         added.push(name);
       }
-      if (opts.activate !== false) state.activeSubs.add(name);
+      if (opts.activate !== false) state.activeSubs.add(known.get(lc));
     }
     if (added.length || opts.activate !== false) state.persist();
     return added;
   };
 
   state.removeSub = function (name) {
-    const lc = String(name || "").toLowerCase();
-    state.knownSubs = state.knownSubs.filter((s) => s.toLowerCase() !== lc);
+    return state.removeSubs([name]);
+  };
+
+  /* Drop many at once. Removing a forty-sub sphere one name at a time
+   * meant forty passes over knownSubs and forty writes to localStorage;
+   * this is one of each. Returns the names actually removed. */
+  state.removeSubs = function (names) {
+    const drop = new Set([].concat(names || [])
+      .map((n) => String(n || "").toLowerCase())
+      .filter(Boolean));
+    if (!drop.size) return [];
+    const removed = state.knownSubs.filter((s) => drop.has(s.toLowerCase()));
+    if (!removed.length) return [];
+    state.knownSubs = state.knownSubs.filter((s) => !drop.has(s.toLowerCase()));
     for (const s of Array.from(state.activeSubs)) {
-      if (s.toLowerCase() === lc) state.activeSubs.delete(s);
+      if (drop.has(s.toLowerCase())) state.activeSubs.delete(s);
     }
     state.persist();
+    return removed;
+  };
+
+  /* Include or exclude many from the next fetch without unloading
+   * them. Only ever touches subs already known, so a stale selection
+   * cannot smuggle a name back in. */
+  state.setActive = function (names, on) {
+    const want = new Set([].concat(names || [])
+      .map((n) => String(n || "").toLowerCase())
+      .filter(Boolean));
+    if (!want.size) return 0;
+    let changed = 0;
+    for (const s of state.knownSubs) {
+      if (!want.has(s.toLowerCase())) continue;
+      const has = state.activeSubs.has(s);
+      if (on && !has) { state.activeSubs.add(s); changed++; }
+      else if (!on && has) { state.activeSubs.delete(s); changed++; }
+    }
+    if (changed) state.persist();
+    return changed;
   };
 
   state.toggleSub = function (name) {

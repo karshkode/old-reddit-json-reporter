@@ -227,10 +227,37 @@
   display: inline-grid;
   place-items: center;
   border-radius: var(--radius-pill);
+  position: relative;
+}
+/* A 16px glyph is a miss waiting to happen on a touch screen. Grow the
+   hit area to the full height of the chip without moving the ×. */
+.chip .x::after {
+  content: "";
+  position: absolute;
+  inset: -8px -6px;
 }
 .chip .x:hover {
   opacity: 1;
   color: var(--bad);
+}
+
+/* Opens the manager rather than toggling a sub, so it should not read
+   as one more subreddit in the row. Pinned to the left edge so it
+   survives scrolling past the chips it is the way out of. */
+.chip-more {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  gap: var(--s-1);
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+.chip-more span {
+  opacity: 0.6;
 }
 
 /* Radio-style pill group. */

@@ -21,6 +21,7 @@
 
   let searchToken = 0;
   let debounceTimer = null;
+  let pastedNames = null;
 
   /* ==================================================================
    * SHARED: a subreddit result row
@@ -74,6 +75,41 @@
     el.innerHTML = text || "";
   }
 
+  /* A paste of several names is an add, not a search. Recognised only
+     when every token looks like a subreddit reference and there are at
+     least two of them, so an ordinary two-word topic ("tenant rights")
+     still searches. */
+  function parseSubList(text) {
+    const raw = String(text || "").split(/[\s,;]+/).filter(Boolean);
+    if (raw.length < 2) return null;
+    const names = [];
+    const seen = new Set();
+    for (const tok of raw) {
+      if (!/^\/?(r\/)?[A-Za-z0-9_]{2,30}\/?$/i.test(tok)) return null;
+      /* Bare words are only a list if the paste marks them as subs. */
+      if (!/r\//i.test(tok) && !/[0-9_]/.test(tok)) return null;
+      const name = Util.normalizeSubName(tok);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+    }
+    return names.length >= 2 ? names : null;
+  }
+
+  function renderPasteList(names) {
+    const fresh = names.filter((s) => !AppState.hasSub(s));
+    return `
+      <div class="sub-result-toolbar">
+        <span class="meta">${names.length} subreddit${names.length === 1 ? "" : "s"} in that list · ${fresh.length} not loaded yet</span>
+        <button class="btn small primary" type="button" data-action="add-pasted" ${fresh.length ? "" : "disabled"}>
+          ${fresh.length ? `＋ Add all ${fresh.length}` : "✓ All loaded"}
+        </button>
+      </div>
+      <div class="chips" style="padding:var(--s-2) 0">
+        ${names.map((s) => `<span class="chip ${AppState.hasSub(s) ? "active" : ""}">r/${esc(s)}</span>`).join("")}
+      </div>`;
+  }
+
   async function runSearch(query, opts) {
     opts = opts || {};
     const host = Dom.byId("sub-search-results");
@@ -86,6 +122,16 @@
       setSearchStatus("");
       return;
     }
+
+    const pasted = parseSubList(q);
+    if (pasted) {
+      searchToken++;
+      pastedNames = pasted;
+      host.innerHTML = renderPasteList(pasted);
+      setSearchStatus("");
+      return;
+    }
+    pastedNames = null;
 
     const token = ++searchToken;
 
@@ -231,9 +277,11 @@
               const subs = Seeds.bundleSubs(b.key);
               const missing = subs.filter((s) => !AppState.hasSub(s)).length;
               return `
-                <button class="catalog-bundle" type="button" data-action="load-bundle" data-bundle="${esc(b.key)}" title="${esc(b.description)}">
+                <button class="catalog-bundle" type="button"
+                        data-action="${missing ? "load-bundle" : "unload-bundle"}" data-bundle="${esc(b.key)}"
+                        title="${esc(b.description)}">
                   <span class="catalog-bundle-label">${esc(b.label)}</span>
-                  <span class="catalog-bundle-meta">${subs.length} subs${missing ? ` · ${missing} new` : " · all loaded"}</span>
+                  <span class="catalog-bundle-meta">${subs.length} subs${missing ? ` · ${missing} new` : " · all loaded, tap to unload"}</span>
                 </button>`;
             }).join("")}
           </div>`;
@@ -259,10 +307,16 @@
               <h3>${esc(Seeds.labelOf(key))}</h3>
               <span class="hint">${subs.length} communities${reach ? ` · ${num(reach)} combined members` : ""}${loadedCount ? ` · ${loadedCount} loaded` : ""}</span>
             </div>
-            <button class="btn small ${allLoaded ? "" : "primary"}" type="button"
-                    data-action="load-sphere" data-sphere="${esc(key)}" ${allLoaded ? "disabled" : ""}>
-              ${allLoaded ? "✓ All loaded" : `＋ Load all ${subs.length}`}
-            </button>
+            <div class="catalog-card-actions">
+              ${allLoaded ? "" : `
+                <button class="btn small primary" type="button" data-action="load-sphere" data-sphere="${esc(key)}">
+                  ＋ Load all ${subs.length}
+                </button>`}
+              ${loadedCount ? `
+                <button class="btn small danger-soft" type="button" data-action="unload-sphere" data-sphere="${esc(key)}">
+                  − Unload ${loadedCount}
+                </button>` : ""}
+            </div>
           </header>
           <div class="catalog-card-subs">
             ${subs.map((s) => {
@@ -278,12 +332,49 @@
    * LOADED SUBS
    * ================================================================== */
 
+  /* Transient manager state. Not persisted: a selection is a gesture
+     in progress, not a preference, and finding yesterday's half-made
+     selection still ticked would be worse than starting clean. */
+  let loadedFilter = "";
+  const selection = new Set();
+
+  /* Filter matches the name or any sphere the sub belongs to, so
+     "healthcare" narrows to that sphere's communities and the whole
+     lot can then be selected and removed together. Loading a sphere
+     is one tap; unloading it should not be forty. */
+  function matchesFilter(name, q) {
+    if (!q) return true;
+    if (name.toLowerCase().includes(q)) return true;
+    return Seeds.spheresOf(name).some((k) =>
+      Seeds.labelOf(k.replace(/^(state|demo):/, "")).toLowerCase().includes(q));
+  }
+
+  function visibleSubs() {
+    const q = loadedFilter.trim().toLowerCase();
+    return AppState.knownSubs
+      .filter((s) => matchesFilter(s, q))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  /* Drop names that are no longer loaded, so a removal cannot leave
+     the count claiming more is selected than exists. */
+  function pruneSelection() {
+    if (!selection.size) return;
+    const known = new Set(AppState.knownSubs.map((s) => s.toLowerCase()));
+    for (const s of Array.from(selection)) {
+      if (!known.has(s.toLowerCase())) selection.delete(s);
+    }
+  }
+
   function renderLoaded() {
     const host = Dom.byId("loaded-subs-grid");
+    const toolbar = Dom.byId("loaded-subs-toolbar");
     if (!host) return;
-    const subs = AppState.knownSubs.slice().sort((a, b) => a.localeCompare(b));
+    pruneSelection();
 
-    if (!subs.length) {
+    const total = AppState.knownSubs.length;
+    if (!total) {
+      if (toolbar) toolbar.innerHTML = "";
       host.innerHTML = Dom.emptyState({
         icon: "⌗",
         title: "No subreddits yet",
@@ -293,22 +384,70 @@
       return;
     }
 
+    const subs = visibleSubs();
+    const activeCount = AppState.knownSubs.filter((s) => AppState.activeSubs.has(s)).length;
+    const allShownSelected = subs.length > 0 && subs.every((s) => selection.has(s));
+
+    if (toolbar) {
+      toolbar.innerHTML = `
+        <div class="subman-bar">
+          <input type="search" id="loaded-subs-filter" class="subman-filter"
+                 placeholder="Filter by name or sphere…" aria-label="Filter loaded subreddits"
+                 value="${esc(loadedFilter)}" autocomplete="off" />
+          <span class="meta subman-count">
+            ${loadedFilter ? `${subs.length} of ${total} shown` : `${total} loaded`} · ${activeCount} in the next fetch
+          </span>
+          <button class="btn small ghost" type="button" data-action="select-shown" ${subs.length ? "" : "disabled"}>
+            ${allShownSelected ? "Deselect" : "Select"} ${loadedFilter ? `these ${subs.length}` : "all"}
+          </button>
+        </div>
+        ${selection.size ? `
+          <div class="subman-actions" role="group" aria-label="Actions for the selected subreddits">
+            <strong>${selection.size} selected</strong>
+            <button class="btn small" type="button" data-action="bulk-enable">Include in fetch</button>
+            <button class="btn small" type="button" data-action="bulk-disable">Exclude</button>
+            <button class="btn small danger-soft" type="button" data-action="bulk-remove">Remove</button>
+            <button class="btn small ghost" type="button" data-action="clear-selection">Clear</button>
+          </div>` : ""}`;
+    }
+
+    if (!subs.length) {
+      host.innerHTML = `<p class="hint">Nothing matches “${esc(loadedFilter)}”. Filtering also matches sphere names, so try “healthcare” or a state.</p>`;
+      return;
+    }
+
     host.innerHTML = subs.map((s) => {
       const on = AppState.activeSubs.has(s);
+      const picked = selection.has(s);
       const record = SubIndex.get(s);
       const posts = AppState.postsForSub(s).length;
       return `
-        <div class="loaded-sub ${on ? "" : "off"}">
+        <div class="loaded-sub ${on ? "" : "off"}${picked ? " picked" : ""}">
           <label class="loaded-sub-toggle">
-            <input type="checkbox" data-action="toggle-active-sub" data-sub="${esc(s)}" ${on ? "checked" : ""} />
+            <input type="checkbox" data-action="select-sub" data-sub="${esc(s)}" ${picked ? "checked" : ""}
+                   aria-label="Select r/${esc(s)}" />
             <span class="loaded-sub-name">r/${esc(s)}</span>
           </label>
           <div class="loaded-sub-meta">
             ${record && record.subscribers ? `${num(record.subscribers)} members · ` : ""}${posts ? `${num(posts)} posts loaded` : "no posts loaded"}
           </div>
-          <button class="btn tiny danger-soft" type="button" data-action="remove-sub" data-sub="${esc(s)}" aria-label="Remove r/${esc(s)}">Remove</button>
+          <div class="loaded-sub-actions">
+            <button class="btn tiny ${on ? "" : "ghost"}" type="button" data-action="toggle-active-sub" data-sub="${esc(s)}"
+                    aria-pressed="${on}" title="${on ? "Included in the next fetch" : "Excluded from the next fetch"}">${on ? "On" : "Off"}</button>
+            <button class="btn tiny danger-soft" type="button" data-action="remove-sub" data-sub="${esc(s)}" aria-label="Remove r/${esc(s)}">Remove</button>
+          </div>
         </div>`;
     }).join("");
+  }
+
+  /* Every mutation from the manager lands here: one persist, one chip
+     repaint, one invalidation, however many subs moved. */
+  function afterSubChange(message) {
+    App.renderChips();
+    App.markPending();
+    Router.invalidate(["dashboard", "posts"]);
+    View.render();
+    if (message) Util.toast(message);
   }
 
   /* ==================================================================
@@ -333,6 +472,20 @@
       Discovery.invalidateSpheres();
       if (Router.current() === "communities") View.render();
     }).catch(() => {});
+  }
+
+  /* The mirror of bulkAdd. Only counts what was actually loaded, so a
+     sphere half of which you never had does not claim to have removed
+     the other half. */
+  function bulkRemove(names, label) {
+    const loaded = (names || []).filter((s) => AppState.hasSub(s));
+    if (!loaded.length) {
+      Util.toast(`Nothing from ${label || "that group"} is loaded`);
+      return;
+    }
+    if (loaded.length > 1 && !window.confirm(`Remove ${loaded.length} subreddits${label ? ` from ${label}` : ""}? Their loaded posts go too.`)) return;
+    const removed = AppState.removeSubs(loaded);
+    afterSubChange(`Removed ${removed.length} subreddit${removed.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""}`);
   }
 
   /* ==================================================================
@@ -431,11 +584,64 @@
       Router.invalidate(["dashboard", "posts"]);
     });
 
-    Dom.delegate(document, "change", '[data-action="toggle-active-sub"]', (e, input2) => {
-      AppState.toggleSub(input2.dataset.sub);
+    Dom.delegate(document, "click", '[data-action="toggle-active-sub"]', (e, btn) => {
+      AppState.toggleSub(btn.dataset.sub);
       App.renderChips();
       App.markPending();
       renderLoaded();
+    });
+
+    /* ---- the loaded-subs manager ---- */
+
+    Dom.delegate(document, "input", "#loaded-subs-filter", (e, el) => {
+      loadedFilter = el.value;
+      const at = el.selectionStart;
+      renderLoaded();
+      /* renderLoaded replaces the toolbar, so put the caret back or
+         every keystroke would jump it to the end of the field. */
+      const next = Dom.byId("loaded-subs-filter");
+      if (next) { next.focus(); try { next.setSelectionRange(at, at); } catch (_) {} }
+    });
+
+    Dom.delegate(document, "change", '[data-action="select-sub"]', (e, input2) => {
+      const name = input2.dataset.sub;
+      if (input2.checked) selection.add(name); else selection.delete(name);
+      renderLoaded();
+    });
+
+    Dom.delegate(document, "click", '[data-action="select-shown"]', () => {
+      const shown = visibleSubs();
+      const allPicked = shown.length > 0 && shown.every((s) => selection.has(s));
+      for (const s of shown) {
+        if (allPicked) selection.delete(s); else selection.add(s);
+      }
+      renderLoaded();
+    });
+
+    Dom.delegate(document, "click", '[data-action="clear-selection"]', () => {
+      selection.clear();
+      renderLoaded();
+    });
+
+    Dom.delegate(document, "click", '[data-action="bulk-enable"]', () => {
+      const n = AppState.setActive(Array.from(selection), true);
+      afterSubChange(n ? `${n} subreddit${n === 1 ? "" : "s"} back in the next fetch` : "Those were already included");
+    });
+
+    Dom.delegate(document, "click", '[data-action="bulk-disable"]', () => {
+      const n = AppState.setActive(Array.from(selection), false);
+      afterSubChange(n ? `${n} subreddit${n === 1 ? "" : "s"} held out of the next fetch` : "Those were already excluded");
+    });
+
+    Dom.delegate(document, "click", '[data-action="bulk-remove"]', () => {
+      const names = Array.from(selection);
+      if (!names.length) return;
+      /* Unloading is the one action here that throws work away, and
+         at forty subs it is not obviously undoable. */
+      if (names.length > 1 && !window.confirm(`Remove ${names.length} subreddits from your dashboard? Their loaded posts go too.`)) return;
+      const removed = AppState.removeSubs(names);
+      selection.clear();
+      afterSubChange(`Removed ${removed.length} subreddit${removed.length === 1 ? "" : "s"}`);
     });
 
     Dom.delegate(document, "click", '[data-action="toggle-catalog-sub"]', (e, btn) => {
@@ -458,6 +664,23 @@
       bulkAdd(Seeds.bundleSubs(btn.dataset.bundle), bundle ? bundle.label : "");
     });
 
+    /* The inverse of loading a sphere. Its absence was the whole
+       complaint: one tap put forty subs in, and taking them out again
+       meant forty more. */
+    Dom.delegate(document, "click", '[data-action="unload-sphere"]', (e, btn) => {
+      bulkRemove(Seeds.expand([btn.dataset.sphere]), Seeds.labelOf(btn.dataset.sphere));
+    });
+
+    Dom.delegate(document, "click", '[data-action="unload-bundle"]', (e, btn) => {
+      const bundle = Seeds.BUNDLES.find((b) => b.key === btn.dataset.bundle);
+      bulkRemove(Seeds.bundleSubs(btn.dataset.bundle), bundle ? bundle.label : "");
+    });
+
+    Dom.delegate(document, "click", '[data-action="add-pasted"]', () => {
+      bulkAdd(pastedNames || [], "your list");
+      if (pastedNames) runSearch(pastedNames.map((s) => "r/" + s).join(" "));
+    });
+
     Dom.delegate(document, "click", '[data-action="add-all-results"]', () => {
       const names = (AppState.communitiesResults || []).slice(0, 10).map((r) => r.name);
       bulkAdd(names, "search results");
@@ -473,26 +696,6 @@
       bulkAdd(names, `communities like r/${btn.dataset.sub}`);
     });
 
-    const allBtn = Dom.byId("loaded-subs-all");
-    if (allBtn) {
-      allBtn.addEventListener("click", () => {
-        for (const s of AppState.knownSubs) AppState.activeSubs.add(s);
-        AppState.persist();
-        App.renderChips();
-        App.markPending();
-        renderLoaded();
-      });
-    }
-    const noneBtn = Dom.byId("loaded-subs-none");
-    if (noneBtn) {
-      noneBtn.addEventListener("click", () => {
-        AppState.activeSubs.clear();
-        AppState.persist();
-        App.renderChips();
-        App.markPending();
-        renderLoaded();
-      });
-    }
   };
 
   View.subtitle = function () {

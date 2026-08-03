@@ -4,11 +4,43 @@
 
   /* ---------- Subreddit chips ---------- */
 
-  UI.renderSubChips = function (subs, active, onToggle, onRemove) {
+  /* The strip is a shortcut for toggling a handful of subs, not an
+   * inventory. Left uncapped it grew to fifteen thousand pixels of
+   * sideways scrolling in a three-hundred-pixel window — fifty screen
+   * widths to reach the last chip, with a sixteen-pixel × to hit at
+   * the end of it. Past the cap it hands off to the manager, which can
+   * filter and act on many at once.
+   *
+   * opts.limit      chips to draw before the overflow chip
+   * opts.onOverflow what the overflow chip opens */
+  const CHIP_LIMIT = 10;
+
+  UI.renderSubChips = function (subs, active, onToggle, onRemove, opts) {
     const container = document.getElementById("subreddit-chips");
     if (!container) return;
+    opts = opts || {};
     container.innerHTML = "";
-    for (const s of subs) {
+    const limit = opts.limit == null ? CHIP_LIMIT : opts.limit;
+    const shown = limit === "all" ? subs : subs.slice(0, limit);
+    const hidden = subs.length - shown.length;
+
+    /* First and pinned, not appended after the chips. An escape hatch
+     * at the far end of a scrolling strip is no escape hatch: on a
+     * phone the chips still run several screen widths, and the way out
+     * has to be visible from the start of them. */
+    if (hidden > 0) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "chip chip-more";
+      more.innerHTML = `${subs.length} subs<span aria-hidden="true">›</span>`;
+      more.title = `Manage all ${subs.length} subreddits — ${hidden} not shown here`;
+      more.addEventListener("click", () => {
+        if (opts.onOverflow) opts.onOverflow();
+      });
+      container.appendChild(more);
+    }
+
+    for (const s of shown) {
       const chip = document.createElement("span");
       chip.className = "chip" + (active.has(s) ? " active" : "");
       chip.dataset.sub = s;
