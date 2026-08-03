@@ -744,10 +744,10 @@
 
     <section class="sheet-section">
       <h3>Cache</h3>
-      <p class="hint">Posts are cached on this device so a reload is instant. Clearing the cache forces the next Go to hit the network.</p>
+      <p class="hint">Posts are cached on this device so a reload is instant. Clearing the cache forces the next Go to hit the network. Reset goes further and asks what to clear — campaigns and the subreddits they post in are kept unless you say otherwise.</p>
       <div class="row gap wrap">
         <button id="clear-cache-btn" class="btn small" type="button">Clear request cache</button>
-        <button id="full-reset-btn" class="btn small danger" type="button">Full reset</button>
+        <button id="full-reset-btn" class="btn small danger" type="button">Reset data…</button>
       </div>
     </section>
   </div>
@@ -782,6 +782,30 @@
           <button id="sync-import-apply" type="button" class="btn small primary">Apply</button>
         </div>
         <div id="sync-import-status" class="meta" hidden></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reset data. Scoped rather than all-or-nothing: the point of the
+     dialog is that campaigns, which are hand-made and unrecoverable,
+     can be kept while everything cheap to re-fetch goes. -->
+<div id="reset-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="reset-modal-title">
+  <div class="modal-backdrop" data-action="close-reset-modal"></div>
+  <div class="modal-card" role="document">
+    <header class="modal-header">
+      <h2 id="reset-modal-title">Reset data</h2>
+      <button type="button" class="btn ghost small" data-action="close-reset-modal" aria-label="Close reset panel">×</button>
+    </header>
+    <div class="modal-body">
+      <p class="modal-hint">Choose what to clear. Your campaigns — and the subreddits they post in — are kept unless you tick them.</p>
+      <div id="reset-scopes" class="reset-scopes"></div>
+      <p id="reset-summary" class="reset-summary" role="status" aria-live="polite"></p>
+      <div class="reset-actions">
+        <button type="button" class="btn small ghost" data-action="reset-backup">⤓ Download a backup first</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn small" data-action="close-reset-modal">Cancel</button>
+        <button type="button" class="btn small danger" id="reset-confirm">Reset</button>
       </div>
     </div>
   </div>
@@ -964,6 +988,7 @@
 <script src="./js/discovery.js?v=20260804"></script>
 <script src="./js/charts.js?v=20260804"></script>
 <script src="./js/campaigns.js?v=20260804"></script>
+<script src="./js/reset.js?v=20260804"></script>
 <script src="./js/sidebar.js?v=20260804"></script>
 <script src="./js/composer.js?v=20260804"></script>
 <script src="./js/ui.js?v=20260804"></script>

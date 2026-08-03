@@ -1938,6 +1938,85 @@ select { max-width: 100%; min-width: 0; }
   color: var(--text-dim);
   line-height: 1.5;
 }
+/* ---- Reset dialog ----------------------------------------------------
+   Each scope is a full-width hit target rather than a bare checkbox: the
+   count under the name is the part that makes the choice, so the row has
+   to be big enough to read and press on a phone. */
+.reset-scopes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reset-scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  cursor: pointer;
+}
+.reset-scope:hover { border-color: var(--border-strong); }
+.reset-scope.is-on {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 8%, var(--bg-elev-2));
+}
+.reset-scope.is-empty {
+  opacity: 0.5;
+  cursor: default;
+}
+.reset-scope input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+.reset-scope-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.reset-scope-name {
+  font-size: 14px;
+  font-weight: var(--fw-medium);
+  color: var(--text);
+}
+.reset-scope-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.reset-summary {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-mute);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.reset-summary strong { color: var(--text); }
+/* Deleting a campaign is the one irreversible thing this dialog does. */
+.reset-summary.is-danger {
+  border-left-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, var(--bg-elev));
+}
+.reset-summary.is-danger strong { color: var(--bad); }
+.reset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.reset-actions .spacer { flex: 1 1 auto; }
+#reset-confirm[disabled] { opacity: 0.5; cursor: not-allowed; }
+
 /* Sync action buttons inside the modal — wrap on mobile, stack flush. */
 .modal .sync-actions {
   display: flex;

@@ -1533,6 +1533,43 @@
     });
   }
 
+  /* Wipes BOTH Reddit's request cache AND the on-disk persistent post
+   * cache. Drops state.posts so the next refresh starts from scratch.
+   * Campaigns, subreddits and preferences are untouched — this is the
+   * post-data scope of the reset dialog, which calls it with
+   * opts.silent so it can report on everything it cleared at once.
+   *
+   * opts.silent  skip the toast, the repaint and the pending banner */
+  function clearCachedPosts(opts) {
+    opts = opts || {};
+    Reddit.clearCache();
+    if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
+    /* PostCache.clear is async (IndexedDB transaction). Use the
+     * sync helper here so the UI reflects the wipe immediately;
+     * the IDB clear fires fire-and-forget in the background. */
+    if (typeof PostCache !== "undefined") {
+      if (typeof PostCache.clearSync === "function") PostCache.clearSync();
+      else { try { PostCache.clear(); } catch (_) {} }
+    }
+    state.cache.hasCache = false;
+    state.cache.savedAt = 0;
+    state.cache.cachedCount = 0;
+    state.posts = [];
+    /* Everything derived from those posts goes too. Left behind, the
+     * detail and related-community caches would answer for posts the
+     * app no longer holds. */
+    state.detailCache.clear();
+    state.postRelated.clear();
+    state.subProfiles = {};
+    state.crossPosts = [];
+    state.campaignSummaries = {};
+    if (opts.silent) return;
+    rerenderAll();
+    Util.toast("All cached posts cleared. Tap Go to fetch fresh data.", "ok");
+    Util.setActionPhase("pending", describePendingFetch());
+    state.pendingChanges = true;
+  }
+
   function bind() {
     /* Settings sheet — one dialog for fetch settings, data source,
      * appearance and cache controls. */
@@ -1600,48 +1637,18 @@
       if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
       Util.toast("Cache cleared. Tap Refresh to re-fetch.", "ok");
     }
-    /* Full reset: wipes BOTH Reddit's request cache AND the on-disk
-     * persistent post cache. Drops state.posts so the next refresh
-     * starts from scratch. Triggered by shift+click on Clear cache,
-     * or programmatically via the confirm() in the action banner. */
-    function fullReset() {
-      Reddit.clearCache();
-      if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
-      /* PostCache.clear is async (IndexedDB transaction). Use the
-       * sync helper here so the UI reflects the wipe immediately;
-       * the IDB clear fires fire-and-forget in the background. */
-      if (typeof PostCache !== "undefined") {
-        if (typeof PostCache.clearSync === "function") PostCache.clearSync();
-        else { try { PostCache.clear(); } catch (_) {} }
-      }
-      state.cache.hasCache = false;
-      state.cache.savedAt = 0;
-      state.cache.cachedCount = 0;
-      state.posts = [];
-      rerenderAll();
-      Util.toast("Full reset — all cached posts cleared. Tap Go to fetch fresh data.", "ok");
-      Util.setActionPhase("pending", describePendingFetch());
-      state.pendingChanges = true;
-    }
 
     const clearBtn = document.getElementById("clear-cache-btn");
     if (clearBtn) clearBtn.addEventListener("click", (e) => {
-      /* Shift-click = full reset (also wipes persistent post cache).
-       * Plain click = soft (request-cache only).
-       * Discoverable via the title attribute on the button. */
-      if (e.shiftKey) fullReset(); else softClearCache();
-    });
-    /* Full reset button (separate, explicit). Lets users on touch
-     * devices (no shift key) wipe everything cleanly, and surfaces
-     * the destructive action visually so first-time users discover
-     * it. Wired below to a button we add to the topbar in HTML. */
-    const fullResetBtn = document.getElementById("full-reset-btn");
-    if (fullResetBtn) fullResetBtn.addEventListener("click", () => {
-      if (!state.posts.length) { fullReset(); return; }
-      if (confirm("Full reset will discard all cached posts (" + state.posts.length + " in view) and re-fetch from scratch. Continue?")) {
-        fullReset();
-      }
-    });
+    /* Shift-click opens the reset dialog, plain click is the soft
+     * request-cache clear. Discoverable via the button's title. */
+    if (e.shiftKey) Reset.open(); else softClearCache();
+  });
+  /* The dialog asks what to clear rather than assuming, because the
+   * one thing most worth not losing — campaigns — used to be the one
+   * thing a confirm() could not offer to keep. */
+  const fullResetBtn = document.getElementById("full-reset-btn");
+  if (fullResetBtn) fullResetBtn.addEventListener("click", () => Reset.open());
     /* Filter changes (listing / time / limit) no longer auto-trigger
      * a fetch. They mark the dataset stale and reveal the Go banner;
      * the user opts into refetching with one explicit click. */
@@ -3723,6 +3730,7 @@
       }).catch(() => {});
     });
     safeRun("wireSyncSession", wireSyncSession);
+    safeRun("wireReset", () => Reset.wire());
     safeRun("renderChips", renderChips);
     safeRun("router", () => Router.start());
     safeRun("hydratePostCache", () => {
@@ -3779,6 +3787,8 @@
     buildCampaignDigest: buildCampaignDigest,
     updateRailCounts: updateRailCounts,
     setSettingsOpen: setSettingsOpen,
+    clearCachedPosts: clearCachedPosts,
+    describePendingFetch: describePendingFetch,
   };
 
   /* ============================================================
