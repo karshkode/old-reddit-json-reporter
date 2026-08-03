@@ -585,6 +585,13 @@
   color: var(--text-mute);
   margin-top: 2px;
 }
+.catalog-card-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s-1);
+}
 .catalog-card-subs {
   display: flex;
   flex-wrap: wrap;
@@ -596,6 +603,45 @@
 }
 
 /* ------------------------------------------------------- Loaded subs */
+
+.subman-toolbar {
+  margin-bottom: var(--s-3);
+}
+.subman-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.subman-filter {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.subman-count {
+  flex: 0 1 auto;
+}
+
+/* Sticky so the actions stay reachable however far down a long list
+   the selection was made — at a hundred subreddits, scrolling back to
+   the top to press Remove is most of the work. */
+.subman-actions {
+  position: sticky;
+  top: var(--s-2);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  box-shadow: var(--shadow);
+}
+.subman-actions strong {
+  margin-right: auto;
+}
 
 .loaded-subs-grid {
   display: grid;
@@ -615,12 +661,26 @@
 .loaded-sub.off {
   opacity: 0.55;
 }
+.loaded-sub.picked {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+  opacity: 1;
+}
 .loaded-sub-toggle {
   display: flex;
   align-items: center;
   gap: var(--s-2);
   cursor: pointer;
   margin: 0;
+  /* The label is the selection target, so give it the whole row width
+     and a finger-sized box rather than the 16px checkbox alone. */
+  min-height: 32px;
+  padding-right: 96px;
+}
+.loaded-sub-toggle input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
 }
 .loaded-sub-name {
   font-weight: var(--fw-medium);
@@ -629,12 +689,18 @@
 .loaded-sub-meta {
   font-size: var(--fs-xs);
   color: var(--text-dim);
-  padding-right: 64px;
+  padding-right: 96px;
 }
-.loaded-sub .btn.tiny {
+.loaded-sub-actions {
   position: absolute;
   right: var(--s-2);
-  bottom: var(--s-2);
+  top: var(--s-2);
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.loaded-sub-actions .btn.tiny {
+  min-height: 28px;
 }
 
 /* =====================================================================
