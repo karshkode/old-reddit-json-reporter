@@ -117,10 +117,28 @@
           <div class="action-progress-fill" id="action-progress-fill"></div>
         </div>
       </div>
-      <button id="action-btn" class="btn primary action-btn" type="button" aria-label="Run search">
-        <span class="action-btn-icon" aria-hidden="true">▶</span>
-        <span class="action-btn-label">Go</span>
-      </button>
+      <div class="action-banner-buttons">
+        <button id="action-btn" class="btn primary action-btn" type="button" aria-label="Run search">
+          <span class="action-btn-icon" aria-hidden="true">▶</span>
+          <span class="action-btn-label">Go</span>
+        </button>
+        <!-- The narrower scopes. The primary button offers whichever
+             one is cheapest and still useful; this is where to pick a
+             different one on purpose. -->
+        <div class="action-menu always" id="action-scope-menu">
+          <button type="button" class="btn action-menu-toggle action-scope-toggle"
+                  aria-expanded="false" aria-haspopup="true" aria-label="Choose what to sync">⌄</button>
+          <div class="action-menu-list" role="menu">
+            <span class="action-menu-head">Sync</span>
+            <button class="btn small" type="button" role="menuitem" data-sync="stale">Only what's out of date</button>
+            <button class="btn small" type="button" role="menuitem" data-sync="campaigns">Campaign posts</button>
+            <button class="btn small" type="button" role="menuitem" data-sync="visible">Posts on screen</button>
+            <span class="action-menu-head">Refresh</span>
+            <button class="btn small" type="button" role="menuitem" data-sync="all">Every subreddit</button>
+            <span class="action-menu-note" id="action-scope-note"></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Always-visible data scope: which subs are loaded, and the knobs
@@ -313,6 +331,10 @@
             <p>A campaign is a set of cross-posts tracked toward a goal. Open one to see its per-subreddit trend analysis, find new communities to target, and compose the next post.</p>
           </div>
           <div class="card-actions">
+            <!-- One batched id lookup covers every campaign, against one
+                 listing read per subreddit for a full refresh. -->
+            <button class="btn" type="button" data-sync="campaigns"
+                    title="Re-read the posts in every campaign, without re-reading any subreddit">↻ Sync all</button>
             <button class="btn primary" type="button" id="campaign-new-toggle">＋ New campaign</button>
           </div>
         </div>
@@ -593,8 +615,15 @@
               <h2>Posts (<span id="posts-count">0</span>)</h2>
               <span class="hint">Tap a row for comments, sentiment, a title-quality breakdown and the communities this post belongs in</span>
             </div>
-            <button class="card-help" type="button" aria-label="What you can do from a post"
-                    data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first.">?</button>
+            <div class="card-actions">
+              <!-- Checks exactly the rows on screen, which is also the
+                   only way to re-read a post whose subreddit has long
+                   since dropped it off the listing. -->
+              <button class="btn small" type="button" data-sync="visible"
+                      title="Re-read only the posts currently listed below">↻ Sync these</button>
+              <button class="card-help" type="button" aria-label="What you can do from a post"
+                      data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first.">?</button>
+            </div>
           </header>
 
           <div class="posts-controls">
@@ -669,7 +698,11 @@
         <div class="card" id="post-detail" hidden style="margin-top:var(--s-4)">
           <header class="card-header">
             <div><h2>Post detail</h2></div>
-            <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
+            <div class="card-actions">
+              <button id="post-detail-sync" class="btn small" type="button" hidden
+                      title="Re-read this one post's score and comments">↻ Sync</button>
+              <button id="close-detail" class="btn ghost small" aria-label="Close detail">Close</button>
+            </div>
           </header>
           <div id="post-detail-body"></div>
         </div>
@@ -1024,6 +1057,7 @@
 <script src="./js/archive.js?v=20260804"></script>
 <script src="./js/reddit.js?v=20260804"></script>
 <script src="./js/postcache.js?v=20260804"></script>
+<script src="./js/refresh.js?v=20260804"></script>
 <script src="./js/subindex.js?v=20260804"></script>
 <script src="./js/seeds.js?v=20260804"></script>
 <script src="./js/timing.js?v=20260804"></script>

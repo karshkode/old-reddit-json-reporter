@@ -553,6 +553,83 @@
   flex: 0 0 auto;
 }
 
+/* Primary action and its scope picker read as one control, so the
+ * caret is obviously "the same button, other scopes" rather than a
+ * second unrelated action. */
+.action-banner-buttons {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+}
+.action-banner-buttons .action-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.action-scope-toggle {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-inline: var(--s-2);
+  line-height: 1;
+}
+.action-banner.phase-loading .action-scope-toggle {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* The shared .action-menu only becomes a popover on narrow screens,
+ * where a row of secondary buttons stops fitting. This one is a
+ * popover at every width: the banner has one line of room and the
+ * scopes are a deliberate choice, not a toolbar. */
+.action-menu.always .action-menu-toggle {
+  display: inline-flex;
+}
+.action-menu.always .action-menu-list {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--s-1));
+  z-index: 40;
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  min-width: 232px;
+  padding: var(--s-2);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 0.28));
+}
+.action-menu.always.open .action-menu-list {
+  display: flex;
+}
+.action-menu.always .action-menu-list > .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+.action-menu-head {
+  padding: var(--s-1) var(--s-2) 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.action-menu-head + .btn {
+  margin-top: 2px;
+}
+.action-menu-note {
+  padding: var(--s-2) var(--s-2) 0;
+  margin-top: var(--s-1);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  white-space: normal;
+}
+.action-menu-note:empty {
+  display: none;
+}
+
 /* Indeterminate: no meaningful percentage yet, so sweep instead. */
 .action-banner.indeterminate .action-progress-fill {
   width: 38%;

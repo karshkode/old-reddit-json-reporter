@@ -140,6 +140,26 @@
 
     const close = Dom.byId("close-detail");
     if (close) close.addEventListener("click", UI.hidePostDetail);
+
+    /* Re-read the open post on its own. The panel is where someone
+       decides whether a post is still moving, and that question
+       deserves a cheaper answer than re-reading every subreddit. */
+    const sync = Dom.byId("post-detail-sync");
+    if (sync) sync.addEventListener("click", () => {
+      const id = sync.dataset.post;
+      if (!id || sync.disabled) return;
+      sync.disabled = true;
+      sync.textContent = "Syncing…";
+      Refresh.post(id).then((res) => {
+        if (res && res.data) {
+          UI.renderPostDetail(res.data.post, res.data.comments);
+          App.renderRelatedForDetail(res.data.post);
+        }
+      }).finally(() => {
+        sync.disabled = false;
+        sync.textContent = "↻ Sync";
+      });
+    });
   };
 
   Router.register("posts", {

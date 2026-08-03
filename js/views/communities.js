@@ -387,6 +387,7 @@
     const subs = visibleSubs();
     const activeCount = AppState.knownSubs.filter((s) => AppState.activeSubs.has(s)).length;
     const allShownSelected = subs.length > 0 && subs.every((s) => selection.has(s));
+    const due = Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s)));
 
     if (toolbar) {
       toolbar.innerHTML = `
@@ -400,10 +401,15 @@
           <button class="btn small ghost" type="button" data-action="select-shown" ${subs.length ? "" : "disabled"}>
             ${allShownSelected ? "Deselect" : "Select"} ${loadedFilter ? `these ${subs.length}` : "all"}
           </button>
+          ${due.length ? `
+            <button class="btn small primary" type="button" data-sync="stale">
+              Sync ${due.length} out of date
+            </button>` : ""}
         </div>
         ${selection.size ? `
           <div class="subman-actions" role="group" aria-label="Actions for the selected subreddits">
             <strong>${selection.size} selected</strong>
+            <button class="btn small primary" type="button" data-action="bulk-sync">Sync</button>
             <button class="btn small" type="button" data-action="bulk-enable">Include in fetch</button>
             <button class="btn small" type="button" data-action="bulk-disable">Exclude</button>
             <button class="btn small danger-soft" type="button" data-action="bulk-remove">Remove</button>
@@ -421,6 +427,8 @@
       const picked = selection.has(s);
       const record = SubIndex.get(s);
       const posts = AppState.postsForSub(s).length;
+      const age = AppState.syncAgeOf(s);
+      const stale = age == null || age > Refresh.STALE_MS;
       return `
         <div class="loaded-sub ${on ? "" : "off"}${picked ? " picked" : ""}">
           <label class="loaded-sub-toggle">
@@ -430,8 +438,11 @@
           </label>
           <div class="loaded-sub-meta">
             ${record && record.subscribers ? `${num(record.subscribers)} members · ` : ""}${posts ? `${num(posts)} posts loaded` : "no posts loaded"}
+            · <span class="loaded-sub-age${stale ? " is-stale" : ""}">${esc(Refresh.ageLabel(s))}</span>
           </div>
           <div class="loaded-sub-actions">
+            <button class="btn tiny ${stale ? "primary" : "ghost"}" type="button" data-sync="sub" data-sub="${esc(s)}"
+                    aria-label="Sync r/${esc(s)}" title="Re-read r/${esc(s)} on its own, without touching the others">↻</button>
             <button class="btn tiny ${on ? "" : "ghost"}" type="button" data-action="toggle-active-sub" data-sub="${esc(s)}"
                     aria-pressed="${on}" title="${on ? "Included in the next fetch" : "Excluded from the next fetch"}">${on ? "On" : "Off"}</button>
             <button class="btn tiny danger-soft" type="button" data-action="remove-sub" data-sub="${esc(s)}" aria-label="Remove r/${esc(s)}">Remove</button>
@@ -621,6 +632,28 @@
     Dom.delegate(document, "click", '[data-action="clear-selection"]', () => {
       selection.clear();
       renderLoaded();
+    });
+
+    /* Fetch exactly the ticked subs. The bar already lets someone
+       narrow to a sphere and select it in one tap, so this is the
+       shortest route to "re-read just the housing communities". */
+    Dom.delegate(document, "click", '[data-action="bulk-sync"]', () => {
+      const names = Array.from(selection);
+      if (!names.length) return;
+      /* Excluded subs are excluded from fetching, so syncing one would
+         quietly contradict the switch the user set. */
+      const fetchable = names.filter((s) => AppState.activeSubs.has(s));
+      if (!fetchable.length) {
+        Util.toast("All of those are excluded from fetching. Include them first.");
+        return;
+      }
+      const held = names.length - fetchable.length;
+      Refresh.subs(fetchable, {
+        label: fetchable.length === 1 ? "r/" + fetchable[0] : `${fetchable.length} selected`,
+      }).then(() => {
+        if (held) Util.toast(`${held} of those are excluded from fetching, so they were skipped.`);
+        renderLoaded();
+      });
     });
 
     Dom.delegate(document, "click", '[data-action="bulk-enable"]', () => {

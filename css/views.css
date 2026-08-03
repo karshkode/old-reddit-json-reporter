@@ -689,7 +689,14 @@
 .loaded-sub-meta {
   font-size: var(--fs-xs);
   color: var(--text-dim);
-  padding-right: 96px;
+  /* Clears the absolutely-positioned action buttons in the corner. */
+  padding-right: 134px;
+}
+/* Out of date is the state worth noticing, so only that one is
+ * coloured — a grid where every row is highlighted highlights
+ * nothing. */
+.loaded-sub-age.is-stale {
+  color: var(--warn, var(--accent));
 }
 .loaded-sub-actions {
   position: absolute;

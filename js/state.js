@@ -18,6 +18,7 @@
     time: "rj.time",
     limit: "rj.limit",
     spheres: "rj.activeSpheres",
+    subSync: "rj.subSync",
   };
 
   const state = {
@@ -111,6 +112,15 @@
       cachedCount: 0,
       lastRefreshAt: 0,
     },
+
+    /* When each subreddit was last read from the archive, keyed by
+     * lowercase name: { at, count, error }. Without this the only
+     * honest answer to "what needs fetching" is "all of it", which is
+     * why the single Refresh button used to re-read a hundred and
+     * seventy subs to pick up one new one. Persisted, because
+     * staleness that resets on reload would send everyone straight
+     * back to the full sweep. */
+    subSync: {},
   };
 
   state.KEYS = KEYS;
@@ -131,9 +141,15 @@
         const parsed = JSON.parse(rawSpheres);
         if (Array.isArray(parsed)) state.activeSpheres = parsed.filter((k) => typeof k === "string");
       }
+      const rawSync = localStorage.getItem(KEYS.subSync);
+      if (rawSync) {
+        const parsed = JSON.parse(rawSync);
+        if (parsed && typeof parsed === "object") state.subSync = parsed;
+      }
     } catch (_) {
       state.knownSubs = [];
       state.activeSubs = new Set();
+      state.subSync = {};
     }
   };
 
@@ -154,6 +170,41 @@
     try {
       localStorage.setItem(KEYS.spheres, JSON.stringify(state.activeSpheres || []));
     } catch (_) {}
+  };
+
+  /* ---------- Sync ledger ---------- */
+
+  state.persistSubSync = function () {
+    try {
+      localStorage.setItem(KEYS.subSync, JSON.stringify(state.subSync || {}));
+    } catch (_) {}
+  };
+
+  /* Stamp one subreddit as just-read. `info.error` records a failed
+   * attempt: the timestamp still moves, so a sub the archive keeps
+   * refusing does not sit at the top of the stale list forever
+   * re-requesting itself, but the error is kept so the row can say
+   * why it has no posts. */
+  state.markSynced = function (name, info) {
+    const lc = String(name || "").toLowerCase();
+    if (!lc) return;
+    state.subSync[lc] = Object.assign({ at: Date.now() }, info || {});
+  };
+
+  /* Milliseconds since this sub was last read, or null if it never
+   * has been — which callers treat as maximally stale rather than
+   * as fresh. */
+  state.syncAgeOf = function (name) {
+    const rec = state.subSync[String(name || "").toLowerCase()];
+    return rec && rec.at ? Math.max(0, Date.now() - rec.at) : null;
+  };
+
+  state.clearSubSync = function (names) {
+    if (names == null) state.subSync = {};
+    else {
+      for (const n of [].concat(names)) delete state.subSync[String(n || "").toLowerCase()];
+    }
+    state.persistSubSync();
   };
 
   /* ---------- Subreddit scope helpers ---------- */
@@ -206,6 +257,10 @@
     for (const s of Array.from(state.activeSubs)) {
       if (drop.has(s.toLowerCase())) state.activeSubs.delete(s);
     }
+    /* An unloaded sub that is loaded again later is new data, not
+     * data from whenever it was last here. */
+    for (const lc of drop) delete state.subSync[lc];
+    state.persistSubSync();
     state.persist();
     return removed;
   };

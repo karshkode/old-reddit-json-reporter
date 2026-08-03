@@ -76,19 +76,20 @@
    * hydrateFromPostCache returns true. */
   function showCachedActionBanner() {
     if (typeof Util === "undefined" || !Util.setActionPhase) return;
+    if (state.pendingChanges) {
+      Util.setActionPhase("pending", "Filters changed since cache. Tap Go for fresh data.");
+      return;
+    }
+    /* Hand over to the scoped-refresh module, which reads the per-sub
+     * ledger and can therefore offer the narrow option. The cache's
+     * own age still leads the line, because that is the number the
+     * user came back to the tab wanting. */
     const ageStr = (typeof PostCache !== "undefined" && state.cache.savedAt)
       ? PostCache.formatAge(state.cache.savedAt)
       : "";
-    const head = state.pendingChanges
-      ? "Filters changed since cache"
-      : `Showing cached data from ${ageStr}`;
-    const tail = state.pendingChanges
-      ? "Tap Go for fresh data."
-      : `${state.posts.length} posts loaded · tap Refresh to fetch new posts.`;
-    /* The action button reads "Go" in pending phase and "Refresh"
-     * in loaded — picked here based on whether the user has
-     * unfetched changes since the last cached refresh. */
-    Util.setActionPhase(state.pendingChanges ? "pending" : "loaded", `${head}. ${tail}`);
+    const d = Refresh.describeState();
+    Util.setActionPhase(d.phase, ageStr ? `Cached ${ageStr} · ${d.text}` : d.text,
+      { label: d.label, icon: d.icon, action: d.action });
   }
 
   /* Persist current state.posts to the post cache. Fire-and-forget;
@@ -588,6 +589,20 @@
      * Refresh ↻, fill bar fades, text shows the load summary). */
     state.pendingChanges = false;
     state.cache.lastRefreshAt = Date.now();
+
+    /* Stamp every sub this run covered so the stale list starts empty
+     * afterwards. Done here rather than in the scoped-refresh module
+     * because refreshData is reached from a dozen places — adding a
+     * sub, loading a sphere, accepting a discovery suggestion — and a
+     * sweep that did not record itself would leave all of them
+     * looking unread the moment it finished. */
+    const failedSubs = new Set(state.lastErrors.map((e) => String(e.sub || "").toLowerCase()));
+    for (const sub of subs) {
+      state.markSynced(sub, failedSubs.has(sub.toLowerCase())
+        ? { count: 0, error: "fetch failed" }
+        : { count: state.postsForSub(sub).length });
+    }
+    state.persistSubSync();
     const newCount = mergeSummary ? freshUnique.length - mergeSummary.replaced : state.posts.length;
     const tail = ` · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`;
     const loadedLine = mergeSummary
@@ -633,6 +648,67 @@
     }, 1200);
   }
 
+  /* ---------- Scoped sync ---------- */
+
+  /* One entry point for every "fetch a named part of this" control,
+   * wherever it lives. Keeping the dispatch in one place is what stops
+   * the button in the banner, the one in the campaign header and the
+   * one on a post row from each growing their own idea of what a
+   * refresh is. */
+  function runSync(scope, el) {
+    switch (scope) {
+      case "stale":
+        return Refresh.stale();
+      case "campaigns":
+        return Refresh.campaigns();
+      case "campaign":
+        return Refresh.campaign((el && el.dataset.campaign) || state.openCampaignId);
+      case "sub":
+        return Refresh.subs([el && el.dataset.sub]);
+      case "post":
+        return Refresh.postIds([el && el.dataset.post], { progress: false });
+      case "visible":
+        return syncVisiblePosts();
+      case "all":
+      case "go":
+      default:
+        return Refresh.everything(true);
+    }
+  }
+
+  /* The posts actually on screen. Someone reading page three of a
+   * filtered list wants those twenty-five checked, not nineteen
+   * thousand — and unlike a subreddit sync this reaches posts whose
+   * subreddit is nowhere near the top of any listing any more. */
+  function syncVisiblePosts() {
+    const rows = Array.from(document.querySelectorAll("#posts-tbody tr[data-id]"));
+    const ids = rows.map((r) => r.dataset.id).filter(Boolean);
+    if (!ids.length) {
+      Util.toast("No posts on screen to sync.");
+      return Promise.resolve(null);
+    }
+    return Refresh.postIds(ids, {
+      label: `${ids.length} post${ids.length === 1 ? "" : "s"} on screen`,
+    });
+  }
+
+  /* Staleness moves on its own, so the offer has to as well: a banner
+   * that read "Refresh" when the page loaded should say "Sync 12" once
+   * twelve subs have aged past the window. Repaints only when the
+   * offer actually changes, so the specific line a fetch just wrote
+   * ("Refreshed: 500 fetched (+40 new)…") survives until it stops
+   * being true. */
+  function startStalenessTicker() {
+    setInterval(() => {
+      const banner = document.getElementById("action-banner");
+      const btn = document.getElementById("action-btn");
+      if (!banner || !btn || banner.hidden) return;
+      if (banner.classList.contains("phase-loading") || Refresh.busy()) return;
+      const next = Refresh.describeState();
+      if (next.action !== btn.dataset.refreshAction) Refresh.repaintBanner();
+    }, 60000);
+  }
+
   /* ---------- Post detail ---------- */
 
   async function openPostDetail(post) {
@@ -640,6 +716,11 @@
     const card = document.getElementById("post-detail");
     const body = document.getElementById("post-detail-body");
     card.hidden = false;
+    const syncBtn = document.getElementById("post-detail-sync");
+    if (syncBtn) {
+      syncBtn.hidden = false;
+      syncBtn.dataset.post = post.id;
+    }
     body.innerHTML = `<div class="empty"><div class="skeleton" style="margin-bottom:6px"></div><div class="skeleton" style="margin-bottom:6px;width:80%"></div><div class="skeleton" style="width:60%"></div></div>`;
     try {
       let data = state.detailCache.get(post.id);
@@ -710,7 +791,14 @@
 
   /* ---------- Campaigns ---------- */
 
-  async function refreshAllCampaignSummaries() {
+  /* @param opts.skipNetwork  Recompute every campaign's totals from
+   *        the posts already in memory and stop there. A scoped sync
+   *        has just re-read exactly the posts these campaigns are made
+   *        of, so going back to the archive for them would ask the
+   *        same question twice and risk a rate limit answering the
+   *        second one. */
+  async function refreshAllCampaignSummaries(opts) {
+    opts = opts || {};
     const list = Campaigns.list();
     if (!list.length) {
       state.campaignSummaries = {};
@@ -734,6 +822,10 @@
     state.campaignSummaries = summaries;
     Router.invalidate(["campaigns"]);
     populateCampaignSelectors();
+    if (opts.skipNetwork) {
+      updateRailCounts();
+      return;
+    }
 
     /* Second pass: fill in the rest from the network. Concurrency 2 stays
      * under the archive's rate limit while the subreddit batch may have
@@ -755,6 +847,34 @@
 
     const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0));
     console.log(`[campaigns] refreshed ${list.length} in ${dur}ms`);
+  }
+
+  /* Recompute one campaign's totals from posts already in hand and
+   * publish them to whichever views are showing it.
+   *
+   * @param extraPosts  Posts a scoped sync just fetched that are not in
+   *        the inventory — a campaign can reference subreddits nobody
+   *        has loaded. Without them a campaign sync would resolve the
+   *        shared posts and report the rest as missing.
+   *
+   * Never touches the network: the callers are all "I just fetched
+   * these, now tell me what they add up to". */
+  async function publishCampaign(campaign, extraPosts) {
+    campaign = typeof campaign === "string" ? Campaigns.get(campaign) : campaign;
+    if (!campaign) return null;
+    const pool = extraPosts && extraPosts.length
+      ? state.posts.concat(extraPosts)
+      : state.posts;
+    const agg = await Campaigns.fetchAggregated(campaign, { fromPosts: pool, skipNetwork: true });
+    agg.campaignId = campaign.id;
+    state.campaignSummaries[campaign.id] = agg;
+    if (state.openCampaignId === campaign.id) {
+      state.campaignAgg = agg;
+      state.campaignDeep = computeCampaignDeep(campaign, agg);
+    }
+    Router.invalidate(["campaign", "campaigns"]);
+    updateRailCounts();
+    return agg;
   }
 
   /* Load one campaign's data and hand it to the workspace view.
@@ -1625,17 +1745,37 @@
       catch (_) { window.scrollTo(0, 0); }
     });
 
-    /* The single ACTION button inside the action banner. Same handler
-     * regardless of which phase the banner is showing — the button is
-     * always "fetch / refetch with current settings". CSS + the phase
-     * class flip the icon and label between Go ▶ / Loading… / Refresh ↻. */
+    /* The main ACTION button. It runs whatever its own label is
+     * currently promising — "Go" for a first fetch, "Sync 4" when four
+     * subreddits have gone stale, "Refresh" when none have. Deriving
+     * the behaviour from the offer rather than the other way round
+     * means the two cannot drift apart. */
     const actionBtn = document.getElementById("action-btn");
     if (actionBtn) actionBtn.addEventListener("click", () => {
       if (actionBtn.disabled) return;
-      /* User tapped Refresh — clear the circuit breaker so the archive
+      /* User asked for data — clear the circuit breaker so the archive
        * gets a fresh chance even if it's been auto-failing. */
       if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
-      refreshData(true);
+      runSync(actionBtn.dataset.refreshAction || "go");
+    });
+
+    /* The scope picker beside it. Every entry is narrower than the old
+     * all-or-nothing refresh except the last, which is it. */
+    Dom.delegate(document, "click", "[data-sync]", (e, btn) => {
+      if (Reddit.clearCircuitBreaker) Reddit.clearCircuitBreaker();
+      runSync(btn.dataset.sync, btn);
+    });
+
+    /* Fill in what each scope would actually cost before it is picked,
+     * so "Every subreddit" is visibly the expensive one. */
+    Dom.delegate(document, "click", ".action-scope-toggle", () => {
+      const note = document.getElementById("action-scope-note");
+      if (!note) return;
+      const f = Refresh.freshness();
+      const due = f.unread.length + f.stale.length;
+      note.textContent = state.activeSubs.size
+        ? `${due} of ${state.activeSubs.size} subreddits are out of date. A full refresh re-reads all ${state.activeSubs.size}.`
+        : "No subreddits loaded yet.";
     });
 
     /* "Clear cache" is a soft cache reset. It wipes Reddit's request
@@ -2084,12 +2224,19 @@
       });
     }
 
+    /* Re-read this campaign's posts and nothing else.
+     *
+     * It used to empty Reddit's whole request cache and re-open the
+     * campaign, which made every other subreddit re-fetch on its next
+     * touch and still left the campaign resolving ids "locally" from
+     * the same stale copies in the inventory. Refresh.campaign
+     * bypasses the cache for these ids only and writes the answers
+     * back, so the campaign and the Posts table cannot disagree. */
     const campaignRefreshBtn = document.getElementById("campaign-refresh");
     if (campaignRefreshBtn) campaignRefreshBtn.addEventListener("click", () => {
       const id = state.openCampaignId;
       if (!id) return;
-      Reddit.clearCache();
-      loadCampaign(id);
+      Refresh.campaign(id);
     });
     const campaignDeleteBtn = document.getElementById("campaign-delete");
     if (campaignDeleteBtn) campaignDeleteBtn.addEventListener("click", () => {
@@ -3778,6 +3925,7 @@
     safeRun("wireComposer", wireComposer);
     safeRun("wireRecommendPagination", wireRecommendPagination);
     safeRun("wireBackToTop", wireBackToTop);
+    safeRun("stalenessTicker", startStalenessTicker);
     safeRun("checkStorageAvailability", checkStorageAvailability);
     safeRun("demoMode", () => { if (window.Demo) Demo.maybeActivate(); });
   }
@@ -3795,13 +3943,17 @@
     rerenderLight: rerenderLight,
     markPending: markPending,
     refreshData: refreshData,
+    persistPostCache: persistPostCache,
     loadCampaign: loadCampaign,
     openCampaign: openCampaign,
+    publishCampaign: publishCampaign,
     refreshCampaignSummaries: refreshAllCampaignSummaries,
     renderTargetingInto: renderTargetingInto,
     openComposer: function (id) { return openComposer(id); },
     openPostDetail: openPostDetail,
+    renderRelatedForDetail: renderRelatedForDetail,
     runDiscovery: function () { return _runDiscover && _runDiscover(); },
+    runSync: runSync,
     buildCampaignDigest: buildCampaignDigest,
     updateRailCounts: updateRailCounts,
     setSettingsOpen: setSettingsOpen,

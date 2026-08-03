@@ -372,6 +372,76 @@
     };
   };
 
+  /* ----------------------------- patch ------------------------------- *
+   * Fold a freshly-fetched subset back into a pool without judging the
+   * rest of it.
+   *
+   * merge() answers "here is everything I just fetched, what should the
+   * whole inventory be" — so anything it was not handed is a candidate
+   * for eviction. A scoped sync asks the opposite question: only these
+   * few posts were looked at, leave every other post exactly where it
+   * is. Running merge() for one subreddit's refresh would age out the
+   * other hundred and seventy.
+   *
+   * The counts come back because a scoped sync is small enough to
+   * report honestly. "12 new, 40 updated, +1.2k upvotes" is the whole
+   * point of syncing one thing rather than everything.
+   */
+  Cache.patch = function (existing, fresh) {
+    const order = [];
+    const map = new Map();
+    for (const p of existing || []) {
+      if (!p || !p.id) continue;
+      if (!map.has(p.id)) order.push(p.id);
+      map.set(p.id, p);
+    }
+
+    let added = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let scoreDelta = 0;
+    let commentDelta = 0;
+    const changedIds = [];
+
+    for (const p of fresh || []) {
+      if (!p || !p.id) continue;
+      const prev = map.get(p.id);
+      if (!prev) {
+        order.push(p.id);
+        map.set(p.id, p);
+        added++;
+        continue;
+      }
+      /* A post the user pasted in by hand carries flags the archive
+       * knows nothing about. Re-fetching it must not quietly demote it
+       * back to an ordinary listing post and let the next merge drop
+       * it. */
+      const next = p.imported || !prev.imported ? p : Object.assign({}, p, { imported: true });
+      const ds = (next.score || 0) - (prev.score || 0);
+      const dc = (next.num_comments || 0) - (prev.num_comments || 0);
+      map.set(p.id, next);
+      if (ds || dc || next.removed !== prev.removed) {
+        updated++;
+        scoreDelta += ds;
+        commentDelta += dc;
+        changedIds.push(p.id);
+      } else {
+        unchanged++;
+      }
+    }
+
+    return {
+      posts: order.map((id) => map.get(id)),
+      added,
+      updated,
+      unchanged,
+      scoreDelta,
+      commentDelta,
+      changedIds,
+      totalFresh: (fresh || []).length,
+    };
+  };
+
   /* ------------------------- fetch-key helper ------------------------ */
 
   Cache.buildFetchKey = function (subs, listing, timeWindow, limit) {
