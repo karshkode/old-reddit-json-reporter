@@ -16,6 +16,11 @@
  * ===================================================================== */
 (function () {
   const esc = (s) => Util.escapeHtml(s == null ? "" : s);
+
+  function trunc(s, n) {
+    const t = String(s == null ? "" : s);
+    return t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t;
+  }
   const num = (n) => Util.fmtNum(n || 0);
 
   /* ==================================================================
@@ -724,6 +729,8 @@
     const select = Dom.byId("discover-campaign");
     if (select) select.value = campaign.id;
 
+    renderPlacePicker(campaign, agg);
+
     const deep = AppState.campaignDeep;
     const host = Dom.byId("campaign-detail-targets");
     if (!host) return;
@@ -740,6 +747,44 @@
     App.renderTargetingInto("campaigns", campaign, deep.targets, host, {
       bestCampaignPost: bestPost(agg.posts),
     });
+  }
+
+  /* A campaign's discovery reads every post at once and answers "which
+     communities suit this campaign". The placement card reads one post
+     and answers "where does this go next, and when" — different
+     question, different answer, and seeing the second list after
+     pressing a button on the first is what made them look like the
+     same engine disagreeing with itself. This routes to the per-post
+     one rather than reimplementing it, so there is only ever one
+     ranking for a post and it is the one with an hour attached. */
+  function renderPlacePicker(campaign, agg) {
+    const host = Dom.byId("campaign-place-body");
+    if (!host) return;
+    const posts = (agg && agg.posts) || [];
+
+    if (!posts.length) {
+      host.innerHTML = `<p class="hint">Once this campaign has resolved posts, each one can be placed
+        in a community with an hour and a cross-post link.</p>`;
+      return;
+    }
+
+    const ranked = posts.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
+    host.innerHTML = `
+      <ul class="place-picker">
+        ${ranked.map((p) => `
+          <li class="place-pick-row">
+            <div class="place-pick-main">
+              <span class="place-pick-title">${esc(trunc(p.title || "(untitled)", 72))}</span>
+              <span class="place-pick-meta">r/${esc(p.subreddit)} · ${Util.fmtNum(p.score || 0)} pts</span>
+            </div>
+            <button type="button" class="btn small" data-action="campaign-place" data-post-id="${esc(p.id)}"
+                    title="Rank communities for this one post, with the hour to post and how much better it typically does there">Where next</button>
+          </li>`).join("")}
+      </ul>
+      ${posts.length > ranked.length
+        ? `<p class="hint">Showing the ${ranked.length} best-performing of ${posts.length}. Any post can be placed from the Posts tab.</p>`
+        : ""}
+    `;
   }
 
   /* ------------------------------------------------------------------
@@ -794,6 +839,17 @@
       const campaign = Campaigns.get(AppState.openCampaignId);
       if (campaign && AppState.campaignAgg) renderSubreddits(campaign, AppState.campaignAgg);
     });
+    /* A campaign's posts can live in subreddits nobody loaded, so the
+       aggregate is the first place to look — the inventory may never
+       have seen this one. FocusView adopts whatever it is handed. */
+    Dom.delegate(document, "click", '[data-action="campaign-place"]', (e, btn) => {
+      const id = btn.dataset.postId;
+      const agg = AppState.campaignAgg;
+      const post = ((agg && agg.posts) || []).find((p) => p && p.id === id)
+        || AppState.posts.find((p) => p && p.id === id);
+      if (post && window.FocusView) FocusView.focusPost(post);
+    });
+
     Dom.delegate(document, "click", '[data-action="add-sub"]', (e, btn) => {
       const added = AppState.addSubs([btn.dataset.sub]);
       App.renderChips();

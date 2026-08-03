@@ -1301,6 +1301,153 @@ body.sheet-open {
 .focus-chosen-main {
   min-width: 0;
 }
+
+/* ---- where the content already is ---- */
+
+.focus-reach {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-3);
+  margin: var(--s-3) 0 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-elev-2);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-xs);
+}
+/* Nothing to total yet, so this is a sentence rather than a panel —
+   giving it a box would dress "you have posted this once" up as a
+   result. */
+.focus-reach.is-single {
+  display: block;
+  background: none;
+  padding: 0;
+  color: var(--text-mute);
+  line-height: 1.6;
+}
+.focus-reach-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-3);
+  min-width: 0;
+}
+.focus-reach-label {
+  font-weight: var(--fw-medium);
+}
+.focus-reach-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.focus-reach-sub {
+  color: var(--accent-2);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.focus-reach-sub:hover,
+.focus-reach-sub:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.focus-reach-total {
+  color: var(--text-mute);
+}
+.focus-reach-n {
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- picking which post to place, from a campaign ---- */
+
+.place-picker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+.place-pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-elev-2);
+  border-radius: var(--radius-xs);
+}
+.place-pick-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.place-pick-title {
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.place-pick-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+.place-pick-row .btn { flex: 0 0 auto; }
+
+@media (max-width: 560px) {
+  .place-pick-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s-2);
+  }
+  .place-pick-row .btn { width: 100%; justify-content: center; }
+}
+
+/* ---- did you post it? ---- */
+
+.focus-posted {
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+  border-radius: var(--radius-xs);
+}
+.focus-posted-label {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  margin-bottom: var(--s-2);
+}
+.focus-posted-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.focus-posted-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.focus-posted-hint {
+  margin: var(--s-2) 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+.focus-posted-hint.is-err { color: var(--bad); }
+
+@media (max-width: 560px) {
+  /* A 16px field stops iOS zooming the page on focus, and the buttons
+     go full width rather than squeezing onto the end of the input. */
+  .focus-posted-input {
+    flex: 1 1 100%;
+    font-size: 16px;
+    min-height: 38px;
+  }
+  .focus-posted-row .btn { flex: 1 1 0; justify-content: center; }
+  .focus-reach { align-items: flex-start; }
+  .focus-reach > .btn { width: 100%; justify-content: center; }
+}
 .focus-chosen-title {
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
@@ -1422,18 +1569,14 @@ body.sheet-open {
 .focus-move[data-verdict="strong"] { border-left-color: var(--good); }
 .focus-move[data-verdict="fair"]   { border-left-color: var(--accent-2); }
 .focus-move[data-verdict="thin"]   { border-left-color: var(--warn); }
-.focus-move[role="button"] {
-  cursor: pointer;
-}
-.focus-move[role="button"]:hover {
-  background: var(--bg-elev-3);
-}
-.focus-move[role="button"]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
 .focus-move .focus-signals {
   margin-top: var(--s-2);
+}
+.focus-move-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
 }
 
 .focus-move-head {
@@ -1489,7 +1632,9 @@ body.sheet-open {
   font-size: var(--fs-xs);
   color: var(--text-mute);
 }
-.focus-unmeasured-row .btn {
+.focus-unmeasured-actions {
+  display: flex;
+  gap: var(--s-2);
   margin-left: auto;
 }
 
