@@ -30,6 +30,7 @@
    * in step. */
   const PREF_KEYS = ["rj.savedSearches", "rj.view", "rj.volClaims", "rj.volName"];
   const DRAFT_PREFIX = "rj.composerDraft.";
+  const FOCUS_KEY = "rj.focusPost";
 
   const SCOPES = [
     { key: "posts", label: "Cached posts", on: true },
@@ -156,6 +157,11 @@
       const n = Math.max((AppState.posts || []).length,
         (AppState.cache && AppState.cache.cachedCount) || 0);
       App.clearCachedPosts({ silent: true });
+      /* Both of these are post ids and nothing else. Left behind they
+       * would point at posts that no longer exist: a placement card
+       * focused on a ghost, and cross-post links between two of them. */
+      drop(FOCUS_KEY);
+      if (typeof Crosspost !== "undefined") Crosspost.reset();
       report(n, "post");
     }
 

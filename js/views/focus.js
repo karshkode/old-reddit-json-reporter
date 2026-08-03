@@ -258,6 +258,68 @@
     if (el) el.textContent = text || "";
   }
 
+  function setPostedStatus(text, isError) {
+    const el = document.getElementById("focus-posted-hint");
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("is-err", !!isError);
+  }
+
+  /* The user pasted what they just posted. Fetch it, put it in the
+     inventory, and tie it to this post explicitly — the copy detector
+     works on title fingerprints and shared links, and rewording the
+     headline for a new community defeats both. Their word beats the
+     fingerprint. */
+  async function trackPasted(post, text) {
+    const raw = String(text || "").trim();
+    if (!raw || busy) return;
+    if (!Analyze.looksLikePost(raw)) {
+      setPostedStatus("That does not look like a link to a Reddit post — paste the /comments/… URL from the address bar.", true);
+      return;
+    }
+
+    busy = true;
+    setPostedStatus("Reading it from the archive…");
+    try {
+      const res = await Analyze.run(raw, {
+        onStage: (name, detail) => { if (detail) setPostedStatus(detail); },
+      });
+      Crosspost.link(post.id, res.post.id);
+      Crosspost.clearOpened(post.id, res.post.subreddit);
+      Crosspost.reconcile(post);
+      const synced = Crosspost.syncCampaign(post);
+      busy = false;
+      Util.toast(synced
+        ? `Added r/${res.post.subreddit} to "${synced.campaign.name}".`
+        : `Now tracking your copy in r/${res.post.subreddit}.`, "ok");
+      /* It is a new post in a possibly-new community, so everything
+         downstream of the inventory moved, the ranking included: the
+         community it landed in is no longer somewhere to suggest. */
+      App.rerenderAll();
+      render();
+    } catch (err) {
+      busy = false;
+      setPostedStatus((err && err.message) || String(err), true);
+    }
+  }
+
+  /* A copy that turned up in an ordinary sync belongs in whatever is
+     already tracking this story, without anyone filing it. Idempotent,
+     so calling it on every paint costs one set comparison and fires
+     exactly once per copy found. */
+  function autoTrack(post) {
+    let synced = null;
+    try { synced = Crosspost.syncCampaign(post); } catch (_) { return; }
+    if (!synced) return;
+    const where = synced.added.map((p) => `r/${p.subreddit}`).join(", ");
+    /* Out of the render pass before touching campaign state, which
+       invalidates routes and repaints the rail. */
+    setTimeout(() => {
+      Util.toast(`Added ${where} to "${synced.campaign.name}".`, "ok");
+      App.publishCampaign(synced.campaign);
+    }, 0);
+  }
+
   /* ------------------------------------------------------------------
    * RENDER
    * ------------------------------------------------------------------ */
@@ -275,6 +337,8 @@
       }
       return;
     }
+
+    autoTrack(post);
 
     const result = resultFor(post);
     h.innerHTML = `
@@ -322,7 +386,103 @@
         </div>
         <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
       </div>
+      ${reachHtml(post)}
+      ${pendingPostHtml(post)}
     `;
+  }
+
+  /* Where the content already is, and whether anything is tracking it.
+     A campaign is only offered once there is a second copy: before that
+     it would be a folder with one thing in it, and the button would be
+     asking for filing when the user came here to post. */
+  function reachHtml(post) {
+    const copies = Crosspost.copiesOf(post);
+    const campaign = Crosspost.campaignFor(post);
+
+    /* By community, not by post. The same story can be submitted twice
+       in one place, and a list reading "r/WorkReform r/antiwork
+       r/WorkReform" is answering a question nobody asked. Each name
+       links to the best-scoring copy there. */
+    const all = [post].concat(copies);
+    const byS = new Map();
+    for (const p of all) {
+      const key = String(p.subreddit || "").toLowerCase();
+      if (!key) continue;
+      const prev = byS.get(key);
+      if (!prev || (p.score || 0) > (prev.best.score || 0)) {
+        byS.set(key, { best: p, n: (prev ? prev.n : 0) + 1 });
+      } else {
+        prev.n++;
+      }
+    }
+
+    /* Copies in the community it is already in are not cross-posts, and
+       a campaign over them has nothing to compare — the whole point of
+       the totals is that they span communities. Three submissions in
+       one subreddit is still one place this content has reached. */
+    if (byS.size < 2) {
+      const again = copies.length
+        ? ` (${copies.length + 1} submissions there)`
+        : "";
+      return `
+        <p class="focus-reach is-single">
+          Only in <b>r/${esc(post.subreddit)}</b> so far${again}. Cross-post it below and it gets
+          totalled as a set once the copy turns up — nothing to track until then.
+        </p>`;
+    }
+
+    const where = Array.from(byS.values())
+      .sort((a, b) => (b.best.score || 0) - (a.best.score || 0))
+      .map(({ best, n }) => {
+        const label = `r/${esc(best.subreddit)}${n > 1 ? ` <span class="focus-reach-n">×${n}</span>` : ""}`;
+        const tip = `${Util.fmtNum(best.score || 0)} pts${n > 1 ? ` · ${n} submissions there` : ""}`;
+        return best.permalink
+          ? `<a class="focus-reach-sub" href="${esc(best.permalink)}" target="_blank" rel="noopener"
+                title="${esc(tip)}">${label}</a>`
+          : `<span class="focus-reach-sub" title="${esc(tip)}">${label}</span>`;
+      }).join(" ");
+
+    const total = all.reduce((n, p) => n + (p.score || 0), 0);
+    const subs = byS.size;
+    const posts = all.length;
+
+    return `
+      <div class="focus-reach">
+        <div class="focus-reach-main">
+          <span class="focus-reach-label">Already in ${subs} communit${subs === 1 ? "y" : "ies"}</span>
+          <span class="focus-reach-subs">${where}</span>
+          <span class="focus-reach-total">${Util.fmtNum(total)} pts between them</span>
+        </div>
+        ${campaign
+          ? `<button type="button" class="btn small" data-action="focus-open-campaign" data-campaign="${esc(campaign.id)}"
+                     title="Open the campaign totalling these ${posts} posts">Tracking · ${esc(trunc(campaign.name, 24))}</button>`
+          : `<button type="button" class="btn small" data-action="focus-track"
+                     title="Total these ${posts} posts as one campaign. Only what is actually posted goes in — a recommendation is not a target until you have posted in it.">Track ${posts === subs ? `these ${posts}` : `all ${posts} posts`}</button>`}
+      </div>`;
+  }
+
+  /* Cross-posting leaves the page, and whether a post followed happens
+     on Reddit. So the intent is remembered and asked about once, with
+     the honest alternative alongside: leave it, and the next sync of
+     that community finds it anyway. */
+  function pendingPostHtml(post) {
+    const subs = Crosspost.pendingFor(post);
+    if (!subs.length) return "";
+    const names = subs.map((s) => `r/${esc(s)}`).join(", ");
+    return `
+      <div class="focus-posted">
+        <form class="focus-posted-form" data-focus-posted>
+          <label class="focus-posted-label" for="focus-posted-url">Posted it to ${names}?</label>
+          <div class="focus-posted-row">
+            <input id="focus-posted-url" class="focus-posted-input" type="url" name="url" autocomplete="off"
+                   placeholder="Paste the link to your new post" />
+            <button class="btn small primary" type="submit">Track it</button>
+            <button class="btn ghost small" type="button" data-action="focus-posted-dismiss"
+                    title="Stop asking. The next sync of that community will pick it up anyway.">Not yet</button>
+          </div>
+        </form>
+        <p class="focus-posted-hint" id="focus-posted-hint">Or skip it — syncing ${names} will find the copy and add it here.</p>
+      </div>`;
   }
 
   function pendingHtml() {
@@ -346,7 +506,7 @@
       ${rest.length ? `
         <div class="focus-block">
           <div class="focus-block-label">Then</div>
-          <ol class="focus-moves">${rest.map(moveHtml).join("")}</ol>
+          <ol class="focus-moves">${rest.map((m) => moveHtml(m, result.post)).join("")}</ol>
         </div>` : ""}
       ${result.unmeasured.length ? `
         <details class="focus-unmeasured"${result.moves.length ? "" : " open"}>
@@ -355,7 +515,7 @@
             : `communit${result.unmeasuredCount === 1 ? "y reads" : "ies read"} like this post but ${result.unmeasuredCount === 1 ? "has" : "have"} nothing loaded`}</summary>
           <p class="hint">No posts from these means no clock for them. Load one and it gets a time like the rest.</p>
           <ul class="focus-unmeasured-list">
-            ${result.unmeasured.map(unmeasuredHtml).join("")}
+            ${result.unmeasured.map((m) => unmeasuredHtml(m, result.post)).join("")}
           </ul>
         </details>` : ""}
       ${footnoteHtml(result)}
@@ -405,13 +565,34 @@
         ${signalsHtml(m)}
         <p class="focus-lead-why">${esc(explain(m, result))}</p>
         <div class="focus-lead-actions">
+          ${crosspostHtml(m, result.post, { lead: true })}
           ${drillable(m) ? `<button type="button" class="btn small" data-timing-goto="${esc(m.key)}"
                   title="Open r/${esc(m.name)}'s own chart on the Timing tab">See the hours</button>` : ""}
-          <button type="button" class="btn small" data-action="focus-campaign"
-                  title="Track this post and everywhere else it is already posted as one campaign">Make a campaign</button>
         </div>
       </div>
     `;
+  }
+
+  /* The action the whole card is for. Reddit's submit page takes the
+     title and the body (or the link) in its query string, which is what
+     the composer has always used, so this arrives with the post already
+     written rather than as an empty box in a new community. */
+  function crosspostHtml(m, post, opts) {
+    opts = opts || {};
+    const url = Crosspost.submitUrl(m.name, post);
+    if (!url) return "";
+    const self = post.is_self || (post.url && /\/comments\//.test(post.url));
+    const tip = `Open Reddit's submit page for r/${m.name} with this post's title and `
+      + (self ? "body" : "link") + " already filled in";
+    /* Weight follows evidence. A community with nothing loaded has no
+       hour and no comparison behind it, so a row of them all shouting
+       in the same colour as a graded suggestion would be the card
+       pushing hardest exactly where it knows least. */
+    const tone = opts.quiet ? "tiny" : `${opts.lead ? "small primary" : "tiny"} submit-link`;
+    return `<a class="btn ${tone} focus-xpost"
+               data-action="focus-crosspost" data-sub="${esc(m.name)}"
+               href="${esc(url)}" target="_blank" rel="noopener"
+               title="${esc(tip)}">${opts.lead ? `Cross-post to r/${esc(m.name)}` : "Cross-post"}</a>`;
   }
 
   /* The three signals, in the same order and the same shape everywhere,
@@ -455,9 +636,13 @@
     return parts.join(" · ");
   }
 
-  function moveHtml(m) {
+  /* The row used to be one big button that drilled into the timing
+     chart. It now carries a cross-post link, and a link inside a
+     role="button" is both an accessibility error and an easy way to
+     drill when you meant to post. Two named actions instead. */
+  function moveHtml(m, post) {
     return `
-      <li class="focus-move" data-verdict="${esc(m.verdict)}"${drillable(m) ? ` data-timing-goto="${esc(m.key)}" role="button" tabindex="0"` : ""}>
+      <li class="focus-move" data-verdict="${esc(m.verdict)}">
         <div class="focus-move-head">
           <span class="focus-move-sub">r/${esc(m.name)}</span>
           ${verdictBadge(m)}
@@ -465,17 +650,30 @@
             m.when ? (m.when.open ? "open now" : m.when.label) : m.slotLabel)}</span>` : ""}
         </div>
         ${signalsHtml(m)}
+        <div class="focus-move-actions">
+          ${crosspostHtml(m, post)}
+          ${drillable(m) ? `<button type="button" class="btn tiny ghost" data-timing-goto="${esc(m.key)}"
+                  title="Open r/${esc(m.name)}'s own chart on the Timing tab">Hours</button>` : ""}
+        </div>
       </li>
     `;
   }
 
-  function unmeasuredHtml(m) {
+  /* Nothing loaded here, so there is no hour and no comparison — but
+     the post still reads like the place, and "you cannot measure it"
+     is a poor reason to withhold the one action that needs no
+     measurement. Load first if you want the numbers. */
+  function unmeasuredHtml(m, post) {
     return `
       <li class="focus-unmeasured-row">
         <span class="focus-move-sub">r/${esc(m.name)}</span>
         <span class="focus-sig"><b>${m.fit}</b> match</span>
         <span class="focus-unmeasured-meta">${esc(m.viaSphere ? `via ${m.viaSphere}` : (m.record && m.record.subscribers ? `${Util.fmtNum(m.record.subscribers)} members` : "in the catalog"))}</span>
-        <button type="button" class="btn tiny" data-action="focus-load-sub" data-sub="${esc(m.name)}">${m.loaded ? "Sync" : "Load"}</button>
+        <span class="focus-unmeasured-actions">
+          ${crosspostHtml(m, post, { quiet: true })}
+          <button type="button" class="btn tiny" data-action="focus-load-sub" data-sub="${esc(m.name)}"
+                  title="Pull this community's posts so it gets a clock and a comparison like the rest">${m.loaded ? "Sync" : "Load"}</button>
+        </span>
       </li>
     `;
   }
@@ -584,17 +782,52 @@
 
     Dom.delegate(document, "click", '[data-action="focus-clear"]', () => View.set(null));
 
-    Dom.delegate(document, "click", '[data-action="focus-campaign"]', () => {
+    /* The link opens Reddit itself — no preventDefault. All this does
+       is remember that it happened, so the card can ask about it once
+       the user comes back. */
+    Dom.delegate(document, "click", '[data-action="focus-crosspost"]', (e, el) => {
+      const post = focused();
+      if (!post || !el.dataset.sub) return;
+      Crosspost.markOpened(post.id, el.dataset.sub);
+      /* After the handoff, or iOS Safari takes the repaint as the page
+         changing under the tap and drops the new tab. */
+      setTimeout(render, 400);
+    });
+
+    Dom.delegate(document, "submit", "[data-focus-posted]", (e, form) => {
+      e.preventDefault();
+      const post = focused();
+      const input = form.querySelector('input[name="url"]');
+      if (!post || !input) return;
+      trackPasted(post, input.value);
+    });
+
+    Dom.delegate(document, "click", '[data-action="focus-posted-dismiss"]', () => {
+      const post = focused();
+      if (!post) return;
+      Crosspost.clearOpened(post.id);
+      render();
+    });
+
+    /* Only reachable when copies already exist — see reachHtml. It
+       deliberately does not navigate: the campaign is a total, and the
+       recommendations the user is working through are here. */
+    Dom.delegate(document, "click", '[data-action="focus-track"]', () => {
       const post = focused();
       if (!post) return;
       try {
-        const made = Analyze.campaignFrom({ post: post, elsewhere: Analyze.findLocally(post) });
-        Util.toast(`Created "${made.campaign.name}" with ${made.posts.length} post${made.posts.length === 1 ? "" : "s"}.`, "ok");
+        const made = Crosspost.track(post);
+        Util.toast(`Tracking ${made.posts.length} posts as "${made.campaign.name}".`, "ok");
         App.populateCampaignSelectors();
-        App.openCampaign(made.campaign);
+        App.publishCampaign(made.campaign);
+        render();
       } catch (err) {
-        Util.toast("Couldn't create the campaign: " + ((err && err.message) || err), "err");
+        Util.toast("Couldn't track these: " + ((err && err.message) || err), "err");
       }
+    });
+
+    Dom.delegate(document, "click", '[data-action="focus-open-campaign"]', (e, el) => {
+      if (el.dataset.campaign) App.openCampaign(el.dataset.campaign);
     });
 
     Dom.delegate(document, "click", '[data-action="focus-load-sub"]', (e, btn) => {
