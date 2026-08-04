@@ -19,8 +19,33 @@
 (function () {
   const View = {};
 
-  const SECTIONS = ["summary", "timing", "charts", "themes", "communities", "crossposts"];
+  /* Three, down from six.
+   *
+   * The six were Summary, Timing, Charts, Themes, Communities and
+   * Cross-posts, and four of them were the same question asked at
+   * different resolutions: Summary named a community and an hour, Timing
+   * drew the hours, Charts drew everything else, Themes drew the words
+   * the recommendation was already matching on. Acting on a single
+   * suggestion meant visiting three tabs to see the parts of a number
+   * that one card could have shown.
+   *
+   * What is left is a verb, a place to look things up, and the
+   * communities themselves. Plan is where you do the work; the match
+   * bars and each community's own curve now open inside the
+   * recommendation they belong to, so Trends is for the whole-collection
+   * view rather than a detour in the middle of a decision. */
+  const SECTIONS = ["plan", "trends", "communities"];
   const RAIL = "dashboard-section-rail";
+
+  /* Where the retired tabs went, so old links and saved state still
+   * land somewhere sensible instead of silently falling back to Plan. */
+  const MOVED = {
+    summary: "plan",
+    timing: "trends",
+    charts: "trends",
+    themes: "trends",
+    crossposts: "communities",
+  };
 
   /* The last analysis and the scope it was computed for. */
   let bundle = null;
@@ -62,7 +87,8 @@
 
   function activeSection() {
     const s = AppState.dashSection;
-    return SECTIONS.indexOf(s) === -1 ? "summary" : s;
+    if (SECTIONS.indexOf(s) !== -1) return s;
+    return MOVED[s] || "plan";
   }
 
   /* Identifies the data the current analysis was built from, so a
@@ -128,7 +154,7 @@
      * user picked and re-ranks it against whatever is loaded now, so
      * it has to hear about every visit to the tab — but it renders
      * itself, so repainting it costs nothing when nothing moved. */
-    if (section === "summary" && window.FocusView) {
+    if (section === "plan" && window.FocusView) {
       safe("focus", () => FocusView.paint(timingModel, signature));
     }
 
@@ -136,28 +162,26 @@
     painted.add(section);
 
     const posts = bundle.posts;
-    if (section === "summary") {
+    if (section === "plan") {
       UI.renderBriefing(
         Analysis.postingBriefing(posts, { agg: bundle.agg, timing: timingModel }),
         { timingLimit: briefingTimingLimit }
       );
-    } else if (section === "timing") {
+    } else if (section === "trends") {
       UI.renderPostingTimes(timingModel, { limit: timingLimit });
       renderTimeline(posts);
-    } else if (section === "charts") {
       renderCharts(posts, bundle);
-    } else if (section === "themes") {
       UI.renderKeywords(bundle.keywords);
       UI.renderThemes(bundle.themes);
     } else if (section === "communities") {
       UI.renderSubProfiles(AppState.subProfiles);
-    } else if (section === "crossposts") {
       App.renderCrossPostsView();
     }
   }
 
   View.goToSection = function (section) {
-    if (SECTIONS.indexOf(section) === -1) return;
+    if (SECTIONS.indexOf(section) === -1) section = MOVED[section];
+    if (!section) return;
     AppState.dashSection = section;
     paintSection();
     Dom.revealRailTab(RAIL, "dash-tab", section);
@@ -167,7 +191,7 @@
     if (view) window.scrollTo({ top: Math.max(0, view.offsetTop - 8), behavior: "auto" });
   };
 
-  /* Open the Timing tab on one particular community's panel.
+  /* Open Trends on one particular community's panel.
    *
    * The panel may be past the truncation point, so the limit is raised
    * to reach it — far enough and no further. Jumping straight to "all"
@@ -190,12 +214,12 @@
     const drawn = timingLimit === "all" ? ranked.length : timingLimit;
     if (idx >= drawn) {
       timingLimit = idx + 1;
-      painted.delete("timing");
+      painted.delete("trends");
     }
 
-    AppState.dashSection = "timing";
+    AppState.dashSection = "trends";
     paintSection();
-    Dom.revealRailTab(RAIL, "dash-tab", "timing");
+    Dom.revealRailTab(RAIL, "dash-tab", "trends");
 
     const panel = document.querySelector(`.timing-panel[data-sub="${CSS.escape(key)}"]`);
     if (!panel) return;
@@ -284,13 +308,13 @@
       timingLimit = "all";
       /* Same scope, so the cached analysis stands — only this section's
        * markup needs redrawing. */
-      painted.delete("timing");
+      painted.delete("trends");
       paintSection();
     });
 
     Dom.delegate(document, "click", '[data-action="expand-briefing-timing"]', () => {
       briefingTimingLimit = "all";
-      painted.delete("summary");
+      painted.delete("plan");
       paintSection();
     });
 

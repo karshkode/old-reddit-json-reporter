@@ -3600,13 +3600,21 @@
     const limitSel = document.getElementById("cascade-limit");
     if (limitSel) limitSel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
 
+    /* The schedule is rendered both here and in the Plan hub, so the row
+     * names its own post rather than the handler guessing from whichever
+     * dropdown happens to be on the page. */
     Dom.delegate(document, "click", '[data-action="cascade-crosspost"]', (e, el) => {
-      const post = cascadePost();
+      const id = el.dataset.postId;
+      const post = id ? state.posts.find((p) => String(p.id) === String(id)) : cascadePost();
       if (!post || !el.dataset.sub) return;
       Crosspost.markOpened(post.id, el.dataset.sub);
       /* After the handoff, or iOS Safari reads the repaint as the page
        * changing under the tap and drops the new tab. */
-      setTimeout(renderCascade, 400);
+      const inHub = !!el.closest("#focus-cascade");
+      setTimeout(() => {
+        if (inHub && window.FocusView && FocusView.repaint) FocusView.repaint();
+        else renderCascade();
+      }, 400);
     });
 
     if (state.posts.length > 0 && (state.activeSubs.size > 0 || Object.keys(state.campaignSummaries || {}).length > 0)) {

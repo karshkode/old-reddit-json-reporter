@@ -52,7 +52,7 @@
 
     /* ---- Dashboard ---- */
     /* summary | timing | charts | themes | communities | crossposts */
-    dashSection: "summary",
+    dashSection: "plan",
     timelineMode: "lines", /* lines | stacked | density | total */
     timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
 
@@ -77,7 +77,7 @@
 
     /* ---- Campaign workspace ---- */
     openCampaignId: null,
-    campaignSection: "overview",
+    campaignSection: "plan",
     campaignDeep: null,
     campaignAgg: null,
     campaignSubWindow: "all",
