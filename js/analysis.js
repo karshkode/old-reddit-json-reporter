@@ -1821,73 +1821,220 @@
   };
 
   /* ============================================================
-     CASCADE SCHEDULER (PR 5)
+     CASCADE SCHEDULER
      ----------------------------------------------------------------
-     Given a list of target subs and the user's loaded post data,
-     recommend a STAGGERED posting order so each sub catches its own
-     peak hour without piling on at once.
+     Given a list of target subs, lay out a staggered posting order so
+     each one catches its own best time without two posts landing on
+     top of each other.
 
-     Returns [{ sub, hourLocal, label, predictedScore, gapMinutes }]
-     ordered chronologically across the next 24 hours.
+     The first version of this did something that looked right and was
+     not. It read each sub's peak, sorted the list by clock time, and
+     then walked the list pushing anything within an hour of the
+     previous entry forward by an hour. With a handful of subs that is
+     a nudge. With a hundred it is a traffic jam: each push creates the
+     next collision, so the whole tail marches forward in lockstep and
+     the times stop being peaks at all. Measured over 101 communities
+     with known peaks, five landed on their own best hour, the mean
+     miss was 5.8 hours, and the worst was 12 — the furthest it is
+     possible to be from a time of day. The plan also quietly ran to
+     100 hours, because a hundred subs an hour apart is four days.
+
+     Two more things were wrong underneath that. The score printed on
+     a row was computed at the sub's peak, not at the time the row
+     actually told you to post, so a stop displaced six hours could
+     advertise nine times the score it would really get. And the peak
+     itself came from the raw arg-max of average score by hour, the
+     estimator js/timing.js exists to replace — one lucky post at 3am
+     is enough to name 3am the best hour.
+
+     So this now:
+
+       1. Asks js/timing.js for the peak, and evaluates its fitted
+          curve to score any other time, rather than re-deriving a
+          worse answer locally.
+       2. Hands out slots strongest-opportunity-first, so a community
+          worth two thousand points is not displaced by one worth two
+          that happened to sort earlier.
+       3. Prices every displacement against that curve, and reports
+          what the plan is costing where it could not give a sub its
+          own peak.
+       4. Stops at a horizon instead of running for days.
+
+     Returns rows ordered chronologically, each carrying both the time
+     it recommends and the sub's own peak, so a row that is not on peak
+     can say so instead of implying it is.
      ============================================================ */
+
+  const SLOT_MIN = 15;
+  const SLOTS_PER_DAY = 96;
+  const DAY_MIN = 1440;
+
+  /* Everything the scheduler needs to know about one community: when
+     it is best, how good that is, and how good anything else is. */
+  function cascadeCandidate(sub, posts, profile, now) {
+    const key = String(sub).toLowerCase();
+    const mine = posts.filter((p) => p && String(p.subreddit || "").toLowerCase() === key);
+
+    let row = null;
+    if (window.Timing && Timing.row && mine.length) {
+      try { row = Timing.row(key, sub, mine, { now: now.getTime() }); } catch (_) { row = null; }
+    }
+
+    const fit = row && row.fit;
+    const curve = fit && fit.curveScores && fit.curveScores.length === SLOTS_PER_DAY
+      ? fit.curveScores : null;
+
+    /* Everything here is minutes of day, 0..1439, because that is what
+       Timing speaks: `fit.slot` is already minutes (bestIdx * 15), not
+       an index into the 96-slot grid. Treating it as an index once put
+       peaks thirteen days out and emptied most of the plan, so the
+       unit is now the same everywhere and named for what it is.
+
+       Preference order for "when": the fitted quarter-hour, then the
+       fitted hour, then the naive profile peak as a last resort —
+       flagged, because it is the weakest of the three. */
+    let peakMinute = null, modelled = false;
+    if (fit && fit.slot != null && fit.slot >= 0) { peakMinute = fit.slot; modelled = true; }
+    else if (row && row.bestHour >= 0) { peakMinute = row.bestHour * 60; modelled = true; }
+    else if (profile && profile.bestHour >= 0) { peakMinute = profile.bestHour * 60; }
+    if (peakMinute == null || !isFinite(peakMinute)) return null;
+    peakMinute = ((Math.round(peakMinute) % DAY_MIN) + DAY_MIN) % DAY_MIN;
+
+    const scoreAt = (minuteOfDay) => {
+      const m = ((Math.round(minuteOfDay) % DAY_MIN) + DAY_MIN) % DAY_MIN;
+      if (curve) return Math.max(0, curve[Math.floor(m / SLOT_MIN) % SLOTS_PER_DAY]);
+      /* No fitted curve: fall back to the old per-hour estimate, which
+         at least varies with the hour asked about. */
+      const pred = Analysis.predictPostScore(sub, null, { posts: posts, hour: Math.floor(m / 60) });
+      return (pred && pred.expectedMid) || (profile && profile.medianScore) || 0;
+    };
+
+    return {
+      sub: sub,
+      key: key,
+      peakMinute: peakMinute,
+      peakScore: scoreAt(peakMinute),
+      scoreAt: scoreAt,
+      modelled: modelled,
+      /* "strong" / "likely" / "weak" from the permutation test, which
+         is a claim about evidence rather than about volume. */
+      signal: (row && row.signal) || "none",
+      confidence: row ? row.confidence : "insufficient",
+      lift: row ? row.lift : 0,
+      samples: mine.length,
+    };
+  }
+
+  /* The next time this minute-of-day comes round, as minutes from now. */
+  function minutesUntil(minuteOfDay, now) {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    let d = minuteOfDay - nowMin;
+    while (d <= 0) d += DAY_MIN;
+    return d;
+  }
 
   Analysis.cascadeSchedule = function (subs, opts) {
     opts = opts || {};
     const posts = opts.posts || [];
     const subProfiles = opts.subProfiles || {};
-    const minGapMinutes = opts.minGapMinutes || 60;
+    const minGap = opts.minGapMinutes || 60;
+    /* Two days. Long enough to give most communities a real peak,
+       short enough that the plan is still a plan — the old one ran to
+       four days without ever saying so. */
+    const horizon = (opts.horizonHours || 48) * 60;
+    const limit = opts.limit || 0;
 
-    const slots = [];
-    const now = new Date();
-    const nowHour = now.getHours();
-    /* Build candidate slots: each sub's bestHour (and second-best
-     * if it's strong), within the next 24 hours from now. */
+    const now = opts.now ? new Date(opts.now) : new Date();
+
+    const candidates = [];
     for (const sub of subs) {
       const key = String(sub).toLowerCase();
       const profile = subProfiles[key] || subProfiles[sub] || null;
-      if (!profile) continue;
-      const peakHour = profile.bestHour;
-      if (peakHour == null || peakHour < 0) continue;
-      /* Translate hour-of-day into the next clock instance >= now. */
-      let hoursUntil = (peakHour - nowHour + 24) % 24;
-      if (hoursUntil === 0) hoursUntil = 24;  /* always future */
-      const targetTime = new Date(now.getTime() + hoursUntil * 3600 * 1000);
-      targetTime.setMinutes(0, 0, 0);
-      const pred = Analysis.predictPostScore(sub, null, { posts, hour: peakHour });
-      slots.push({
-        sub,
-        hour: peakHour,
-        targetTime,
-        predictedMid: pred.expectedMid || profile.medianScore || 0,
-        confidence: pred.confidence,
+      const c = cascadeCandidate(sub, posts, profile, now);
+      if (c) candidates.push(c);
+    }
+
+    /* Best opportunity picks first. This is the whole difference
+       between a schedule and a queue: the old one let clock order
+       decide who got their peak, which is how a one-point community
+       came to displace a two-thousand-point one. */
+    candidates.sort((a, b) => b.peakScore - a.peakScore);
+
+    const taken = [];
+    const free = (t) => taken.every((u) => Math.abs(u - t) >= minGap);
+
+    const placed = [];
+    const dropped = [];
+    for (const c of candidates) {
+      if (limit && placed.length >= limit) { dropped.push({ sub: c.sub, why: "limit" }); continue; }
+
+      const want = minutesUntil(c.peakMinute, now);
+      let at = null;
+
+      if (want <= horizon && free(want)) {
+        at = want;
+      } else {
+        /* Search outward from the peak for the best time still open,
+           rather than simply the next one. A community with a broad
+           afternoon plateau should slide along the plateau; one with a
+           single sharp spike should be told what missing it costs. */
+        let bestAt = null, bestScore = -Infinity;
+        const maxStep = Math.ceil(horizon / SLOT_MIN);
+        for (let step = 1; step <= maxStep; step++) {
+          for (const dir of [-1, 1]) {
+            const t = want + dir * step * SLOT_MIN;
+            if (t < 5 || t > horizon) continue;
+            if (!free(t)) continue;
+            const s = c.scoreAt(c.peakMinute + dir * step * SLOT_MIN);
+            if (s > bestScore) { bestScore = s; bestAt = t; }
+          }
+          /* Once something is found, finish the ring at this distance
+             so the better of the two directions wins, then stop. */
+          if (bestAt != null && step > 4) break;
+        }
+        at = bestAt;
+      }
+
+      if (at == null) { dropped.push({ sub: c.sub, why: "no room" }); continue; }
+
+      taken.push(at);
+      const expected = c.scoreAt(c.peakMinute + (at - want));
+      let driftMin = at - want;
+      /* A peak a day away and the same peak today are the same time of
+         day; report the clock distance, not the calendar one. */
+      driftMin = ((driftMin % (24 * 60)) + 24 * 60) % (24 * 60);
+      if (driftMin > 12 * 60) driftMin -= 24 * 60;
+
+      placed.push({
+        sub: c.sub,
+        targetTime: new Date(now.getTime() + at * 60000),
+        peakTime: new Date(now.getTime() + want * 60000),
+        hourLocal: new Date(now.getTime() + at * 60000).getHours(),
+        /* The number now describes the time on the same row. */
+        predictedScore: expected,
+        peakScore: c.peakScore,
+        onPeak: Math.abs(driftMin) < SLOT_MIN,
+        driftMinutes: driftMin,
+        /* What the stagger costs here, as a share of the peak. Zero
+           when it got what it wanted. */
+        cost: c.peakScore > 0 ? Math.max(0, 1 - expected / c.peakScore) : 0,
+        signal: c.signal,
+        modelled: c.modelled,
+        samples: c.samples,
+        confidence: c.signal === "strong" ? "high"
+          : c.signal === "likely" ? "medium"
+            : c.modelled ? "low" : "low",
       });
     }
-    /* Sort by target time ascending */
-    slots.sort((a, b) => a.targetTime - b.targetTime);
-    /* Resolve collisions: if two slots are within minGapMinutes of
-     * each other, push the lower-predicted one forward by minGap. */
-    for (let i = 1; i < slots.length; i++) {
-      const prev = slots[i - 1];
-      const cur = slots[i];
-      const gap = (cur.targetTime - prev.targetTime) / 60000;
-      if (gap < minGapMinutes) {
-        cur.targetTime = new Date(prev.targetTime.getTime() + minGapMinutes * 60000);
-      }
+
+    placed.sort((a, b) => a.targetTime - b.targetTime);
+    let prev = null;
+    for (const s of placed) {
+      s.gapMinutes = prev ? Math.round((s.targetTime - prev) / 60000) : 0;
+      prev = s.targetTime;
     }
-    /* Compute display fields. */
-    let prevTime = null;
-    return slots.map((s) => {
-      const gapMin = prevTime ? Math.round((s.targetTime - prevTime) / 60000) : 0;
-      prevTime = s.targetTime;
-      return {
-        sub: s.sub,
-        hourLocal: s.targetTime.getHours(),
-        targetTime: s.targetTime,
-        predictedScore: s.predictedMid,
-        confidence: s.confidence,
-        gapMinutes: gapMin,
-      };
-    });
+    placed.dropped = dropped;
+    return placed;
   };
 
   /* ============================================================

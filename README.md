@@ -172,7 +172,7 @@ you a KPI row and goal bars above six tabs:
 | **Trends** | Campaign-scoped charts: activity over time by subreddit, score vs comments, title tone and score spread |
 | **Subreddits** | When to post community by community, then a trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. Discovery — see below — sits at the foot of the tab: the communities this campaign has reached, then the ones it has not. |
 | **Posts** | Every tracked post, with paste-to-add, per-row removal, and **Where next** on each one |
-| **Plan** | Cross-post cascade scheduling — pick a post and each stop carries a button that opens that community's submit page with it already written — plus title prediction and rewriting, and volunteer coverage |
+| **Plan** | Cross-post cascade scheduling — see [How the cascade picks its times](#how-the-cascade-picks-its-times) — plus title prediction and rewriting, and volunteer coverage |
 | **Settings** | Goals, digest export, delete |
 
 Adding posts accepts full URLs, `redd.it` short URLs, `t3_…` fullnames
@@ -286,6 +286,47 @@ Where you see it:
 | **Dashboard → Summary** | The peak hour for each of the top three communities on one line, and how far the strongest of them beats its own average. |
 | **Campaign → When to post, community by community** | The same per-sub reading scoped to the campaign. Where a campaign has too few posts in a community to measure, it borrows that subreddit's own loaded traffic — excluding the campaign's posts, so the answer is "when is this room busy" and not a restatement of when you posted — and says so on the row. |
 | **Campaign → Subreddits** | A trend card per community with its own cadence and hour charts. |
+
+---
+
+## How the cascade picks its times
+
+The Plan tab lays out a staggered posting order: one community per
+slot, at least an hour apart, each as close as possible to its own best
+time. Every stop carries a button that opens that community's submit
+page with the post already written, so the plan is something you carry
+out rather than something you re-enter into Reddit by hand.
+
+Two posts cannot occupy the same slot, so somebody has to move, and
+what the scheduler does about that is the whole design.
+
+**Slots go to whoever has the most to gain.** Communities are sorted by
+what a post at their peak is actually worth, and each takes its best
+time if it is still free. Only then do the rest look for somewhere
+else. The earlier version sorted by clock time instead and pushed
+whatever collided, which let a community worth two points displace one
+worth two thousand purely because it sorted first.
+
+**A displaced stop slides along its own curve, not to the next free
+hour.** A community with a broad afternoon plateau can move an hour and
+lose nothing; one with a single sharp spike cannot. The scheduler
+searches outward from the peak for the *best* remaining time rather
+than the nearest, and each row reports how far it moved and what that
+cost — `2h before peak · −9%`.
+
+**The number on a row describes the time on that row.** It is read off
+the fitted curve at the scheduled moment, so a stop pushed six hours
+cannot advertise the score it would have got at its peak.
+
+**The peak comes from [the timing model](#posting-times-are-per-subreddit)** —
+the same fitted, shrunk, permutation-tested estimate the rest of the
+app uses — not from the raw arg-max of average score by hour, where one
+lucky post at 3am is enough to name 3am the best hour.
+
+**The plan stops.** It covers the next two days and defaults to twelve
+stops, and says how many communities it left out. A hundred stops an
+hour apart is four days of the same content everywhere, which is what
+spam looks like from the outside.
 
 ---
 

@@ -3569,9 +3569,11 @@
       subs = summary ? (summary.subs || []) : [];
     }
     const post = cascadePost();
+    const limitEl = Dom.byId("cascade-limit");
     const schedule = Analysis.cascadeSchedule(subs, {
       posts: state.posts,
       subProfiles: state.subProfiles || {},
+      limit: limitEl ? Number(limitEl.value) : 12,
     });
     UI.renderCascadeSchedule(out, schedule, {
       post: post,
@@ -3595,6 +3597,8 @@
      * that there is nothing to keep in step. */
     if (postSel) postSel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
     sel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
+    const limitSel = document.getElementById("cascade-limit");
+    if (limitSel) limitSel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
 
     Dom.delegate(document, "click", '[data-action="cascade-crosspost"]', (e, el) => {
       const post = cascadePost();

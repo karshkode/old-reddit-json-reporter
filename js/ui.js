@@ -1040,6 +1040,24 @@
                  >${lead ? "Post next" : "Cross-post"}</a>`;
     };
 
+    /* Whether this stop got the community's own best time, and if not,
+       what the stagger cost. Two posts cannot share a slot, so someone
+       has to move; the least the plan can do is say who, and admit
+       when moving them was expensive. */
+    const peakHtml = (s) => {
+      if (s.onPeak) return `<span class="cascade-peak on" title="This is r/${Util.escapeHtml(s.sub)}'s own best time">its best time</span>`;
+      if (s.driftMinutes == null) return "";
+      const mins = Math.abs(s.driftMinutes);
+      const when = mins >= 60
+        ? `${Math.round(mins / 60)}h ${s.driftMinutes > 0 ? "after" : "before"}`
+        : `${mins}m ${s.driftMinutes > 0 ? "after" : "before"}`;
+      const pct = Math.round((s.cost || 0) * 100);
+      const dear = pct >= 20;
+      return `<span class="cascade-peak${dear ? " off" : ""}"
+                    title="Its own best time is ${Util.escapeHtml(fmtTime(s.peakTime))}, but that slot was taken by a community with more to gain.${pct ? ` Posting here instead costs about ${pct}%.` : " The curve is flat enough here that it costs nothing."}"
+                    >${when} peak${pct ? ` · −${pct}%` : ""}</span>`;
+    };
+
     el.innerHTML = `
       <div class="cascade-list">
         ${schedule.map((s, i) => {
@@ -1051,18 +1069,33 @@
               <span class="cascade-index">${i + 1}.</span>
               <span class="cascade-time"><strong>${Util.escapeHtml(fmtTime(s.targetTime))}</strong></span>
               <span class="cascade-sub">r/${Util.escapeHtml(s.sub)}</span>
-              <span class="cascade-pred">~${Util.fmtNum(s.predictedScore)} pts</span>
+              <span class="cascade-pred" title="What a typical post there gets at this time of day, from the fitted curve — not a forecast for this post">~${Util.fmtNum(Math.round(s.predictedScore))} pts</span>
               <span class="badge ${cls}">${s.confidence}</span>
+              ${peakHtml(s)}
               ${gapBit}
               ${actionHtml(s.sub)}
             </div>
           `;
         }).join("")}
       </div>
-      <div class="cascade-hint meta">Staggered to avoid overlap; one sub per slot, ≥60min gap. Times in your local zone.${
-        post ? " Each button opens that community's submit page with the post already written." : ""
+      <div class="cascade-hint meta">${
+        [
+          "One community per slot, at least an hour apart, in your local zone.",
+          "The strongest opportunity gets its own best time; the rest move, and each row says how far and what it costs.",
+          post ? "Each button opens that community's submit page with the post already written." : "",
+          leftOut(),
+        ].filter(Boolean).join(" ")
       }</div>
     `;
+
+    function leftOut() {
+      const n = (schedule.dropped || []).length;
+      if (!n) return "";
+      const capped = (schedule.dropped || []).filter((d) => d.why === "limit").length;
+      return capped
+        ? `${n} more could be added, but a cascade this content goes into everywhere at once reads as spam.`
+        : `${n} more had no room in the next two days at this spacing.`;
+    }
   };
 
   /* Campaign A/B comparison rendering (PR 6). */
