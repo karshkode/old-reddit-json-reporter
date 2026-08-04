@@ -172,7 +172,7 @@ you a KPI row and goal bars above six tabs:
 | **Trends** | Campaign-scoped charts: activity over time by subreddit, score vs comments, title tone and score spread |
 | **Subreddits** | When to post community by community, then a trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. Discovery — see below — sits at the foot of the tab: the communities this campaign has reached, then the ones it has not. |
 | **Posts** | Every tracked post, with paste-to-add, per-row removal, and **Where next** on each one |
-| **Plan** | Cross-post cascade scheduling, title prediction and rewriting, volunteer coverage |
+| **Plan** | Cross-post cascade scheduling — pick a post and each stop carries a button that opens that community's submit page with it already written — plus title prediction and rewriting, and volunteer coverage |
 | **Settings** | Goals, digest export, delete |
 
 Adding posts accepts full URLs, `redd.it` short URLs, `t3_…` fullnames
