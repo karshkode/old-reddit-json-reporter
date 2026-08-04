@@ -980,36 +980,88 @@
   };
 
   /* Cascade scheduler block (PR 5). Shows the staggered posting
-   * order recommended for a list of subs. */
-  UI.renderCascadeSchedule = function (container, schedule) {
+   * order recommended for a list of subs.
+   *
+   * A schedule is a list of instructions — be in r/workreform at 11pm —
+   * and until there was a button on the row, carrying one out meant
+   * reading the time, opening Reddit, finding the community, and
+   * retyping the post. The plan named the moment and then left you to
+   * do the work by hand, which is how a plan quietly stops being used.
+   *
+   * opts.post   the post being cascaded; without one the rows are still
+   *             a schedule, just not an actionable one
+   * opts.done   subs that already have a copy, which are stops already
+   *             made rather than stops to make */
+  UI.renderCascadeSchedule = function (container, schedule, opts) {
+    opts = opts || {};
     const el = typeof container === "string" ? document.getElementById(container) : container;
     if (!el) return;
     if (!schedule || !schedule.length) {
       el.innerHTML = '<div class="empty">Need at least one loaded sub with a peak hour to plan a cascade.</div>';
       return;
     }
+    const post = opts.post || null;
+    const done = opts.done || new Set();
+    const pending = new Set((opts.pending || []).map((s) => String(s).toLowerCase()));
     const fmtTime = (d) => {
       try { return d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
       catch (_) { return String(d); }
     };
+
+    /* The row's action, in whichever of the three states it is in.
+     *
+     * Only one stop is emphasised: a cascade is a sequence, and the
+     * whole point of staggering it is that you do not post to nine
+     * communities at once. Nine buttons in the same colour would argue
+     * with the schedule they are printed on. */
+    let leadTaken = false;
+    const actionHtml = (sub) => {
+      const key = String(sub).toLowerCase();
+      if (done.has(key)) {
+        return `<span class="cascade-done" title="This post is already in r/${Util.escapeHtml(sub)}, so there is nothing to post here">Already there</span>`;
+      }
+      if (!post) return "";
+      const url = Crosspost.submitUrl(sub, post);
+      if (!url) return "";
+      const self = post.is_self || (post.url && /\/comments\//.test(post.url));
+      if (pending.has(key)) {
+        return `<a class="btn tiny cascade-xpost is-opened"
+                   data-action="cascade-crosspost" data-sub="${Util.escapeHtml(sub)}"
+                   href="${Util.escapeHtml(url)}" target="_blank" rel="noopener"
+                   title="You opened r/${Util.escapeHtml(sub)}'s submit page. Once the copy is up, the next sync of that community will find it."
+                   >Opened ↗</a>`;
+      }
+      const lead = !leadTaken;
+      leadTaken = true;
+      return `<a class="btn tiny ${lead ? "primary " : ""}cascade-xpost"
+                 data-action="cascade-crosspost" data-sub="${Util.escapeHtml(sub)}"
+                 href="${Util.escapeHtml(url)}" target="_blank" rel="noopener"
+                 title="${lead ? "Next stop. " : ""}Open Reddit's submit page for r/${Util.escapeHtml(sub)} with this post's title and ${self ? "body" : "link"} already filled in"
+                 >${lead ? "Post next" : "Cross-post"}</a>`;
+    };
+
     el.innerHTML = `
       <div class="cascade-list">
         ${schedule.map((s, i) => {
           const cls = s.confidence === "high" ? "good" : s.confidence === "medium" ? "info" : "warn";
           const gapBit = i === 0 ? "" : `<span class="meta">+${s.gapMinutes}m later</span>`;
+          const isDone = done.has(String(s.sub).toLowerCase());
           return `
-            <div class="cascade-row">
+            <div class="cascade-row${isDone ? " is-done" : ""}">
               <span class="cascade-index">${i + 1}.</span>
               <span class="cascade-time"><strong>${Util.escapeHtml(fmtTime(s.targetTime))}</strong></span>
               <span class="cascade-sub">r/${Util.escapeHtml(s.sub)}</span>
               <span class="cascade-pred">~${Util.fmtNum(s.predictedScore)} pts</span>
               <span class="badge ${cls}">${s.confidence}</span>
               ${gapBit}
+              ${actionHtml(s.sub)}
             </div>
           `;
         }).join("")}
       </div>
-      <div class="cascade-hint meta">Staggered to avoid overlap; one sub per slot, ≥60min gap. Times in your local zone.</div>
+      <div class="cascade-hint meta">Staggered to avoid overlap; one sub per slot, ≥60min gap. Times in your local zone.${
+        post ? " Each button opens that community's submit page with the post already written." : ""
+      }</div>
     `;
   };
 

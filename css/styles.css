@@ -2730,6 +2730,34 @@ body.modal-open { overflow: hidden; }
 .cascade-sub { color: var(--text); font-weight: 600; }
 .cascade-pred { color: var(--accent-2); font-weight: 700; }
 .cascade-hint { font-size: 11px; margin-top: 8px; }
+
+/* The button is what the row is for, so it holds the right-hand end
+   rather than trailing after the badges — on a narrow screen the meta
+   wraps and the action stays where the thumb already is. */
+.cascade-xpost {
+  margin-left: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.cascade-done {
+  margin-left: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--good, #4ade80);
+}
+.cascade-xpost.is-opened {
+  color: var(--good, #4ade80);
+  border-color: color-mix(in srgb, var(--good, #4ade80) 45%, transparent);
+}
+/* A stop already made is still worth seeing in the order — it is why
+   the later times sit where they do — but it should not compete with
+   the ones still to make. */
+.cascade-row.is-done { opacity: 0.62; }
+@media (max-width: 520px) {
+  .cascade-row { gap: 8px 10px; }
+  .cascade-xpost, .cascade-done { margin-left: auto; }
+}
 /* =====================================================================
    PR 6 — A/B compare, watch mode, calendar, volunteer
    ===================================================================== */
