@@ -1050,6 +1050,9 @@
        has to move; the least the plan can do is say who, and admit
        when moving them was expensive. */
     const peakHtml = (s) => {
+      if (s.onPeak && s.openNow) {
+        return `<span class="cascade-peak on" title="r/${Util.escapeHtml(s.sub)}'s recommended window is open right now">window open now</span>`;
+      }
       if (s.onPeak) return `<span class="cascade-peak on" title="This is r/${Util.escapeHtml(s.sub)}'s own best time">its best time</span>`;
       if (s.driftMinutes == null) return "";
       const mins = Math.abs(s.driftMinutes);
