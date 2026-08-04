@@ -114,7 +114,20 @@
 
   const Workspace = {};
 
-  const SECTIONS = ["overview", "trends", "subreddits", "posts", "plan", "settings"];
+  /* Four, down from six, and Plan leads.
+   *
+   * Overview was prose about the campaign, Subreddits was the same
+   * campaign broken down per community, and Trends was both again as
+   * charts — three tabs describing, one tab deciding, and the deciding
+   * one was fifth. The two halves of Subreddits went to the tabs that
+   * wanted them: "when to post, community by community" is planning and
+   * moved to Plan alongside discovery and the cascade, while the
+   * per-community charts joined the rest of the charts. Overview's
+   * narrative leads Trends, which is where a description belongs. */
+  const SECTIONS = ["plan", "posts", "trends", "settings"];
+
+  /* Retired tabs, so a saved section or an old jump link still lands. */
+  const MOVED = { overview: "trends", subreddits: "plan", targeting: "plan" };
 
   /* Communities listed in the Subreddits tab's timing card before it
    * truncates. Its expander used to emit the dashboard's action, which
@@ -127,7 +140,7 @@
     const campaign = id ? Campaigns.get(id) : null;
 
     if (!campaign) {
-      Dom.fill("camp-sec-overview", `<div class="card">${Dom.emptyState({
+      Dom.fill("campaign-status", `<div class="card">${Dom.emptyState({
         icon: "◆",
         title: "Campaign not found",
         body: "It may have been deleted on this device, or the link points at another browser's data.",
@@ -151,11 +164,11 @@
     if (!agg) {
       /* Data is still resolving. Paint skeletons rather than an empty
        * frame so the layout does not jump when it lands. */
-      Dom.fill("camp-sec-overview", `<div class="card">${Dom.skeleton(3, { chart: true })}</div>`);
+      Dom.fill("campaign-status", `<div class="card">${Dom.skeleton(3, { chart: true })}</div>`);
       return;
     }
 
-    renderSection(AppState.campaignSection || "overview", campaign, agg);
+    renderSection(activeSection(), campaign, agg);
   };
 
   function renderHeaderStats(campaign, agg) {
@@ -244,19 +257,37 @@
       </div></div>`;
   }
 
+  function activeSection() {
+    const s = AppState.campaignSection;
+    if (SECTIONS.indexOf(s) !== -1) return s;
+    return MOVED[s] || "plan";
+  }
+
   function paintSectionRail() {
-    const active = AppState.campaignSection || "overview";
+    const active = activeSection();
     Dom.paintRail("campaign-section-rail", "campaign-tab", active, "camp-sec-", "#view-campaign .campaign-section");
   }
 
   function renderSection(section, campaign, agg) {
     paintSectionRail();
-    if (section === "overview") return renderOverview(campaign, agg);
-    if (section === "trends") return renderTrends(campaign, agg);
-    if (section === "subreddits") return renderSubreddits(campaign, agg);
+    Dom.fill("campaign-status", "");
+    if (section === "trends") {
+      renderOverview(campaign, agg);
+      renderTrends(campaign, agg);
+      return renderSubBreakdown(campaign, agg);
+    }
+    if (section === "plan") return renderPlan(campaign, agg);
     if (section === "posts") return renderPosts(campaign, agg);
     if (section === "settings") return renderSettings(campaign, agg);
-    /* Plan is static markup wired by app.js. */
+  }
+
+  /* Plan's cascade, predict and volunteer cards are static markup wired
+     once by app.js; what this fills is the half that came from the old
+     Subreddits tab — when to post, and who has not been reached. */
+  function renderPlan(campaign, agg) {
+    renderCampaignTiming(campaign, agg);
+    const discoverFor = Dom.byId("discover-campaign");
+    if (discoverFor) discoverFor.value = campaign.id;
   }
 
   /* ------------------------------------------------------------------
@@ -278,7 +309,7 @@
   }
 
   function renderOverview(campaign, agg) {
-    const host = Dom.byId("camp-sec-overview");
+    const host = Dom.byId("campaign-overview-block");
     if (!host) return;
     const posts = agg.posts || [];
 
@@ -300,7 +331,7 @@
       ${bundle.profile ? renderProfileCard(bundle) : ""}
       <div class="section-jump">
         <button class="btn small" type="button" data-campaign-goto="trends">See the charts</button>
-        <button class="btn small" type="button" data-campaign-goto="subreddits">Per-subreddit breakdown</button>
+        <button class="btn small" type="button" data-campaign-goto="plan">Plan the next post</button>
       </div>`;
   }
 
@@ -309,7 +340,7 @@
    * ------------------------------------------------------------------ */
 
   function renderTrends(campaign, agg) {
-    const host = Dom.byId("camp-sec-trends");
+    const host = Dom.byId("campaign-trends-block");
     if (!host) return;
     const posts = agg.posts || [];
 
@@ -418,28 +449,29 @@
    * SUBREDDITS — per-community trend analysis
    * ------------------------------------------------------------------ */
 
-  function renderSubreddits(campaign, agg) {
+  /* When to post, community by community. Planning, so it sits in Plan,
+     directly above the communities this campaign has not reached and the
+     cascade that orders them. */
+  function renderCampaignTiming(campaign, agg) {
+    const posts = agg.posts || [];
+    const timingHost = Dom.byId("campaign-posting-times");
+    if (!timingHost) return;
+    timingHost.innerHTML = !posts.length ? "" : `
+      <div class="card">
+        <header class="card-header">
+          <div><h2>When to post, community by community</h2><span class="hint">Each peak is against that sub's own average — never a figure pooled across them</span></div>
+        </header>
+        ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: campTimingLimit, more: "expand-campaign-timing" })}
+      </div>`;
+  }
+
+  /* The per-community charts and table. Description rather than
+     decision, so these joined the rest of the charts in Trends. */
+  function renderSubBreakdown(campaign, agg) {
     const posts = agg.posts || [];
     const cardHost = Dom.byId("campaign-sub-cards");
     const tableHost = Dom.byId("campaign-sub-table");
     const compareWrap = Dom.byId("campaign-sub-compare-wrap");
-    const timingHost = Dom.byId("campaign-posting-times");
-
-    /* The discovery pipeline reads its campaign from this control. It is
-     * visually hidden because the workspace already establishes which
-     * campaign we are in; app.js owns its options. */
-    const discoverFor = Dom.byId("discover-campaign");
-    if (discoverFor) discoverFor.value = campaign.id;
-
-    if (timingHost) {
-      timingHost.innerHTML = !posts.length ? "" : `
-        <div class="card">
-          <header class="card-header">
-            <div><h2>When to post, community by community</h2><span class="hint">Each peak is against that sub's own average — never a figure pooled across them</span></div>
-          </header>
-          ${UI.postingTimesSummaryHtml(campaignTiming(posts), { limit: campTimingLimit, more: "expand-campaign-timing" })}
-        </div>`;
-    }
 
     if (!posts.length) {
       if (cardHost) cardHost.innerHTML = "";
@@ -768,12 +800,12 @@
       AppState.campaignSubWindow = btn.dataset.window;
       for (const sib of btn.parentElement.children) sib.classList.toggle("active", sib === btn);
       const campaign = Campaigns.get(AppState.openCampaignId);
-      if (campaign && AppState.campaignAgg) renderSubreddits(campaign, AppState.campaignAgg);
+      if (campaign && AppState.campaignAgg) renderSubBreakdown(campaign, AppState.campaignAgg);
     });
     Dom.delegate(document, "click", '[data-action="expand-campaign-timing"]', () => {
       campTimingLimit = "all";
       const campaign = Campaigns.get(AppState.openCampaignId);
-      if (campaign && AppState.campaignAgg) renderSubreddits(campaign, AppState.campaignAgg);
+      if (campaign && AppState.campaignAgg) renderCampaignTiming(campaign, AppState.campaignAgg);
     });
     /* A campaign's posts can live in subreddits nobody loaded, so the
        aggregate is the first place to look — the inventory may never
@@ -804,7 +836,8 @@
   };
 
   Workspace.goToSection = function (section) {
-    if (SECTIONS.indexOf(section) < 0) return;
+    section = SECTIONS.indexOf(section) < 0 ? MOVED[section] : section;
+    if (!section) return;
     AppState.campaignSection = section;
     const campaign = Campaigns.get(AppState.openCampaignId);
     if (campaign && AppState.campaignAgg) renderSection(section, campaign, AppState.campaignAgg);

@@ -161,6 +161,12 @@
       reasons: cand.reasons || [],
       overlapTerms: (cand.overlapTerms || []).map((t) => t.term || t),
       record: cand.record || null,
+      /* The four parts the match score is made of. Discovery has always
+         computed these; only the campaign's own Discover panel ever drew
+         them, so the same recommendation showed its workings in one tab
+         and asserted a bare number in another. Carrying them here lets
+         one card answer both "where" and "why". */
+      signals: cand.signals || null,
       row: row || null,
       measured: false,
       graded: false,

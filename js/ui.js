@@ -1024,17 +1024,22 @@
       const url = Crosspost.submitUrl(sub, post);
       if (!url) return "";
       const self = post.is_self || (post.url && /\/comments\//.test(post.url));
-      if (pending.has(key)) {
-        return `<a class="btn tiny cascade-xpost is-opened"
-                   data-action="cascade-crosspost" data-sub="${Util.escapeHtml(sub)}"
+        /* The row carries the post it is for. The schedule is rendered in
+           more than one place now, and a handler that looked up "the
+           current post" from a dropdown elsewhere on the page marked the
+           wrong post as posted the moment a second caller existed. */
+        const pid = post && post.id ? ` data-post-id="${Util.escapeHtml(String(post.id))}"` : "";
+        if (pending.has(key)) {
+          return `<a class="btn tiny cascade-xpost is-opened"${pid}
+                     data-action="cascade-crosspost" data-sub="${Util.escapeHtml(sub)}"
                    href="${Util.escapeHtml(url)}" target="_blank" rel="noopener"
                    title="You opened r/${Util.escapeHtml(sub)}'s submit page. Once the copy is up, the next sync of that community will find it."
                    >Opened ↗</a>`;
       }
       const lead = !leadTaken;
       leadTaken = true;
-      return `<a class="btn tiny ${lead ? "primary " : ""}cascade-xpost"
-                 data-action="cascade-crosspost" data-sub="${Util.escapeHtml(sub)}"
+        return `<a class="btn tiny ${lead ? "primary " : ""}cascade-xpost"${pid}
+                   data-action="cascade-crosspost" data-sub="${Util.escapeHtml(sub)}"
                  href="${Util.escapeHtml(url)}" target="_blank" rel="noopener"
                  title="${lead ? "Next stop. " : ""}Open Reddit's submit page for r/${Util.escapeHtml(sub)} with this post's title and ${self ? "body" : "link"} already filled in"
                  >${lead ? "Post next" : "Cross-post"}</a>`;
@@ -1045,6 +1050,9 @@
        has to move; the least the plan can do is say who, and admit
        when moving them was expensive. */
     const peakHtml = (s) => {
+      if (s.onPeak && s.openNow) {
+        return `<span class="cascade-peak on" title="r/${Util.escapeHtml(s.sub)}'s recommended window is open right now">window open now</span>`;
+      }
       if (s.onPeak) return `<span class="cascade-peak on" title="This is r/${Util.escapeHtml(s.sub)}'s own best time">its best time</span>`;
       if (s.driftMinutes == null) return "";
       const mins = Math.abs(s.driftMinutes);
@@ -1948,6 +1956,33 @@
     const t = tip ? ` title="${Util.escapeHtml(tip)}"` : "";
     return `<div class="meter-row"${t}><span class="meter-label">${Util.escapeHtml(label)}</span><div class="meter-bar"><span style="width:${pct}%;background:${color}"></span></div><span class="meter-val">${pct}</span></div>`;
   }
+
+  /* The four bars, from wherever a recommendation is shown.
+   *
+   * Discovery's own panel drew these and the Plan hub asserted a bare
+   * match number, which meant the same recommendation showed its
+   * workings in one tab and refused to in another. One renderer now,
+   * so the two cannot drift apart again. */
+  UI.matchMetersHtml = function (signals) {
+    const s = signals || {};
+    const pct = (x) => Math.round((x || 0) * 100);
+    const sphereTitle = s.sphereLabel
+      ? `${pct(s.sphereFit)}% fit with the ${s.sphereLabel} sphere, weighted down to ${pct(s.sphere)}% because this post matches that sphere at ${pct(s.sphereConfidence)}%`
+      : "No sphere matched";
+    return `
+      <div class="meter-list">
+        ${meterRow("Theme", s.theme, "var(--accent)", "Vocabulary this post shares with the community")}
+        ${meterRow("Sphere", s.sphere, "var(--accent-2)", sphereTitle)}
+        ${meterRow("Reach", s.popularity, "var(--info)", "Subscriber count, log-scaled")}
+        ${meterRow("Activity", s.engagement, "var(--good)", "How much discussion a post here tends to get")}
+      </div>`;
+  };
+
+  /* The evidence line under a community's chart, shared with the
+   * Timing panels so both read identically. */
+  UI.timingFactsHtml = function (row) { return row ? timingFacts(row) : ""; };
+  UI.signalBadgeHtml = function (row) { return row ? signalBadge(row) : ""; };
+  UI.chartKeyHtml = chartKey;
 
 
   /* Tab switching used to live here. The shell now routes through

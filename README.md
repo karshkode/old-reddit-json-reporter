@@ -137,25 +137,30 @@ looking at.
 ### Dashboard
 
 Everything about the currently loaded set of subreddits. A KPI row sits
-above six tabs — posts, upvotes, comments, average upvote ratio, the
+above three tabs — posts, upvotes, comments, average upvote ratio, the
 best hour to post *named to the subreddit it belongs to*, and the
 top-scoring post. On a phone those six tiles scroll sideways as one
 snapping row rather than stacking.
 
 | Tab | What is in it |
 |---|---|
-| **Summary** | What the data is telling you — see [below](#the-summary-is-a-briefing-not-a-recap) |
-| **Timing** | **When posts go up** — a full-width timeline, switchable between *Per sub*, *Stacked*, *Density* (each sub normalised to its own peak, so cadence shapes overlay without volume bias) and *Total*, across windows from 1 day to all time, with bucket size following the window. Below it, **best hours to post per subreddit**: one small chart per community, each on its own clock — see [below](#posting-times-are-per-subreddit) |
-| **Charts** | **Busiest days**, **score vs comments**, **side-by-side subreddit totals**, a **score histogram**, a **sentiment doughnut** and **recent-post velocity** |
-| **Themes** | **Words coming up most**, and **topics that keep coming up** — recurring themes with sentiment, engagement, cross-sub spread and clickable examples |
-| **Communities** | **What each subreddit looks like** — an audience fingerprint per sub: engagement style, reception, best hour, top themes |
-| **Cross-posts** | **The same post in multiple subreddits**, detected across your loaded data and ranked by spread first and score second, so a post seeded into five subs outranks a single viral hit |
+| **Plan** | Pick a post, get the communities to put it in and the order to do it in — see [The Plan hub](#the-plan-hub). Below it, what the data is telling you: see [the briefing](#the-summary-is-a-briefing-not-a-recap) |
+| **Trends** | **When posts go up** — a full-width timeline, switchable between *Per sub*, *Stacked*, *Density* (each sub normalised to its own peak, so cadence shapes overlay without volume bias) and *Total*, across windows from 1 day to all time. Then **best hours to post per subreddit**, one small chart per community on its own clock ([below](#posting-times-are-per-subreddit)); **busiest days**, **score vs comments**, **side-by-side subreddit totals**, a **score histogram**, a **sentiment doughnut** and **recent-post velocity**; and **words coming up most** with **topics that keep coming up** |
+| **Communities** | **What each subreddit looks like** — an audience fingerprint per sub: engagement style, reception, best hour, top themes. Then **the same post in multiple subreddits**, detected across your loaded data and ranked by spread first and score second, so a post seeded into five subs outranks a single viral hit |
 
 Only the selected tab is in the document flow, which is what keeps the
 view to two or three screenfuls on a phone instead of eleven. It also
 means a repaint builds one tab's charts rather than all ten; the
 analysis behind them is computed once per scope and re-used as you move
 between tabs.
+
+There were six tabs here, and four of them were the same question at
+different resolutions. Summary named a community and an hour, Timing
+drew the hours, Charts drew everything else, Themes drew the words the
+recommendation was already matching on. What is left is a verb, a place
+to look things up, and the communities themselves. Links to the retired
+tabs still resolve — `timing`, `charts` and `themes` land on Trends,
+`crossposts` on Communities.
 
 ### Campaigns
 
@@ -164,16 +169,22 @@ same message cross-posted to several communities.
 
 The list view shows every campaign as a tile with goal progress, plus a
 14-day calendar strip and a two-campaign comparison. Opening one gives
-you a KPI row and goal bars above six tabs:
+you a KPI row and goal bars above four tabs:
 
 | Section | What is in it |
 |---|---|
-| **Overview** | How the campaign is doing in plain English, what separates its best posts from its worst, and the fingerprint it presents to a new community |
-| **Trends** | Campaign-scoped charts: activity over time by subreddit, score vs comments, title tone and score spread |
-| **Subreddits** | When to post community by community, then a trend card per community the campaign reached, with its own cadence and posting-hour charts, plus a cross-sub comparison chart and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares. Discovery — see below — sits at the foot of the tab: the communities this campaign has reached, then the ones it has not. |
+| **Plan** | When to post community by community; the communities this campaign has **not** reached (discovery, see below); the [cross-post cascade](#how-the-cascade-picks-its-times); title prediction and rewriting; and volunteer coverage |
 | **Posts** | Every tracked post, with paste-to-add, per-row removal, and **Where next** on each one |
-| **Plan** | Cross-post cascade scheduling — see [How the cascade picks its times](#how-the-cascade-picks-its-times) — plus title prediction and rewriting, and volunteer coverage |
+| **Trends** | How the campaign is doing in plain English, what separates its best posts from its worst, and the fingerprint it presents to a new community — then campaign-scoped charts (activity over time by subreddit, score vs comments, title tone, score spread) and a trend card per community the campaign reached, each with its own cadence and posting-hour charts plus a cross-sub comparison and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares |
 | **Settings** | Goals, digest export, delete |
+
+Six tabs became four, and Plan leads. Overview described the campaign,
+Subreddits broke the same campaign down per community, and Trends drew
+both again as charts — three tabs describing and one deciding, with the
+deciding one fifth. Subreddits split along the line that mattered: "when
+to post, community by community" is planning and joined the cascade,
+while the per-community charts joined the rest of the charts. `overview`
+and `subreddits` links still resolve.
 
 Adding posts accepts full URLs, `redd.it` short URLs, `t3_…` fullnames
 or bare IDs. A live chip preview shows what got recognised before you
@@ -221,7 +232,7 @@ sentiment, clickbait), and **where else this post could go** — see
 
 ## The summary is a briefing, not a recap
 
-The Summary tab used to open with four paragraphs of prose. They restated
+The Plan tab used to open with four paragraphs of prose. They restated
 the totals already on screen in the KPI row directly above, ranked the
 subreddits by total score, counted the sentiment split, and quoted the
 top post — around 110 words, followed by a second card of takeaways that
@@ -283,9 +294,46 @@ Where you see it:
 |---|---|
 | **Dashboard → Best hours to post, per subreddit** | A chart per community: bars are average upvotes by hour, the line is how many posts landed in that hour. Under each one: the lift over that sub's own average, the sample behind the peak, its busiest weekday, where early traction is fastest, and its dead window. Six panels, with the rest a click away. |
 | **Dashboard → KPI row** | The busiest subreddit's own peak, labelled with its name, plus how many other subs peak somewhere else. |
-| **Dashboard → Summary** | The peak hour for each of the top three communities on one line, and how far the strongest of them beats its own average. |
-| **Campaign → When to post, community by community** | The same per-sub reading scoped to the campaign. Where a campaign has too few posts in a community to measure, it borrows that subreddit's own loaded traffic — excluding the campaign's posts, so the answer is "when is this room busy" and not a restatement of when you posted — and says so on the row. |
-| **Campaign → Subreddits** | A trend card per community with its own cadence and hour charts. |
+| **Dashboard → Plan** | The peak hour for each of the top three communities on one line, and how far the strongest of them beats its own average. Above it, each recommendation in the hub carries that community's own curve. |
+| **Campaign → Plan** | The same per-sub reading scoped to the campaign. Where a campaign has too few posts in a community to measure, it borrows that subreddit's own loaded traffic — excluding the campaign's posts, so the answer is "when is this room busy" and not a restatement of when you posted — and says so on the row. |
+| **Campaign → Trends** | A trend card per community with its own cadence and hour charts. |
+
+---
+
+## The Plan hub
+
+One card that takes a post and answers the whole question: where it
+should go, why, when, and in what order.
+
+Pick a post from your inventory or paste a Reddit link. Its title, body
+and flair are read for what it is about, every community that reads the
+same way is checked against its own clock, and the result is a ranked
+list — each with a match out of 100, how it compares on reach, and the
+hour to use.
+
+**Each recommendation opens in place to show its workings.** The four
+bars the match is made of — Theme, Sphere, Reach, Activity — and that
+community's own scatter-and-fitted-curve chart, with the evidence line
+underneath. These used to live in two other tabs: the bars only in a
+campaign's Discover panel, the chart only on the dashboard's Timing tab.
+Acting on one recommendation meant reading a number here, leaving to see
+what it was made of, and leaving again to see the hours behind the hour.
+Three places, one question.
+
+They are closed by default and the chart mounts on first open. The list
+is what you scan; this is what you open once one of them interests you,
+and a phone cannot draw eight timing curves and still be a list.
+
+**The run** at the foot of the card is the [cascade](#how-the-cascade-picks-its-times)
+built from those same communities. It used to take its stops from a
+dropdown of active subs or a whole campaign, which made the schedule and
+the recommendations two answers to one question computed from different
+inputs — you could be told r/antiwork was the best next move and handed
+a plan that never mentioned it.
+
+Every stop carries a cross-post button that opens Reddit's submit page
+with the post already written, and opening one is remembered so the copy
+joins the campaign on the next sync.
 
 ---
 

@@ -1535,6 +1535,63 @@ body.sheet-open {
   margin-top: var(--s-3);
 }
 
+/* Why here, and when.
+   The bars and the community's own chart, folded into the row rather
+   than parked in two other tabs. Closed by default: the list is what
+   you scan, this is what you open once one of them interests you. */
+.move-detail {
+  margin-top: var(--s-2);
+  border-top: 1px solid var(--border-subtle, var(--border));
+  padding-top: var(--s-2);
+}
+.move-detail > summary {
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 2px 0;
+  /* A tap target that a thumb can actually hit. */
+  min-height: 28px;
+}
+.move-detail > summary::-webkit-details-marker { display: none; }
+.move-detail > summary::before {
+  content: "▸";
+  font-size: 10px;
+  transition: transform var(--dur-fast, 120ms) ease;
+}
+.move-detail[open] > summary::before { transform: rotate(90deg); }
+.move-detail > summary:hover { color: var(--text); }
+.move-detail-body {
+  margin-top: var(--s-2);
+  display: grid;
+  gap: var(--s-2);
+}
+.move-detail-body .meter-list { margin: 0; }
+.move-detail-body .chart-wrap {
+  background: var(--bg-elev-1);
+  border-radius: var(--radius-xs);
+  padding: var(--s-2) var(--s-1) 0;
+}
+.move-detail-terms {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  overflow-wrap: anywhere;
+}
+.move-detail-terms code {
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-elev-2);
+}
+.move-detail-body .timing-facts {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+
 .focus-move-head {
   display: flex;
   flex-wrap: wrap;

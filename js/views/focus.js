@@ -345,6 +345,62 @@
       ${chosenHtml(post)}
       ${result ? answerHtml(result) : pendingHtml()}
     `;
+    if (result) paintRun(result);
+  }
+
+  /* ------------------------------------------------------------------
+   * THE RUN
+   * ------------------------------------------------------------------ */
+
+  /* The order to do it in, built from the communities directly above it.
+   *
+   * The cascade used to live in a campaign's Plan tab and take its
+   * communities from a dropdown of "active subs" or a whole campaign,
+   * which meant the schedule and the recommendations were two answers to
+   * the same question, computed from different inputs, disagreeing in
+   * public. You would be told r/antiwork was the best next move and then
+   * handed a plan that never mentioned it. Same list now: whatever
+   * ranked above is what gets scheduled. */
+  function runHtml(result) {
+    const subs = runSubs(result);
+    if (subs.length < 2) return "";
+    return `
+      <div class="focus-block focus-run">
+        <div class="focus-block-label">The run
+          <span class="focus-run-note">— the same communities, in the order to post them</span>
+        </div>
+        <div id="focus-cascade"></div>
+      </div>`;
+  }
+
+  function runSubs(result) {
+    /* Only communities with posts behind them can be given a time, and a
+       schedule of untimed stops is just the list again with numbers. */
+    return (result.moves || []).filter((m) => m.measured).map((m) => m.name);
+  }
+
+  function paintRun(result) {
+    const el = document.getElementById("focus-cascade");
+    if (!el || !window.Analysis || !Analysis.cascadeSchedule) return;
+    const subs = runSubs(result);
+    if (subs.length < 2) return;
+    const post = result.post;
+    let schedule;
+    try {
+      schedule = Analysis.cascadeSchedule(subs, {
+        posts: (window.AppState && AppState.posts) || [],
+        subProfiles: (window.AppState && AppState.subProfiles) || {},
+        limit: 0,
+      });
+    } catch (err) {
+      console.warn("[focus] cascade:", err && err.message);
+      return;
+    }
+    UI.renderCascadeSchedule(el, schedule, {
+      post: post,
+      done: Crosspost.subsWithCopies ? Crosspost.subsWithCopies(post) : new Set(),
+      pending: Crosspost.pendingFor ? Crosspost.pendingFor(post) : [],
+    });
   }
 
   function pickerHtml() {
@@ -518,6 +574,7 @@
             ${result.unmeasured.map((m) => unmeasuredHtml(m, result.post)).join("")}
           </ul>
         </details>` : ""}
+      ${runHtml(result)}
       ${footnoteHtml(result)}
     `;
   }
@@ -566,9 +623,8 @@
         <p class="focus-lead-why">${esc(explain(m, result))}</p>
         <div class="focus-lead-actions">
           ${crosspostHtml(m, result.post, { lead: true })}
-          ${drillable(m) ? `<button type="button" class="btn small" data-timing-goto="${esc(m.key)}"
-                  title="Open r/${esc(m.name)}'s own chart on the Timing tab">See the hours</button>` : ""}
         </div>
+        ${detailHtml(m)}
       </div>
     `;
   }
@@ -619,6 +675,60 @@
     `;
   }
 
+  /* Why this community, and when — the two answers that used to live in
+     two other tabs.
+     
+     The bars were only ever drawn in a campaign's Discover panel and the
+     scatter-and-curve only on the dashboard's Timing tab, so acting on a
+     single recommendation meant reading a number here, leaving to see
+     what it was made of, and leaving again to see the hours behind the
+     hour. Three places, one question. They are folded into the row they
+     describe now.
+
+     Collapsed by default. The list is the thing you scan; this is the
+     thing you open once you have a candidate, and a phone cannot show
+     eight charts and still be a list. The chart mounts on first open,
+     not on render, for the same reason. */
+  function detailHtml(m) {
+    if (!m.signals && !m.measured) return "";
+    const facts = m.row ? UI.timingFactsHtml(m.row) : "";
+    return `
+      <details class="move-detail" data-move-detail="${esc(m.key)}">
+        <summary title="The four parts of the match, and the hours behind the hour">Why here, and when</summary>
+        <div class="move-detail-body">
+          ${m.signals ? UI.matchMetersHtml(m.signals) : ""}
+          ${m.overlapTerms && m.overlapTerms.length
+            ? `<p class="move-detail-terms">Shares ${m.overlapTerms.slice(0, 6).map((t) => `<code>${esc(t)}</code>`).join(" ")}</p>`
+            : ""}
+          ${m.measured && m.row
+            ? `<div class="chart-wrap short" data-move-chart="${esc(m.key)}"><canvas></canvas></div>
+               ${facts ? `<div class="timing-facts">${facts}</div>` : ""}`
+            : `<p class="hint">Nothing loaded here yet, so there is no chart and no clock. Load it and this fills in.</p>`}
+        </div>
+      </details>`;
+  }
+
+  /* Charts are mounted when a detail is first opened, and only once.
+     Eight timing curves rendered up front is most of a second on a
+     phone, spent on panels that are closed. */
+  function mountDetailChart(details) {
+    if (!details || details.dataset.charted === "1") return;
+    const slot = details.querySelector("[data-move-chart]");
+    if (!slot || !window.Charts || !window.Chart) return;
+    const key = slot.getAttribute("data-move-chart");
+    const result = focused() && resultFor(focused());
+    if (!result) return;
+    const all = (result.moves || []).concat(result.unmeasured || []);
+    const move = all.find((m) => m.key === key);
+    if (!move || !move.row) return;
+    try {
+      Charts.mount(slot, { kind: "timingCurve", data: move.row, opts: { compact: true } });
+      details.dataset.charted = "1";
+    } catch (err) {
+      console.warn("[focus] chart for r/" + key + ":", err && err.message);
+    }
+  }
+
   function gainTitle(m) {
     return m.graded
       ? `A typical post in r/${m.name} in its ${m.slotLabel} window, against a typical post where this one is now`
@@ -652,9 +762,8 @@
         ${signalsHtml(m)}
         <div class="focus-move-actions">
           ${crosspostHtml(m, post)}
-          ${drillable(m) ? `<button type="button" class="btn tiny ghost" data-timing-goto="${esc(m.key)}"
-                  title="Open r/${esc(m.name)}'s own chart on the Timing tab">Hours</button>` : ""}
         </div>
+        ${detailHtml(m)}
       </li>
     `;
   }
@@ -676,11 +785,6 @@
         </span>
       </li>
     `;
-  }
-
-  function drillable(m) {
-    return !!(m && m.measured && window.DashboardView && DashboardView.canRevealTiming
-      && DashboardView.canRevealTiming(m.key));
   }
 
   /* One sentence naming which of the two halves is doing the work, so
@@ -731,6 +835,10 @@
    * WIRING
    * ------------------------------------------------------------------ */
 
+  /* Repaint in place, for handlers elsewhere that changed something the
+     card is showing (a cross-post opened from the run, say). */
+  View.repaint = render;
+
   /* Called by the dashboard whenever it repaints the Summary tab. */
   View.paint = function (timingModel, signature) {
     timing = timingModel || null;
@@ -750,7 +858,7 @@
     if (window.Analyze && Analyze.adopt) Analyze.adopt(post);
     View.set(post.id);
     Router.go("dashboard");
-    if (window.DashboardView) DashboardView.goToSection("summary");
+    if (window.DashboardView) DashboardView.goToSection("plan");
     const card = document.getElementById("focus-card");
     if (card) card.scrollIntoView({ block: "start", behavior: "smooth" });
   };
@@ -844,6 +952,12 @@
         App.rerenderAll();
       });
     });
+
+    /* `toggle` does not bubble, so it is caught on the way down. */
+    document.addEventListener("toggle", (e) => {
+      const d = e.target;
+      if (d && d.matches && d.matches("[data-move-detail]") && d.open) mountDetailChart(d);
+    }, true);
 
     /* A click anywhere else puts the typeahead away. */
     document.addEventListener("click", (e) => {

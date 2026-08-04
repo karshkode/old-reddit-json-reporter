@@ -1916,6 +1916,12 @@
       peakScore: scoreAt(peakMinute),
       scoreAt: scoreAt,
       modelled: modelled,
+      /* Whether the recommended window is open at this moment, and how
+         wide it is either side of the peak. A stop inside its window is
+         on time even when the single best quarter-hour has passed. */
+      openNow: !!(row && row.next && row.next.open),
+      windowRadius: row && row.window && row.window.minutes
+        ? Math.round(row.window.minutes / 2) : 0,
       /* "strong" / "likely" / "weak" from the permutation test, which
          is a claim about evidence rather than about volume. */
       signal: (row && row.signal) || "none",
@@ -1945,6 +1951,11 @@
     const limit = opts.limit || 0;
 
     const now = opts.now ? new Date(opts.now) : new Date();
+    const nowMinute = now.getHours() * 60 + now.getMinutes();
+    /* Score any offset from now by where it lands on the 24-hour clock,
+       rather than by how far it is from the peak. Same answer when the
+       stop got its peak, and the right one when it did not. */
+    const clockAt = (offset) => nowMinute + offset;
 
     const candidates = [];
     for (const sub of subs) {
@@ -1968,7 +1979,15 @@
     for (const c of candidates) {
       if (limit && placed.length >= limit) { dropped.push({ sub: c.sub, why: "limit" }); continue; }
 
-      const want = minutesUntil(c.peakMinute, now);
+      /* If the community's recommended window is open right now, the
+         next good moment is now — not this time tomorrow.
+         
+         Scheduling the next occurrence of the peak minute regardless
+         made the two halves of the Plan hub contradict each other: the
+         recommendation above said "post now, window open until 10:00"
+         while the run below scheduled the same community for 07:15 the
+         following morning, twenty-two hours later. */
+      const want = c.openNow ? 5 : minutesUntil(c.peakMinute, now);
       let at = null;
 
       if (want <= horizon && free(want)) {
@@ -1985,7 +2004,7 @@
             const t = want + dir * step * SLOT_MIN;
             if (t < 5 || t > horizon) continue;
             if (!free(t)) continue;
-            const s = c.scoreAt(c.peakMinute + dir * step * SLOT_MIN);
+            const s = c.scoreAt(clockAt(t));
             if (s > bestScore) { bestScore = s; bestAt = t; }
           }
           /* Once something is found, finish the ring at this distance
@@ -1998,22 +2017,33 @@
       if (at == null) { dropped.push({ sub: c.sub, why: "no room" }); continue; }
 
       taken.push(at);
-      const expected = c.scoreAt(c.peakMinute + (at - want));
-      let driftMin = at - want;
-      /* A peak a day away and the same peak today are the same time of
-         day; report the clock distance, not the calendar one. */
-      driftMin = ((driftMin % (24 * 60)) + 24 * 60) % (24 * 60);
-      if (driftMin > 12 * 60) driftMin -= 24 * 60;
+      const expected = c.scoreAt(clockAt(at));
+      /* Distance from the community's own peak, on the clock rather than
+         the calendar: a peak a day out and the same peak today are the
+         same time of day. */
+      let driftMin = clockAt(at) - c.peakMinute;
+      driftMin = ((driftMin % DAY_MIN) + DAY_MIN) % DAY_MIN;
+      if (driftMin > DAY_MIN / 2) driftMin -= DAY_MIN;
+      /* Inside its recommended window is on time, however far the single
+         best quarter-hour happens to be — the window is the finding, and
+         the peak is only its midpoint. */
+      const inWindow = c.openNow && Math.abs(driftMin) <= (c.windowRadius || 0);
 
       placed.push({
         sub: c.sub,
         targetTime: new Date(now.getTime() + at * 60000),
-        peakTime: new Date(now.getTime() + want * 60000),
+        /* The peak nearest this stop, not the next occurrence of it. A
+           stop can sit slightly after a peak whose window is still open,
+           and "its peak is tomorrow morning" would be a strange thing to
+           say about a row scheduled for the next five minutes. Derived
+           from the drift so the two can never disagree. */
+        peakTime: new Date(now.getTime() + (at - driftMin) * 60000),
         hourLocal: new Date(now.getTime() + at * 60000).getHours(),
         /* The number now describes the time on the same row. */
         predictedScore: expected,
         peakScore: c.peakScore,
-        onPeak: Math.abs(driftMin) < SLOT_MIN,
+        onPeak: inWindow || Math.abs(driftMin) < SLOT_MIN,
+        openNow: !!c.openNow,
         driftMinutes: driftMin,
         /* What the stagger costs here, as a share of the peak. Zero
            when it got what it wanted. */
