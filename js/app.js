@@ -684,6 +684,8 @@
         return Refresh.postIds([el && el.dataset.post], { progress: false });
       case "visible":
         return syncVisiblePosts();
+      case "watch":
+        return Refresh.watchNow();
       case "all":
       case "go":
       default:
@@ -1776,6 +1778,8 @@
     document.getElementById("listing-select").value = state.listing;
     document.getElementById("time-select").value = state.timeWindow;
     document.getElementById("limit-select").value = String(state.limit);
+
+    wireLiveSettings();
 
     /* Wired here rather than in the Communities view because that view
      * mounts lazily, and this button lives in the always-visible scope
@@ -3858,6 +3862,64 @@
     safeRun("stalenessTicker", startStalenessTicker);
     safeRun("checkStorageAvailability", checkStorageAvailability);
     safeRun("demoMode", () => { if (window.Demo) Demo.maybeActivate(); });
+    safeRun("liveWatch", () => { if (window.Live && Live.available()) Refresh.startWatching(); });
+  }
+
+  /* ------------------------------------------------------------------
+   * LIVE SCORES
+   * ------------------------------------------------------------------ */
+
+  function wireLiveSettings() {
+    const toggle = Dom.byId("live-toggle");
+    const clientInput = Dom.byId("live-client-id");
+    if (!toggle || !window.Live) return;
+
+    toggle.checked = Live.enabled();
+    if (clientInput) {
+      clientInput.value = Live.usingOwnClientId() ? Live.clientId() : "";
+    }
+
+    toggle.addEventListener("change", () => {
+      Live.setEnabled(toggle.checked);
+      if (toggle.checked) Refresh.startWatching();
+      else Refresh.stopWatching();
+      renderLiveStatus();
+    });
+
+    if (clientInput) {
+      clientInput.addEventListener("change", () => {
+        Live.setClientId(clientInput.value);
+        renderLiveStatus();
+        /* A changed id means a new token, so prove it works now rather
+         * than letting the next sync be the one that discovers it. */
+        if (Live.available()) Refresh.watchNow();
+      });
+    }
+
+    renderLiveStatus();
+  }
+
+  function renderLiveStatus() {
+    const host = Dom.byId("live-status");
+    if (!host || !window.Live) return;
+    const s = Live.status();
+    if (s.state === "off") {
+      host.textContent = "Off — new posts will read as 1 upvote until the archive catches up a day and a half later.";
+      return;
+    }
+    if (s.state !== "on") {
+      host.textContent = s.text;
+      return;
+    }
+    const w = Refresh.watchState ? Refresh.watchState() : { count: 0, at: 0 };
+    const bits = [];
+    if (w.count) {
+      bits.push(`Watching ${w.count} post${w.count === 1 ? "" : "s"} under 36 hours old`);
+      if (w.at) bits.push(`last checked ${Util.relTime(w.at / 1000)}`);
+    } else {
+      bits.push("On. Nothing new enough to need it right now — the archive already has real numbers for everything loaded");
+    }
+    host.textContent = bits.join(" · ") + ".";
   }
 
   /* Public surface for the view modules. Keeping this explicit — rather
@@ -3873,6 +3935,7 @@
     rerenderLight: rerenderLight,
     markPending: markPending,
     refreshData: refreshData,
+    renderLiveStatus: renderLiveStatus,
     persistPostCache: persistPostCache,
     loadCampaign: loadCampaign,
     openCampaign: openCampaign,

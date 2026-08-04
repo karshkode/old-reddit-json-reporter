@@ -903,6 +903,67 @@ table.data .num {
   color: var(--text-mute);
 }
 
+/* A setting whose explanation is longer than its name, so the label
+   and the reasoning sit together to the right of the box. */
+.field-check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--s-3);
+  cursor: pointer;
+}
+.field-check input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.field-check > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.field-check .field-label { cursor: pointer; }
+
+.settings-details > summary {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  cursor: pointer;
+  padding: var(--s-1) 0;
+}
+.settings-details > summary:hover { color: var(--text); }
+.settings-details[open] > summary { margin-bottom: var(--s-2); }
+.settings-details .field { margin-top: var(--s-2); }
+.settings-details input[type="text"] {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-xs);
+}
+
+/* Where the score on screen came from. Only ever shown next to a
+   number, so it has to read at a glance and take almost no room. */
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good, #4ade80);
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+.watch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.watch-badge .live-dot { margin-left: 0; }
+.watch-badge.is-off .live-dot { background: var(--text-mute); }
+
 @keyframes sheet-in-right {
   from {
     transform: translateX(24px);

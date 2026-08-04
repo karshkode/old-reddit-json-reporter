@@ -43,24 +43,30 @@ bundled sample data without touching the network.
 
 ## Where the data comes from
 
-There is exactly one source: the **[Arctic Shift]** archive, a public
-mirror of Reddit that serves plain JSON with CORS headers, so your
-browser reads it directly. Nothing to deploy, nothing to sign up for,
-nothing to configure. `js/archive.js` translates its API into the shape
-Reddit's own JSON has, so everything downstream is unchanged.
+The bulk of it is the **[Arctic Shift]** archive, a public mirror of
+Reddit that serves plain JSON with CORS headers, so your browser reads
+it directly. Nothing to deploy, nothing to sign up for, nothing to
+configure. `js/archive.js` translates its API into the shape Reddit's
+own JSON has, so everything downstream is unchanged.
+
+Posts under about a day and a half old come from Reddit itself, because
+the archive does not yet know anything true about them — see
+[Live scores](#live-scores-for-new-posts).
 
 [Arctic Shift]: https://arctic-shift.photon-reddit.com
 
-### Why not Reddit itself
+### Why not Reddit itself, for everything
 
 Reddit's `/json` endpoints send no `Access-Control-Allow-Origin` header,
 so a page on `*.github.io` cannot fetch them directly. The usual answer
-is a CORS proxy — and as of mid-2026 that answer no longer works.
-Reddit returns `403 Blocked due to a network policy` to every
-unauthenticated request from a datacenter IP address, which is what
-every public proxy is, and what a Cloudflare Worker of your own is too.
-Changing the User-Agent does not help; the block is decided before the
-request reaches an application server.
+is a CORS proxy — and as of mid-2026 that answer no longer works. On
+**30 May 2026** Reddit closed unauthenticated `.json` access outright:
+every one of them now answers `403` to any caller without a token,
+including `old.reddit.com`, `api.reddit.com` and the rest. So a proxy
+does not help, and neither does a Cloudflare Worker of your own — the
+door is shut to the proxy too, not just to you. Changing the User-Agent
+does not help either; the block is decided before the request reaches
+an application server.
 
 This app used to carry a chain of proxies and fall back through them.
 Not one of them could reach Reddit, so the chain's only effect was to
@@ -68,16 +74,52 @@ spend half a minute timing out before the archive answered anyway. It
 is gone, along with the Data source picker, the proxy-health strip and
 the settings that fed them.
 
-Live scores are still possible, but only by registering a Reddit app
-and using OAuth: `POST /api/v1/access_token` is the one Reddit endpoint
-still reachable from a datacenter. That needs a credential this app has
-nowhere to keep, so it is out of scope for a static site.
+### Live scores for new posts
+
+The archive files a post within minutes of submission, at whatever score
+it had then — which is 1, because it was submitted a moment ago. A
+second pass records the real numbers, but that pass runs roughly
+**30 to 36 hours later**. Measured on r/politics: everything under 30
+hours old still reads `score=1`, and by 36 hours the real figures are
+there. So the archive is excellent for anything older than about a day
+and a half, and blind to everything newer — exactly backwards from what
+you want just after posting something.
+
+`js/live.js` fills that window by reading those posts from Reddit's own
+API. `oauth.reddit.com` is the one surface Reddit still lets a browser
+read: it answers with `Access-Control-Allow-Origin: *` and permits the
+`Authorization` header, because Reddit built it for browser apps. No
+proxy, no worker, no server.
+
+There is nothing to set up and no account involved. The
+`installed_client` grant issues an **anonymous, read-only application
+token** that lasts a day — no sign-in, no password, and no app to
+register. Reddit closed public app registration in 2025, so the
+identifier used is the public one belonging to Reddit's own mobile app;
+Settings takes your own instead if you ever have one. If Reddit retires
+it, live lookups start failing and everything falls back to the archive
+on its own.
+
+It is deliberately narrow:
+
+| | |
+|---|---|
+| **Only the blind window** | Posts under 36 hours old. Past that the archive knows the same numbers, so asking twice buys nothing. |
+| **Only while you are looking** | The watcher polls every 90s and stops when the tab is in the background. |
+| **Silently optional** | Any failure falls back to the archive. A rate-limited or blocked network costs a stale number, never an error. |
+| **Cheap** | 100 posts per request, 100 requests per minute. A realistic watch list is under fifty posts, or one request. |
+
+Other routes were measured and rejected: public CORS proxies are blocked
+or erroring on every Reddit URL; `embed.reddit.com` is reachable and
+does carry the live score, but only as HTML with no CORS header and
+nothing readable from an iframe; RSS is open but carries no scores; and
+Pushshift's successor sits behind a Cloudflare challenge.
 
 ### What reading an archive costs you
 
 | | |
 |---|---|
-| **Scores lag** | A post is archived within minutes of submission with whatever score it had then, usually 1. A re-scan records the real numbers about a day later. *Hot* and *Top* show only posts whose scores have settled; *New* shows everything and marks the unsettled rows. |
+| **Scores lag** | A post is archived within minutes of submission with whatever score it had then, usually 1. A re-scan records the real numbers about a day and a half later. *Hot* and *Top* show only posts whose scores have settled; *New* shows everything and marks the unsettled rows. [Live scores](#live-scores-for-new-posts) cover the gap for posts you are actually watching. |
 | **No true ranking** | The archive orders by time, not by Reddit's hot algorithm, so *Hot* and *Top* are approximated by pulling the requested window and sorting by score. Deterministic, which Reddit's ranking is not. |
 | **No site-wide search** | Free-text search must be scoped to one subreddit, so discovery cannot ask "who across Reddit is posting about this". That phase is removed rather than faked; see [How discovery works](#how-discovery-works). |
 | **Prefix-matched subreddit search** | The archive matches subreddit *names* by prefix instead of doing Reddit's fuzzy relevance search, so "tenant rights" finds r/TenantRights but not r/Renters. The curated catalog and the local term index cover that gap. |
@@ -450,6 +492,7 @@ index and current view.
 | `js/theme.js` | Explicit dark/light/system switching, applied before first paint |
 | `js/util.js` | Formatters, ID and share-URL parsing, concurrency-limited `pmap`, toasts, progress |
 | `js/archive.js` | Arctic Shift adapter — presents an archive as Reddit's JSON API |
+| `js/live.js` | Current scores from Reddit for posts too new for the archive |
 | `js/reddit.js` | Request caching, listing pagination with streaming, batching, search |
 | `js/postcache.js` | IndexedDB post cache |
 | `js/subindex.js` | IndexedDB subreddit index: metadata, derived term vectors, stemming, 30-day TTL |
@@ -515,11 +558,14 @@ vendor/marked.min.js       markdown rendering for post bodies
 
 - **Scores from the archive lag.** Recent posts carry provisional
   numbers and are marked as such; anything older than about 48 hours is
-  accurate. Ranked listings only include settled scores.
-- **The archive is the only source**, so anything Reddit's own API could
-  answer but an archive cannot — site-wide search, share-link expansion,
-  true *Hot* ranking — is absent rather than approximated silently. Each
-  is listed above with what replaced it.
+  accurate. Ranked listings only include settled scores. Posts under 36
+  hours old are read from Reddit directly instead, and marked live.
+- **The archive is the source for everything settled**, so anything
+  Reddit's own API could answer but an archive cannot — site-wide
+  search, share-link expansion, true *Hot* ranking — is absent rather
+  than approximated silently. Each is listed above with what replaced
+  it. Live lookups cover current scores only; they are not a second
+  search index.
 - **Sentiment** is a lexicon scorer tuned for civic vocabulary
   (`organize`, `solidarity`, `oppress`, `betray`). Directional, not
   authoritative.
