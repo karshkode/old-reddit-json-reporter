@@ -2746,6 +2746,16 @@ body.modal-open { overflow: hidden; }
   font-size: 11px;
   color: var(--good, #4ade80);
 }
+/* Whether the stop got the community's own best time. Silent approval
+   when it did, and a number when it did not, because "2h after peak"
+   is a fact the reader can act on and a green tick is not. */
+.cascade-peak {
+  font-size: 11px;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.cascade-peak.on { color: var(--good, #4ade80); }
+.cascade-peak.off { color: var(--warn, #fbbf24); }
 .cascade-xpost.is-opened {
   color: var(--good, #4ade80);
   border-color: color-mix(in srgb, var(--good, #4ade80) 45%, transparent);
