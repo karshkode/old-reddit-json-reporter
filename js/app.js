@@ -178,6 +178,22 @@
 
   function filteredPosts() {
     let list = state.posts;
+
+    /* The scopebar chips are the filter — every view reads through
+     * here, so toggling a chip changes the dashboard, the posts table
+     * and the campaign charts the same way. A Posts-page dropdown used
+     * to do this silently: filter the dashboard from a control that
+     * only existed on another tab, which is how "only some subreddits
+     * loaded" looked like a broken Plan. The chips are always visible,
+     * and they take any number of subs, not one. */
+    if (state.activeSubs && state.activeSubs.size) {
+      const active = new Set(Array.from(state.activeSubs).map((s) => String(s).toLowerCase()));
+      list = list.filter((p) => active.has(String(p.subreddit || "").toLowerCase()));
+    } else if (state.knownSubs && state.knownSubs.length) {
+      /* Every chip off is an empty scope, not "show everything". */
+      list = [];
+    }
+
     if (state.postIdFilter.length) {
       const set = new Set(state.postIdFilter.map((id) => id.toLowerCase()));
       list = list.filter((p) => set.has(p.id.toLowerCase()));
@@ -191,6 +207,8 @@
         (p.selftext || "").toLowerCase().includes(q)
       );
     }
+    /* Legacy single-sub filter, kept as a further narrow on top of the
+     * chips for anything still writing to it. Prefer the chips. */
     if (state.postsSubFilter) {
       const sub = state.postsSubFilter.toLowerCase();
       list = list.filter((p) => (p.subreddit || "").toLowerCase() === sub);
@@ -500,38 +518,27 @@
 
     await Util.pmap(subs, 3, async (sub) => {
       const subStart = (typeof performance !== "undefined" ? performance.now() : Date.now());
-      let usedOnPage = false;
       try {
-        const list = await Reddit.fetchSubredditListing(sub, {
-          listing: state.listing,
-          t: state.timeWindow,
-          limit: state.limit,
-          /* Stream each page of posts as it arrives. The progress bar
-           * tracks total posts, not just the sub completion count, so
-           * a fetch returning 100 posts in two pages bumps the bar
-           * twice (~0.5% each at default limit) instead of waiting for
-           * the whole sub to finish. */
-          onPage: (newPosts) => {
-            usedOnPage = true;
-            if (state.fetchToken !== myToken) return;
-            for (const p of newPosts) collected.push(p);
-            state.posts = Util.uniqBy(collected, (p) => p.id);
-            Util.setProgress(
-              postProgressPct(),
-              `Streaming r/${sub} · ${state.posts.length} post${state.posts.length === 1 ? "" : "s"} loaded · ${completed} / ${subs.length} sub${subs.length === 1 ? "" : "s"} done`
-            );
-            rerenderLight();
-          },
-        });
+        /* Same fill path as Sync: configured listing first, then `new`
+         * for any shortfall, so a 500 setting is not quietly capped by
+         * how many confirmed hot posts fit in a week. */
+        const list = (window.Refresh && Refresh.fetchUpTo)
+          ? await Refresh.fetchUpTo(sub, state.limit, state)
+          : await Reddit.fetchSubredditListing(sub, {
+              listing: state.listing,
+              t: state.timeWindow,
+              limit: state.limit,
+            });
         if (state.fetchToken !== myToken) return;
-        if (!usedOnPage) {
-          /* Fallback if onPage didn't fire — e.g., the listing was
-           * served from cache. Push synchronously so we don't lose data. */
-          for (const p of list) collected.push(p);
-          state.posts = Util.uniqBy(collected, (p) => p.id);
-        }
+        for (const p of list) collected.push(p);
+        state.posts = Util.uniqBy(collected, (p) => p.id);
+        Util.setProgress(
+          postProgressPct(),
+          `r/${sub} · ${list.length} of ${state.limit} · ${state.posts.length} posts loaded · ${completed + 1} / ${subs.length} subs`
+        );
+        rerenderLight();
         const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - subStart));
-        console.log(`[refreshData] r/${sub}: ${list.length} posts in ${dur}ms`);
+        console.log(`[refreshData] r/${sub}: ${list.length}/${state.limit} posts in ${dur}ms`);
       } catch (err) {
         errors++;
         state.lastErrors.push({ sub, message: err.message });
@@ -1256,23 +1263,42 @@
    * loaded subreddits. Preserves the user's selection if their picked
    * sub is still loaded. */
   function refreshSubFilterDropdowns() {
-    const subs = Array.from(state.activeSubs).sort();
-    function fill(id, current) {
-      const sel = document.getElementById(id);
-      if (!sel) return;
-      const want = current || "";
-      while (sel.options.length > 1) sel.remove(1);
+    /* Posts multi-select mirrors the scopebar chips: every known sub is
+     * listed, the active ones are selected. Changing either updates the
+     * other, so there is one filter rather than two that can disagree. */
+    const postsSel = document.getElementById("posts-sub-filter");
+    if (postsSel && postsSel.multiple) {
+      const known = state.knownSubs.slice().sort((a, b) => a.localeCompare(b));
+      const prev = postsSel.dataset.signature || "";
+      const sig = known.join(",") + "|" + Array.from(state.activeSubs).sort().join(",");
+      if (prev !== sig) {
+        postsSel.innerHTML = "";
+        for (const sub of known) {
+          const opt = document.createElement("option");
+          opt.value = sub;
+          opt.textContent = "r/" + sub;
+          opt.selected = state.activeSubs.has(sub);
+          postsSel.appendChild(opt);
+        }
+        postsSel.dataset.signature = sig;
+      } else {
+        for (const opt of postsSel.options) opt.selected = state.activeSubs.has(opt.value);
+      }
+    }
+
+    const xp = document.getElementById("crossposts-sub-filter");
+    if (xp && !xp.multiple) {
+      const subs = Array.from(state.activeSubs).sort();
+      const want = state.crossPostsSubFilter || "";
+      while (xp.options.length > 1) xp.remove(1);
       for (const sub of subs) {
         const opt = document.createElement("option");
         opt.value = sub;
         opt.textContent = "r/" + sub;
-        sel.appendChild(opt);
+        xp.appendChild(opt);
       }
-      if (want && subs.includes(want)) sel.value = want;
-      else sel.value = "";
+      xp.value = (want && subs.includes(want)) ? want : "";
     }
-    fill("posts-sub-filter", state.postsSubFilter);
-    fill("crossposts-sub-filter", state.crossPostsSubFilter);
   }
 
   /* ============================================================
@@ -1791,6 +1817,22 @@
      * bar. */
     const scopeAdd = document.getElementById("scope-add-sub");
     if (scopeAdd) scopeAdd.addEventListener("click", () => CommunitiesView.openSearch());
+
+    const scopeAll = document.getElementById("scope-all-subs");
+    if (scopeAll) {
+      scopeAll.addEventListener("click", () => {
+        state.setActive(state.knownSubs.slice());
+        state.postsSubFilter = "";
+        persist();
+        renderChips();
+        markPending("Included every loaded subreddit", { scope: "subs" });
+        if (typeof Router !== "undefined" && Router.invalidate) {
+          Router.invalidate(["dashboard", "posts", "campaigns", "campaign"]);
+        } else {
+          rerenderAll();
+        }
+      });
+    }
 
     const debouncedFilter = Util.debounce(() => { rerenderAll(); }, 200);
     function renderPastePreview(targetId, ids, opts) {
@@ -3256,7 +3298,15 @@
         if (state.activeSubs.has(sub)) state.activeSubs.delete(sub); else state.activeSubs.add(sub);
         persist();
         renderChips();
+        /* The chips filter every view live. markPending still notes that
+         * the next sync will skip the ones left off — but the dashboard
+         * must not wait for that sync to reflect what is selected. */
         markPending(`Toggled r/${sub}`, { scope: "subs" });
+        if (typeof Router !== "undefined" && Router.invalidate) {
+          Router.invalidate(["dashboard", "posts", "campaigns", "campaign"]);
+        } else {
+          rerenderAll();
+        }
       },
       (sub) => {
         state.knownSubs = state.knownSubs.filter((s) => s !== sub);
@@ -3264,6 +3314,9 @@
         persist();
         renderChips();
         markPending(`Removed r/${sub}`, { scope: "subs" });
+        if (typeof Router !== "undefined" && Router.invalidate) {
+          Router.invalidate(["dashboard", "posts", "campaigns", "campaign"]);
+        }
       },
       {
         onOverflow: () => {
@@ -3272,6 +3325,10 @@
         },
       }
     );
+    /* Chips and the Posts multi-select are one filter. Keep the
+     * dropdown's selected options honest whenever the chips repaint,
+     * including after a toggle that only invalidates views. */
+    refreshSubFilterDropdowns();
   }
 
   function checkStorageAvailability() {

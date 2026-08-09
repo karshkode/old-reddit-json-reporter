@@ -150,6 +150,14 @@
     const row = ctx.rowFor(key);
     const base = ctx.baseline.score;
 
+    /* Community rules run before scoring. A room that will remove this
+       post is not an opportunity, however well its subject matches —
+       and burying that fact under a high match number is how people
+       learn the hard way. */
+    const rules = (window.Rules && ctx.post)
+      ? Rules.evaluate(ctx.post, key, { posts: ctx.posts })
+      : { ok: true, hard: false, reasons: [], kind: null, rule: null, duplicate: null };
+
     const move = {
       key: key,
       name: name,
@@ -173,7 +181,17 @@
       signal: "none",
       lift: 0,
       when: null,
+      rules: rules,
+      blocked: !!(rules && rules.hard && !rules.ok),
+      ruleReasons: (rules && rules.reasons) || [],
     };
+
+    if (move.blocked) {
+      move.posts = row ? row.count : 0;
+      move.verdict = "blocked";
+      move.score = -1;
+      return move;
+    }
 
     /* Nothing loaded here, or too few posts to fit. Matched, not
        measured — a distinct state from "measured and unpromising",
@@ -300,6 +318,11 @@
       tone: "warn",
       why: "either the match is loose or the timing is barely distinguishable from chance",
     },
+    blocked: {
+      label: "against the rules",
+      tone: "bad",
+      why: "this community's posting rules reject this kind of post",
+    },
     unmeasured: {
       label: "not measured",
       tone: "",
@@ -343,12 +366,26 @@
 
     const baseline = NextMove.baselineFor(post, { rowFor: rowFor });
     const exclude = new Set((opts.exclude || []).map((s) => String(s).toLowerCase()));
+    const postKind = window.Rules ? Rules.classify(post) : null;
 
     function assemble(related) {
-      const ctx = { rowFor: rowFor, baseline: baseline };
+      const ctx = {
+        rowFor: rowFor,
+        baseline: baseline,
+        post: post,
+        posts: (window.AppState && AppState.posts) || [],
+      };
       const all = (related.communities || [])
         .filter((c) => c && c.name && !exclude.has(String(c.name).toLowerCase()))
         .map((c) => makeMove(c, ctx));
+
+      /* Communities whose rules reject this post kind. Kept as a
+         separate list so the card can say "r/politics takes articles,
+         this is a text post" rather than silently ranking rooms that
+         would remove it. Soft failures (ok:false, hard:false) stay in
+         the main pool with a warning — they are uncertain, not banned. */
+      const blocked = all.filter((m) => m.blocked)
+        .sort((a, b) => b.fit - a.fit);
 
       /* Relevance is a gate before it is a weight.
        *
@@ -377,16 +414,17 @@
        * shared words are incidental. When nothing clears the absolute
        * bar the honest answer is that nothing loaded is about this,
        * which is what the card then says. */
-      const bestFit = all.reduce((m, c) => Math.max(m, c.fit || 0), 0);
+      const eligible = all.filter((m) => !m.blocked);
+      const bestFit = eligible.reduce((m, c) => Math.max(m, c.fit || 0), 0);
       const floor = Math.max(MIN_MEASURED_FIT, RELEVANT_SHARE * bestFit);
 
-      const measured = all.filter((m) => m.measured && m.fit >= floor)
+      const measured = eligible.filter((m) => m.measured && m.fit >= floor)
         .sort((a, b) => b.score - a.score);
       /* A looser bar for communities with nothing loaded. They are not
        * competing with anything — they are a shortlist of what to load
        * next — so the cost of an extra name there is a scroll, not a
        * bad recommendation. */
-      const unmeasured = all.filter((m) => !m.measured && m.fit >= MIN_FIT)
+      const unmeasured = eligible.filter((m) => !m.measured && m.fit >= MIN_FIT)
         .sort((a, b) => b.fit - a.fit);
 
       /* Among measured moves, the lead is the one to act on soonest
@@ -409,6 +447,7 @@
 
       return {
         post: post,
+        kind: postKind,
         baseline: baseline,
         terms: related.terms || [],
         spheres: related.spheres || [],
@@ -416,14 +455,16 @@
         lead: lead,
         moves: measured.slice(0, opts.limit || 8),
         unmeasured: unmeasured.slice(0, opts.unmeasuredLimit || 6),
+        blocked: blocked.slice(0, opts.blockedLimit || 6),
         measuredCount: measured.length,
         unmeasuredCount: unmeasured.length,
+        blockedCount: blocked.length,
         bestFit: bestFit,
         floor: Math.round(floor),
         /* How many candidates the relevance gate turned away, so the
          * card can say "nothing you have loaded is about this" rather
          * than showing an unexplained gap. */
-        rejected: all.filter((m) => m.measured && m.fit < floor).length,
+        rejected: eligible.filter((m) => m.measured && m.fit < floor).length,
         pool: related.pool || 0,
       };
     }

@@ -2332,6 +2332,21 @@ body.modal-open { overflow: hidden; }
 .posts-controls .pc-filters {
   min-width: 0;
 }
+.posts-controls .pc-filter-subs select[multiple] {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: 88px;
+  padding: 4px;
+}
+.posts-controls .pc-filter-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.scopebar-actions #scope-all-subs {
+  flex: 0 0 auto;
+}
 .posts-controls .pc-search {
   display: flex;
   align-items: center;

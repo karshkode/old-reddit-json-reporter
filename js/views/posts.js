@@ -66,8 +66,25 @@
   function wireFilters() {
     const sub = Dom.byId("posts-sub-filter");
     if (sub) {
-      sub.addEventListener("change", (e) => {
-        AppState.postsSubFilter = e.target.value || "";
+      sub.addEventListener("change", () => {
+        /* Multi-select writes through to the scopebar chips, which are
+         * the filter every view reads. The old single-value path is
+         * cleared so it cannot silently narrow the dashboard again. */
+        AppState.postsSubFilter = "";
+        if (sub.multiple) {
+          const picked = Array.from(sub.selectedOptions).map((o) => o.value);
+          AppState.setActive(picked);
+          /* setActive already persists when the set changed; chips and
+           * every view that reads filteredPosts() need a repaint. */
+          if (App.renderChips) App.renderChips();
+          if (window.Router && Router.invalidate) {
+            Router.invalidate(["dashboard", "posts", "campaigns", "campaign"]);
+          } else {
+            repaint();
+          }
+          return;
+        }
+        AppState.postsSubFilter = sub.value || "";
         repaint();
       });
     }

@@ -277,8 +277,12 @@
     if (!el) return;
     const n = bundle.count;
     if (!n) { el.textContent = ""; return; }
-    const subs = bundle.agg.bySubreddit ? Object.keys(bundle.agg.bySubreddit).length : 0;
-    el.textContent = `${Util.fmtNum(n)} posts · ${subs} sub${subs === 1 ? "" : "s"} · ${AppState.listing} · ${AppState.timeWindow}`;
+    const showing = AppState.activeSubs.size;
+    const known = AppState.knownSubs.length;
+    const filterBit = (known && showing < known)
+      ? `${showing} of ${known} subs`
+      : `${showing} sub${showing === 1 ? "" : "s"}`;
+    el.textContent = `${Util.fmtNum(n)} posts · ${filterBit} · ${AppState.listing} · ${AppState.timeWindow} · ${AppState.limit}/sub`;
   }
 
   View.subtitle = function () {
