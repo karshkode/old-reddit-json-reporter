@@ -9,7 +9,14 @@
   "use strict";
 
   const View = {};
-  const esc = (s) => Util.escapeHtml(s == null ? "" : s);
+  /* Decode leftover feed entities (&GT;, &AMP;, …) then escape for HTML.
+   * Covers headlines pulled before makeArticle cleaned sources, and any
+   * feed that still ships entities as literal text. */
+  const esc = (s) => {
+    const raw = s == null ? "" : String(s);
+    const decoded = Util.decodeEntities ? Util.decodeEntities(raw) : raw;
+    return Util.escapeHtml(decoded);
+  };
 
   let selectedId = null;
   let matchBusy = null;
@@ -310,16 +317,15 @@
       }
       matchBusy = null;
     }
-    const post = Syndicate.asPost(article);
-    /* Re-adopt with suggested home filled from match. */
-    const withHome = Syndicate.asPost(article);
-    if (window.Analyze && Analyze.adopt) Analyze.adopt(withHome);
+    /* Keep subreddit empty — this is not a Reddit post until someone
+     * submits it. Match may still supply suggested_sub for Plan copy. */
+    const draft = Syndicate.asPost(article);
     const related = match.related || {
       communities: [].concat(match.candidates || [], match.blocked || []),
       spheres: match.spheres || [],
       terms: match.keywords || [],
     };
-    FocusView.focusPost(withHome, { related: related });
+    FocusView.focusPost(draft, { related: related });
   }
 
   async function pullFeeds() {

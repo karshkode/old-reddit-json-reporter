@@ -528,11 +528,13 @@
     let domain = "";
     try { domain = new URL(url).hostname.replace(/^www\./, ""); }
     catch (_) { domain = ""; }
-    /* Prefer an explicit home, then the best match that takes a link,
-     * then leave empty — Plan UI and Discovery both know how to treat
-     * syndicated posts without inventing a fake subreddit. */
-    let home = opts.home || "";
-    if (!home) {
+    /* Do not invent a home subreddit from the match list. Stuffing a
+     * suggested r/… into `subreddit` made unposted headlines show up in
+     * the Posts table as if they had already been submitted there.
+     * Pass opts.home only when something is actually known; suggestions
+     * go on suggested_sub for Plan copy. */
+    let suggested = opts.home || opts.suggested_sub || "";
+    if (!suggested && opts.suggestHome !== false) {
       const match = matchCache[article.id];
       const pick = ((match && match.candidates) || []).find((c) => {
         if (!c || c.blocked) return false;
@@ -540,24 +542,30 @@
         if (!rules || !rules.rule || !rules.rule.allows) return true;
         return rules.rule.allows.indexOf("link") !== -1;
       }) || ((match && match.candidates) || [])[0];
-      if (pick) home = pick.name || pick.key || "";
+      if (pick) suggested = pick.name || pick.key || "";
     }
+    const home = opts.home || "";
     let urlCanonical = article.url_canonical || url;
     if (window.Reddit && Reddit.canonicalizeUrl && url) {
       try { urlCanonical = Reddit.canonicalizeUrl(url) || urlCanonical; } catch (_) {}
     }
+    const title = Util.decodeEntities ? Util.decodeEntities(article.title || "") : (article.title || "");
+    const source = Util.decodeEntities
+      ? Util.decodeEntities(article.source || "")
+      : (article.source || "");
     return {
       id: "art_" + article.id,
-      title: article.title,
+      title: title,
       selftext: article.body || article.summary || "",
       is_self: false,
       url: url || "https://example.invalid/" + article.id,
       url_canonical: urlCanonical || url,
       domain: domain,
       permalink: url,
-      subreddit: home || "",
-      author: article.source || "[syndicated]",
-      source_label: article.source || "",
+      subreddit: home,
+      suggested_sub: suggested || "",
+      author: source || "[syndicated]",
+      source_label: source || "",
       score: 0,
       num_comments: 0,
       created_utc: article.published || Math.floor(Date.now() / 1000),

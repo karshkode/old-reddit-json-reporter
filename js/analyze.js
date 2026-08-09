@@ -202,7 +202,11 @@
    * if it was not already there. */
   Analyze.adopt = function (post) {
     const state = window.AppState;
-    if (!state) return false;
+    if (!state || !post) return false;
+    /* Syndicated headlines are planning drafts. Putting them in the
+     * inventory made the Posts table show article URLs under a
+     * suggested subreddit that was never submitted. */
+    if (post.syndicated || String(post.id || "").indexOf("art_") === 0) return false;
     const existing = state.posts.findIndex((p) => p.id === post.id);
     if (existing >= 0) {
       /* Keep the fresher copy but do not lose the imported mark, or the

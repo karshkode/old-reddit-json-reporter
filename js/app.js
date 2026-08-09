@@ -51,8 +51,23 @@
     if (!cached || !Array.isArray(cached.posts) || !cached.posts.length) return false;
 
     const activeArr = Array.from(state.activeSubs);
-    const filtered = PostCache.filterByActiveSubs(cached.posts, activeArr);
+    /* Drop planning drafts that earlier builds persisted as if they were
+     * Reddit posts (art_* / syndicated). They belong in Syndicate/Plan,
+     * not in the inventory the Posts table and KPIs read. */
+    const real = (cached.posts || []).filter((p) =>
+      p && !p.syndicated && String(p.id || "").indexOf("art_") !== 0
+    );
+    const filtered = PostCache.filterByActiveSubs(real, activeArr);
     state.posts = filtered;
+    if (real.length !== (cached.posts || []).length) {
+      PostCache.save(filtered, {
+        fetchKey: String(cached.fetchKey || ""),
+        activeSubs: activeArr,
+        listing: state.listing,
+        timeWindow: state.timeWindow,
+        limit: state.limit,
+      }).catch(() => {});
+    }
     state.cache.hasCache = true;
     state.cache.savedAt = Number(cached.savedAt) || 0;
     state.cache.fetchKey = String(cached.fetchKey || "");
@@ -189,10 +204,11 @@
     if (state.activeSubs && state.activeSubs.size) {
       const active = new Set(Array.from(state.activeSubs).map((s) => String(s).toLowerCase()));
       list = list.filter((p) => {
-        /* Syndicated headlines have no home sub — they are inventory for
-         * Plan, not a chip. Dropping them here is how Open in Plan looked
-         * empty after adopt. */
-        if (p && p.syndicated) return true;
+        /* Syndicated headlines are planning drafts, not Reddit posts.
+         * Keeping them here made "Open in Plan" invent a row in Posts
+         * under a suggested r/… that was never submitted. Plan still
+         * finds them via AppState.posts / FocusView directly. */
+        if (!p || p.syndicated || String(p.id || "").indexOf("art_") === 0) return false;
         return active.has(String(p.subreddit || "").toLowerCase());
       });
     } else if (state.knownSubs && state.knownSubs.length) {
