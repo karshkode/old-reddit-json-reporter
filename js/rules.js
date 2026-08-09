@@ -38,6 +38,15 @@
     "m.youtube.com", "vimeo.com", "streamable.com", "tiktok.com",
     "www.tiktok.com",
   ]);
+  /* Hosts that are user-uploaded / social clips, not an editorial news
+   * desk. r/politics allows "videos" in the abstract but removes Reddit
+   * native clips, TikToks and the rest — those are UGC, and UGC is on
+   * the disallowed list. */
+  const UGC_VIDEO_HOSTS = new Set([
+    "v.redd.it", "reddit.com", "www.reddit.com", "old.reddit.com",
+    "np.reddit.com", "tiktok.com", "www.tiktok.com", "vm.tiktok.com",
+    "streamable.com", "clips.twitch.tv", "twitch.tv", "www.twitch.tv",
+  ]);
   /* Hostnames that mean the linked thing is a social post, not an
    * article — used both to classify the link itself and to recognise
    * a screenshot that was rehosted on imgur or i.redd.it. */
@@ -103,19 +112,29 @@
     const host = hostOf(post.url) || domain;
     const platform = platformOf(host, post.media_provider);
     const url = String(post.url || "");
+    /* Community flair is often more honest than the URL. A native Reddit
+     * video still has a reddit.com permalink in some adapters, but the
+     * flair says "Video" — that is the clue Where-next was missing. */
+    const flair = String(post.flair || post.link_flair_text || "").toLowerCase();
+    const hint = String(post.post_hint || "").toLowerCase();
+    const flairSaysVideo = /\bvideos?\b|\bclips?\b/.test(flair);
+    const hintSaysVideo = /video/.test(hint);
 
-    if (post.is_self) {
+    if (post.is_self && !flairSaysVideo && !post.is_video) {
       return { kind: "self", platform: null, social: false, domain: domain, label: "text post" };
     }
     if (post.is_gallery) {
       return { kind: "gallery", platform: platform, social: !!platform, domain: domain, label: "image gallery" };
     }
-    if (post.is_video || VIDEO_HOSTS.has(host) || /youtube|vimeo|streamable|tiktok/.test(host)) {
+    if (post.is_video || hintSaysVideo || flairSaysVideo
+        || VIDEO_HOSTS.has(host) || /youtube|vimeo|streamable|tiktok/.test(host)
+        || UGC_VIDEO_HOSTS.has(host)) {
       return {
         kind: "video",
         platform: platform || (/youtube|youtu\.be/.test(host) ? "youtube" : null),
         social: !!platform,
         domain: domain,
+        ugc: UGC_VIDEO_HOSTS.has(host) || host.indexOf("redd.it") !== -1 || flairSaysVideo && (!host || /reddit/.test(host)),
         label: "video",
       };
     }
@@ -162,6 +181,10 @@
    *   allows        kinds this community will take. Omit for "anything".
    *   requires      extra constraints beyond kind:
    *                   "unique_link"        URL must not already be there
+   *                   "editorial_source"  news-desk link/video only —
+   *                                       Reddit clips, TikTok and other
+   *                                       UGC fail even when video is
+   *                                       otherwise allowed
    *                   "social_screenshot"  image of a social post
    *                   "twitter_screenshot" specifically Twitter/X
    *   platforms     when requires social_screenshot, which platforms
@@ -175,13 +198,13 @@
     /* --- news / politics: articles, usually unique --- */
     politics: {
       allows: ["link", "video"],
-      requires: ["unique_link"],
-      note: "US-politics articles and video only; the same URL cannot have been posted there before, and titles must match the source headline.",
+      requires: ["unique_link", "editorial_source"],
+      note: "US-politics news from approved outlets only — articles or news-desk video. Reddit clips, TikTok and other UGC are removed; titles must match the source headline.",
     },
     news: {
       allows: ["link", "video"],
-      requires: ["unique_link"],
-      note: "News articles and video only; reposts of a URL already on the sub are removed.",
+      requires: ["unique_link", "editorial_source"],
+      note: "News articles or news-desk video only; Reddit/social clips and URL reposts are removed.",
     },
     worldnews: {
       allows: ["link"],
@@ -266,12 +289,12 @@
 
     /* --- image / meme-shaped progressive rooms --- */
     latestagecapitalism: {
-      allows: ["link", "image", "gallery", "video"],
-      note: "Links, images and video; pure text posts are uncommon and often removed.",
+      allows: ["link", "image", "gallery"],
+      note: "Links and images (macros, screenshots, articles). Native Reddit video and clips are a poor fit and often removed.",
     },
     aboringdystopia: {
-      allows: ["link", "image", "gallery", "video"],
-      note: "Links and images of dystopian mundanity; text-only essays belong elsewhere.",
+      allows: ["link", "image", "gallery"],
+      note: "Links and images of dystopian mundanity; video clips and text-only essays belong elsewhere.",
     },
     orphancrushingmachine: {
       allows: ["link", "image", "gallery"],
@@ -476,6 +499,35 @@
             out.duplicate = dup;
             out.reasons.push("this link is already on the sub");
           }
+        }
+      } else if (req === "editorial_source") {
+        /* r/politics-shaped rooms allow "video" in the abstract, but
+         * only from news desks on the whitelist. A flair that says
+         * Video on a v.redd.it clip is exactly what they remove. */
+        const host = (hostOf(post.url) || kind.domain || "").toLowerCase();
+        const ugcHost = !host
+          || UGC_VIDEO_HOSTS.has(host)
+          || /\.redd\.it$/.test(host)
+          || /(?:^|\.)reddit\.com$/.test(host)
+          || !!kind.ugc;
+        if (kind.kind === "video") {
+          if (ugcHost) {
+            out.ok = false;
+            out.hard = true;
+            out.reasons.push("needs a news article, not a Reddit/social clip");
+          } else if (/youtube|youtu\.be|vimeo|streamable/.test(host)) {
+            /* A few YouTube news channels are approved; most are not.
+             * Soft-fail so the row stays visible with a warning. */
+            out.ok = false;
+            out.hard = false;
+            out.reasons.push("video must be from an approved news outlet");
+          }
+        } else if (kind.kind === "link" && (ugcHost && host || SOCIAL_HOSTS[host])) {
+          out.ok = false;
+          out.hard = true;
+          out.reasons.push(SOCIAL_HOSTS[host]
+            ? "social media links are not allowed"
+            : "needs a news article, not a Reddit/social clip");
         }
       }
     }
