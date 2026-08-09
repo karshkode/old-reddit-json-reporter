@@ -27,10 +27,12 @@ bundled sample data without touching the network.
   - [Campaigns](#campaigns)
   - [Communities](#communities)
   - [Posts](#posts)
+  - [Syndicate](#syndicate)
 - [Posting times are per subreddit](#posting-times-are-per-subreddit)
 - [From one post to a campaign](#from-one-post-to-a-campaign)
 - [How discovery works](#how-discovery-works)
 - [Sync uses the posts-per-sub setting](#sync-uses-the-posts-per-sub-setting)
+- [Syndicate RSS into communities](#syndicate)
 - [Demo mode](#demo-mode)
 - [Cross-device session sync](#cross-device-session-sync)
 - [How it works](#how-it-works)
@@ -233,6 +235,22 @@ upvote ratio, permalink, a title-quality score broken down by factor
 (length, caps ratio, punctuation, numerals, brackets, sentiment,
 clickbait), and **where else this post could go** — see
 [below](#from-one-post-to-a-campaign).
+
+### Syndicate
+
+Headlines in, communities out. The default catalog is the **Politics**
+and **News** folders from a Feedly OPML export (`data/subscriptions.opml`);
+sports, podcasts and pop/entertainment folders are skipped, and **Tech**
+is available but off until you turn it on.
+
+**Pull latest** reads each enabled feed (via a CORS-friendly reader, then
+a proxy fallback), keeps a handful of recent items, and extracts keywords
+from the title and whatever summary/body the feed carried. Matching one
+headline runs the same discovery path as Where-next on a synthetic link
+post — so format rules apply (r/politics wants a fresh article, not a
+text dump) and each row can open Reddit's submit page with the link
+filled in. You can also re-import a fresh OPML; Yankees/Giants-style
+folders stay out.
 
 ---
 
@@ -624,6 +642,8 @@ index and current view.
 | `js/discovery.js` | The discovery pipeline: campaign and single-post vectors, sphere ranking, candidate scoring, filtering, similar communities |
 | `js/rules.js` | Post-kind classification and curated community posting rules (unique links, social screenshots, …) for Where-next |
 | `js/refresh.js` | Scoped sync: one or more subs, post ids, campaigns, stale-only; fills toward the configured posts-per-sub limit |
+| `js/syndicate.js` | Feedly/OPML catalog, RSS fetch+parse, article keywords, Discovery match for Syndicate |
+| `data/subscriptions.opml` | Source Feedly export the default Politics/News catalog was curated from |
 | `js/charts.js` | Chart.js wrappers plus dynamic mount/destroy for cards that come and go |
 | `js/campaigns.js` | Campaign storage with an in-memory mirror for blocked-storage browsers |
 | `js/sync.js` | Session payload, base64url codec, share links, merge/replace |

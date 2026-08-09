@@ -1,8 +1,8 @@
 /* =====================================================================
  * ROUTER
  * ---------------------------------------------------------------------
- * Owns which view is on screen. Four destinations — dashboard,
- * campaigns, communities, posts — plus a campaign sub-route
+ * Owns which view is on screen. Five destinations — dashboard,
+ * campaigns, communities, posts, syndicate — plus a campaign sub-route
  * (#/campaigns/<id>) so an open campaign is linkable and survives a
  * reload.
  *
