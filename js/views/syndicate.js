@@ -13,13 +13,29 @@
 
   let selectedId = null;
   let matchBusy = null;
+  let searchQuery = "";
 
   View.subtitle = function () {
-    const n = Syndicate.articles().length;
+    const n = filtered().length;
+    const total = Syndicate.articles().length;
     const feeds = Syndicate.enabledFeeds().length;
-    if (!n) return `${feeds} feed${feeds === 1 ? "" : "s"} ready`;
-    return `${Util.fmtNum(n)} headline${n === 1 ? "" : "s"} · ${feeds} feeds`;
+    if (!total) return `${feeds} feed${feeds === 1 ? "" : "s"} ready`;
+    if (searchQuery && n !== total) {
+      return `${Util.fmtNum(n)} of ${Util.fmtNum(total)} · ${feeds} feeds`;
+    }
+    return `${Util.fmtNum(total)} headline${total === 1 ? "" : "s"} · ${feeds} feeds`;
   };
+
+  function filtered() {
+    const q = searchQuery.trim().toLowerCase();
+    const list = Syndicate.articles();
+    if (!q) return list;
+    return list.filter((a) => {
+      const hay = [a.title, a.summary, a.source, a.category, (Syndicate.keywords(a, 8) || []).join(" ")]
+        .join(" ").toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+  }
 
   View.render = function () {
     renderFolders();
@@ -30,6 +46,8 @@
       sub.hidden = false;
       sub.textContent = View.subtitle();
     }
+    const search = Dom.byId("syndicate-search");
+    if (search && search.value !== searchQuery) search.value = searchQuery;
   };
 
   function renderFolders() {
@@ -47,43 +65,67 @@
     }).join("");
   }
 
+  function whenBits(a) {
+    if (!a.published) return { rel: "", abs: "" };
+    const rel = Util.relTime(a.published);
+    const abs = new Date(a.published * 1000).toLocaleString(undefined, {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+    return { rel, abs };
+  }
+
   function renderList() {
     const host = Dom.byId("syndicate-list");
     const empty = Dom.byId("syndicate-empty");
     const meta = Dom.byId("syndicate-list-meta");
     if (!host) return;
 
-    const list = Syndicate.articles();
+    const list = filtered();
+    const total = Syndicate.articles().length;
     if (meta) {
-      meta.textContent = list.length
-        ? `${Util.fmtNum(list.length)} articles`
-        : "Pull feeds to load headlines";
+      if (!total) meta.textContent = "Pull feeds to load headlines";
+      else if (searchQuery && list.length !== total) {
+        meta.textContent = `${Util.fmtNum(list.length)} of ${Util.fmtNum(total)} match`;
+      } else {
+        meta.textContent = `${Util.fmtNum(total)} articles`;
+      }
     }
 
     if (!list.length) {
       host.innerHTML = "";
-      if (empty) empty.hidden = false;
+      if (empty) {
+        empty.hidden = false;
+        empty.innerHTML = total
+          ? `<strong>No matches</strong><p>Nothing in the pulled headlines matches “${esc(searchQuery)}”.</p>`
+          : `<strong>No headlines yet</strong><p>Tap <em>Pull latest</em> to read the enabled folders, or import a Feedly OPML. Yankees, Giants and other entertainment lists stay out.</p>`;
+      }
       return;
     }
     if (empty) empty.hidden = true;
 
     host.innerHTML = list.map((a) => {
       const active = a.id === selectedId ? " is-active" : "";
-      const when = a.published ? Util.relTime(a.published) : "";
-      const keys = Syndicate.keywords(a, 5);
+      const when = whenBits(a);
+      const keys = Syndicate.keywords(a, 4);
       const keyHtml = keys.length
         ? `<div class="syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>`
         : "";
+      const thumb = a.image
+        ? `<img class="syn-thumb" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+        : `<div class="syn-thumb syn-thumb-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
       return `
-        <button type="button" class="syn-row${active}" data-syn-id="${esc(a.id)}">
-          <div class="syn-row-top">
-            <span class="syn-source">${esc(a.source || a.category || "Feed")}</span>
-            ${when ? `<span class="meta">${esc(when)}</span>` : ""}
-            ${a.category ? `<span class="badge">${esc(a.category)}</span>` : ""}
+        <button type="button" class="syn-card${active}" data-syn-id="${esc(a.id)}">
+          ${thumb}
+          <div class="syn-card-body">
+            <div class="syn-card-meta">
+              <span class="syn-source-box">${esc(a.source || a.category || "Feed")}</span>
+              ${when.rel ? `<span class="syn-time-box" title="${esc(when.abs)}">${esc(when.rel)}</span>` : ""}
+              ${a.category ? `<span class="badge">${esc(a.category)}</span>` : ""}
+            </div>
+            <div class="syn-title">${esc(a.title)}</div>
+            ${a.summary ? `<div class="syn-sum">${esc(a.summary.slice(0, 140))}${a.summary.length > 140 ? "…" : ""}</div>` : ""}
+            ${keyHtml}
           </div>
-          <div class="syn-title">${esc(a.title)}</div>
-          ${a.summary ? `<div class="syn-sum">${esc(a.summary.slice(0, 180))}${a.summary.length > 180 ? "…" : ""}</div>` : ""}
-          ${keyHtml}
         </button>`;
     }).join("");
   }
@@ -104,10 +146,19 @@
     const cached = Syndicate.matchOf(article.id);
     const keys = (cached && cached.keywords) || Syndicate.keywords(article, 10);
     const post = Syndicate.asPost(article);
+    const when = whenBits(article);
+    const hero = article.image
+      ? `<div class="syn-article-hero"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></div>`
+      : "";
 
     host.innerHTML = `
       <article class="syn-article">
-        <div class="syn-article-kicker">${esc(article.source || "")}${article.category ? ` · ${esc(article.category)}` : ""}</div>
+        ${hero}
+        <div class="syn-article-kicker">
+          <span class="syn-source-box">${esc(article.source || "")}</span>
+          ${when.rel ? `<span class="syn-time-box" title="${esc(when.abs)}">${esc(when.rel)}</span>` : ""}
+          ${article.category ? `<span class="badge">${esc(article.category)}</span>` : ""}
+        </div>
         <h3 class="syn-article-title">${esc(article.title)}</h3>
         ${article.link ? `<a class="syn-article-link" href="${esc(article.link)}" target="_blank" rel="noopener">Read original ↗</a>` : ""}
         ${article.summary ? `<p class="syn-article-sum">${esc(article.summary)}</p>` : ""}
@@ -214,6 +265,33 @@
     }
   }
 
+  async function openInPlan(article) {
+    if (!article || !window.FocusView) return;
+    let match = Syndicate.matchOf(article.id);
+    if (!match) {
+      matchBusy = article.id;
+      View.render();
+      try { match = await Syndicate.match(article); }
+      catch (err) {
+        Util.toast((err && err.message) || String(err), "error");
+        matchBusy = null;
+        View.render();
+        return;
+      }
+      matchBusy = null;
+    }
+    const post = Syndicate.asPost(article);
+    /* Re-adopt with suggested home filled from match. */
+    const withHome = Syndicate.asPost(article);
+    if (window.Analyze && Analyze.adopt) Analyze.adopt(withHome);
+    const related = match.related || {
+      communities: [].concat(match.candidates || [], match.blocked || []),
+      spheres: match.spheres || [],
+      terms: match.keywords || [],
+    };
+    FocusView.focusPost(withHome, { related: related });
+  }
+
   async function pullFeeds() {
     const btn = Dom.byId("syndicate-pull");
     const status = Dom.byId("syndicate-status");
@@ -244,9 +322,7 @@
           ? `${Util.fmtNum(res.articles.length)} headlines from ${res.feedCount} feeds${errBit}`
           : `No headlines${errBit}`;
       }
-      if (res.errors.length) {
-        console.warn("[syndicate] feed errors:", res.errors);
-      }
+      if (res.errors.length) console.warn("[syndicate] feed errors:", res.errors);
       if (!selectedId && res.articles[0]) selectedId = res.articles[0].id;
       Util.toast(
         res.articles.length
@@ -278,6 +354,15 @@
     const pull = Dom.byId("syndicate-pull");
     if (pull) pull.addEventListener("click", () => pullFeeds());
 
+    const search = Dom.byId("syndicate-search");
+    if (search) {
+      const debounced = Util.debounce(() => {
+        searchQuery = search.value || "";
+        View.render();
+      }, 160);
+      search.addEventListener("input", debounced);
+    }
+
     const file = Dom.byId("syndicate-opml");
     if (file) {
       file.addEventListener("change", async () => {
@@ -304,17 +389,7 @@
 
     Dom.delegate(document, "click", '[data-action="syn-focus"]', () => {
       const article = Syndicate.articles().find((a) => a.id === selectedId);
-      if (!article || !window.FocusView) return;
-      const post = Syndicate.asPost(article);
-      if (window.Analyze && Analyze.adopt) Analyze.adopt(post);
-      else if (window.AppState) {
-        const exists = AppState.posts.some((p) => p.id === post.id);
-        if (!exists) {
-          AppState.posts.unshift(post);
-          if (AppState.persist) AppState.persist();
-        }
-      }
-      FocusView.focusPost(post);
+      openInPlan(article);
     });
 
     Dom.delegate(document, "click", '[data-action="syn-add-sub"]', (e, btn) => {
@@ -326,7 +401,6 @@
       View.render();
     });
 
-    /* Demo mode: seed headlines so the view is usable offline. */
     if (window.Demo && Demo.isActive() && !Syndicate.articles().length) {
       Syndicate.loadDemo();
       selectedId = Syndicate.articles()[0] && Syndicate.articles()[0].id;

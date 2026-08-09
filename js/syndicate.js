@@ -84,7 +84,24 @@
     {"title":"Washington Post | Politics","xmlUrl":"http://www.washingtonpost.com/wp-dyn/rss/politics/index.xml","htmlUrl":"https://www.washingtonpost.com","category":"Politics","defaultOn":true,"altUrl":"https://feeds.washingtonpost.com/rss/politics","id":"wapo-pol"},
     {"title":"NBC News Politics","xmlUrl":"http://rss.msnbc.msn.com/id/3032552/device/rss/rss.xml","htmlUrl":"https://www.nbcnews.com/","category":"Politics","defaultOn":true,"altUrl":"https://feeds.nbcnews.com/nbcnews/public/politics","id":"nbc-pol"},
     {"title":"The Intercept","xmlUrl":"https://firstlook.org/theintercept/feed/","htmlUrl":"https://theintercept.com/","category":"Politics","defaultOn":true,"altUrl":"https://theintercept.com/feed/","id":"intercept"},
-    {"title":"Talking Points Memo","xmlUrl":"http://talkingpointsmemo.com/feed/newscred","htmlUrl":"https://talkingpointsmemo.com","category":"Politics","defaultOn":true,"altUrl":"https://talkingpointsmemo.com/feed","id":"tpm"}
+    {"title":"Talking Points Memo","xmlUrl":"http://talkingpointsmemo.com/feed/newscred","htmlUrl":"https://talkingpointsmemo.com","category":"Politics","defaultOn":true,"altUrl":"https://talkingpointsmemo.com/feed","id":"tpm"},
+    /* Additional civic / progressive news desks — not in the original
+     * Feedly export, but they match the Politics/News workflow. */
+    {"title":"ProPublica","xmlUrl":"https://www.propublica.org/feeds/propublica/main","htmlUrl":"https://www.propublica.org/","category":"Politics","defaultOn":true,"altUrl":"https://www.propublica.org/feeds/propublica/main","id":"propublica"},
+    {"title":"Democracy Now!","xmlUrl":"https://www.democracynow.org/democracynow.rss","htmlUrl":"https://www.democracynow.org/","category":"Politics","defaultOn":true,"altUrl":"https://www.democracynow.org/democracynow.rss","id":"demnow"},
+    {"title":"The Nation","xmlUrl":"https://www.thenation.com/feed/?post_type=article","htmlUrl":"https://www.thenation.com/","category":"Politics","defaultOn":true,"altUrl":"https://www.thenation.com/feed/?post_type=article","id":"thenation"},
+    {"title":"Common Dreams","xmlUrl":"https://www.commondreams.org/rss.xml","htmlUrl":"https://www.commondreams.org/","category":"Politics","defaultOn":true,"altUrl":"https://www.commondreams.org/rss.xml","id":"commondreams"},
+    {"title":"Current Affairs","xmlUrl":"https://www.currentaffairs.org/feed","htmlUrl":"https://www.currentaffairs.org/","category":"Politics","defaultOn":true,"altUrl":"https://www.currentaffairs.org/feed","id":"curaffairs"},
+    {"title":"In These Times","xmlUrl":"https://inthesetimes.com/feed/","htmlUrl":"https://inthesetimes.com/","category":"Politics","defaultOn":true,"altUrl":"https://inthesetimes.com/feed/","id":"inthesetimes"},
+    {"title":"Truthout","xmlUrl":"https://truthout.org/feed/","htmlUrl":"https://truthout.org/","category":"Politics","defaultOn":true,"altUrl":"https://truthout.org/feed/","id":"truthout"},
+    {"title":"NPR Politics","xmlUrl":"https://feeds.npr.org/1014/rss.xml","htmlUrl":"https://www.npr.org/sections/politics/","category":"Politics","defaultOn":true,"altUrl":"https://feeds.npr.org/1014/rss.xml","id":"npr-pol"},
+    {"title":"Axios","xmlUrl":"https://api.axios.com/feed/","htmlUrl":"https://www.axios.com/","category":"News","defaultOn":true,"altUrl":"https://api.axios.com/feed/","id":"axios"},
+    {"title":"AP News","xmlUrl":"https://rsshub.app/apnews/topics/apf-topnews","htmlUrl":"https://apnews.com/","category":"News","defaultOn":true,"altUrl":"https://rsshub.app/apnews/topics/apf-topnews","id":"ap-top"},
+    {"title":"The 19th","xmlUrl":"https://19thnews.org/feed/","htmlUrl":"https://19thnews.org/","category":"Politics","defaultOn":true,"altUrl":"https://19thnews.org/feed/","id":"the19th"},
+    {"title":"Bolts","xmlUrl":"https://boltsmag.org/feed/","htmlUrl":"https://boltsmag.org/","category":"Politics","defaultOn":true,"altUrl":"https://boltsmag.org/feed/","id":"bolts"},
+    {"title":"Labor Notes","xmlUrl":"https://labornotes.org/feed","htmlUrl":"https://labornotes.org/","category":"Politics","defaultOn":true,"altUrl":"https://labornotes.org/feed","id":"labornotes"},
+    {"title":"NYT Politics","xmlUrl":"https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml","htmlUrl":"https://www.nytimes.com/section/politics","category":"Politics","defaultOn":true,"altUrl":"https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml","id":"nyt-pol"},
+    {"title":"BBC US & Canada","xmlUrl":"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml","htmlUrl":"https://www.bbc.com/news/world/us_and_canada","category":"News","defaultOn":true,"altUrl":"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml","id":"bbc-us"}
   ];
 
   /* Folders the OPML carried that we refuse to load even on re-import.
@@ -285,8 +302,11 @@
         const content = textOf(first(item, ["content:encoded", "content", "description"]));
         const pub = textOf(first(item, ["pubDate", "published", "updated", "dc:date"]));
         if (!title && !link) return;
+        const rawHtml = (first(item, ["content:encoded", "content", "description"]) || {}).innerHTML
+          || (first(item, ["description"]) || {}).textContent || "";
         items.push(makeArticle({
           title, link, summary, content, published: pub,
+          image: thumbOf(item, rawHtml),
           source: feedTitle || meta.title, feedId: meta.id, category: meta.category,
         }));
       });
@@ -309,13 +329,41 @@
       const content = textOf(first(entry, ["content", "summary"]));
       const pub = textOf(first(entry, ["published", "updated"]));
       if (!title && !link) return;
+      const rawHtml = (first(entry, ["content", "summary"]) || {}).innerHTML || "";
       items.push(makeArticle({
         title, link, summary, content, published: pub,
+        image: thumbOf(entry, rawHtml),
         source: feedTitle || meta.title, feedId: meta.id, category: meta.category,
       }));
     });
     return { title: feedTitle, items };
   };
+
+  function thumbOf(el, rawHtml) {
+    if (!el) return "";
+    const media = el.getElementsByTagName("thumbnail")[0]
+      || el.getElementsByTagNameNS("*", "thumbnail")[0];
+    if (media) {
+      const u = media.getAttribute("url") || media.getAttribute("href") || textOf(media);
+      if (u && /^https?:/i.test(u)) return u;
+    }
+    const encs = el.getElementsByTagName("enclosure");
+    for (const enc of encs) {
+      const type = (enc.getAttribute("type") || "").toLowerCase();
+      const u = enc.getAttribute("url") || "";
+      if (u && (/^image\//.test(type) || /\.(png|jpe?g|gif|webp)(\?|$)/i.test(u))) return u;
+    }
+    const itunes = el.getElementsByTagNameNS("*", "image")[0]
+      || el.getElementsByTagName("image")[0];
+    if (itunes) {
+      const u = itunes.getAttribute("href") || itunes.getAttribute("url")
+        || textOf(first(itunes, ["url"])) || textOf(itunes);
+      if (u && /^https?:/i.test(u)) return u;
+    }
+    const m = String(rawHtml || "").match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (m && /^https?:/i.test(m[1])) return m[1];
+    return "";
+  }
 
   function attr(el, tag, name) {
     const n = first(el, [tag]);
@@ -336,6 +384,7 @@
       summary: summary,
       body: body.slice(0, 4000),
       published: publishedMs ? Math.floor(publishedMs / 1000) : 0,
+      image: String(raw.image || "").trim(),
       source: raw.source || "",
       feedId: raw.feedId || "",
       category: raw.category || "",
@@ -380,6 +429,8 @@
             summary: stripHtml(it.description || ""),
             content: stripHtml(it.content || it.description || ""),
             published: it.pubDate,
+            image: it.thumbnail || (it.enclosure && /^image\//.test(it.enclosure.type || "") && it.enclosure.link)
+              || "",
             source: (data.feed && data.feed.title) || feed.title,
             feedId: feed.id,
             category: feed.category,
@@ -449,11 +500,26 @@
    * KEYWORDS + MATCH
    * ------------------------------------------------------------------ */
 
-  Syndicate.asPost = function (article) {
+  Syndicate.asPost = function (article, opts) {
+    opts = opts || {};
     const url = article.link || "";
     let domain = "";
     try { domain = new URL(url).hostname.replace(/^www\./, ""); }
     catch (_) { domain = ""; }
+    /* Prefer an explicit home, then the best match that takes a link,
+     * then leave empty — Plan UI and Discovery both know how to treat
+     * syndicated posts without inventing a fake subreddit. */
+    let home = opts.home || "";
+    if (!home) {
+      const match = matchCache[article.id];
+      const pick = ((match && match.candidates) || []).find((c) => {
+        if (!c || c.blocked) return false;
+        const rules = c.rules;
+        if (!rules || !rules.rule || !rules.rule.allows) return true;
+        return rules.rule.allows.indexOf("link") !== -1;
+      }) || ((match && match.candidates) || [])[0];
+      if (pick) home = pick.name || pick.key || "";
+    }
     return {
       id: "art_" + article.id,
       title: article.title,
@@ -462,14 +528,16 @@
       url: url || "https://example.invalid/" + article.id,
       domain: domain,
       permalink: url,
-      subreddit: "",
+      subreddit: home || "",
       author: article.source || "[syndicated]",
+      source_label: article.source || "",
       score: 0,
       num_comments: 0,
       created_utc: article.published || Math.floor(Date.now() / 1000),
       over_18: false,
       stickied: false,
       media_provider: "",
+      thumbnail: article.image || "",
       imported: true,
       syndicated: true,
     };

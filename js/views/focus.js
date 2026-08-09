@@ -438,11 +438,24 @@
     const kindBit = kind
       ? `<span class="focus-kind" title="What kind of post this is — used to skip communities whose rules reject it">${esc(kind.label)}</span>`
       : "";
+    /* Syndicated articles have no Reddit home — show the outlet, never
+     * a blank "r/". A suggested home from matching is labelled as such. */
+    let whereBit;
+    if (post.syndicated && !post.subreddit) {
+      whereBit = `<span class="focus-source">${esc(post.source_label || post.author || "Syndicated")}</span>`;
+    } else if (post.syndicated && post.subreddit) {
+      whereBit = `<span class="focus-source">${esc(post.source_label || "Syndicated")}</span> · suggested r/${esc(post.subreddit)}`;
+    } else {
+      whereBit = `r/${esc(post.subreddit || "?")}`;
+    }
+    const scoreBit = post.syndicated
+      ? ""
+      : ` · ${Util.fmtNum(post.score || 0)} pts`;
     return `
       <div class="focus-chosen">
         <div class="focus-chosen-main">
           <div class="focus-chosen-title">${esc(trunc(post.title || "(untitled)", 120))}</div>
-          <div class="focus-chosen-meta">r/${esc(post.subreddit)} · ${Util.fmtNum(post.score || 0)} pts · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
+          <div class="focus-chosen-meta">${whereBit}${scoreBit} · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
         </div>
         <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
       </div>
@@ -481,12 +494,22 @@
        the totals is that they span communities. Three submissions in
        one subreddit is still one place this content has reached. */
     if (byS.size < 2) {
+      if (post.syndicated && !byS.size) {
+        return `
+          <p class="focus-reach is-single">
+            Not on Reddit yet — a syndicated headline. Match communities below, submit the link,
+            then sync to start totalling copies.
+          </p>`;
+      }
       const again = copies.length
         ? ` (${copies.length + 1} submissions there)`
         : "";
+      const home = post.subreddit
+        ? `<b>r/${esc(post.subreddit)}</b>`
+        : `<b>${esc(post.source_label || "one place")}</b>`;
       return `
         <p class="focus-reach is-single">
-          Only in <b>r/${esc(post.subreddit)}</b> so far${again}. Cross-post it below and it gets
+          Only in ${home} so far${again}. Cross-post it below and it gets
           totalled as a set once the copy turns up — nothing to track until then.
         </p>`;
     }
@@ -900,15 +923,42 @@
   };
 
   /* Send a post here from anywhere — the posts table, the detail panel,
-     the analyse dialog. */
-  View.focusPost = function (post) {
+     the analyse dialog, Syndicate.
+     opts.related  a Discovery.forPost-shaped result to reuse so Syndicate
+                   does not re-rank from scratch without news spheres */
+  View.focusPost = function (post, opts) {
     if (!post) return;
+    opts = opts || {};
     if (window.Analyze && Analyze.adopt) Analyze.adopt(post);
-    View.set(post.id);
+    focusId = post.id;
+    lastError = "";
+    try { localStorage.setItem(KEY, focusId); } catch (_) {}
+
     Router.go("dashboard");
     if (window.DashboardView) DashboardView.goToSection("plan");
     const card = document.getElementById("focus-card");
     if (card) card.scrollIntoView({ block: "start", behavior: "smooth" });
+
+    if (opts.related && window.NextMove) {
+      busy = true;
+      render();
+      NextMove.rank(post, {
+        related: opts.related,
+        timing: timing,
+        exclude: alreadyIn(post),
+        live: false,
+      }).then((result) => {
+        cache.set(post.id, { signature: dataSignature, result: result });
+      }).catch((err) => {
+        lastError = (err && err.message) || String(err);
+      }).finally(() => {
+        busy = false;
+        render();
+      });
+      return;
+    }
+    render();
+    rank();
   };
 
   View.mount = function () {

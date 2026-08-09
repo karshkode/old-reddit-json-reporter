@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=20260817" />
-  <link rel="stylesheet" href="./css/base.css?v=20260817" />
-  <link rel="stylesheet" href="./css/shell.css?v=20260817" />
-  <link rel="stylesheet" href="./css/views.css?v=20260817" />
-  <link rel="stylesheet" href="./css/styles.css?v=20260817" />
+  <link rel="stylesheet" href="./css/tokens.css?v=20260818" />
+  <link rel="stylesheet" href="./css/base.css?v=20260818" />
+  <link rel="stylesheet" href="./css/shell.css?v=20260818" />
+  <link rel="stylesheet" href="./css/views.css?v=20260818" />
+  <link rel="stylesheet" href="./css/styles.css?v=20260818" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=20260817"></script>
+  <script src="./js/theme.js?v=20260818"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -144,6 +144,8 @@
             <button class="btn small" type="button" role="menuitem" data-sync="visible">Posts on screen</button>
             <button class="btn small" type="button" role="menuitem" data-sync="watch"
                     title="Read current upvotes and comments from Reddit for everything under 36 hours old, where the archive still says 1">Recent posts, live from Reddit</button>
+            <button class="btn small" type="button" role="menuitem" data-sync="prune"
+                    title="Remove loaded posts older than the Settings time window (week, month, …). Imported and syndicated articles are kept.">Drop posts older than window</button>
             <span class="action-menu-head">Refresh</span>
             <button class="btn small" type="button" role="menuitem" data-sync="all"
                     title="Empty the inventory and collect it again from scratch — needed after changing the listing or time window, and it discards posts that have since fallen off the front page">Start over from scratch</button>
@@ -179,6 +181,7 @@
 
           <nav class="section-rail" id="dashboard-section-rail" role="tablist" aria-label="Dashboard sections">
             <button type="button" role="tab" data-dash-tab="plan" class="active" aria-selected="true" aria-controls="dash-plan">Plan</button>
+            <button type="button" role="tab" data-dash-tab="briefing" aria-selected="false" aria-controls="dash-briefing" tabindex="-1">Briefing</button>
             <button type="button" role="tab" data-dash-tab="trends" aria-selected="false" aria-controls="dash-trends" tabindex="-1">Trends</button>
             <button type="button" role="tab" data-dash-tab="communities" aria-selected="false" aria-controls="dash-communities" tabindex="-1">Communities</button>
           </nav>
@@ -188,22 +191,24 @@
               <header class="card-header">
                 <div>
                   <h2>Where should a post go next?</h2>
-                  <span class="hint">Pick a post or paste a link, get a community and an hour</span>
+                  <span class="hint">Pick a post, paste a link, or open one from Syndicate — get a community and an hour</span>
                 </div>
                 <button class="card-help" type="button" aria-label="How this card is built" data-help="This works from one post rather than from your whole collection. The post's title, body and flair are read for what it is about, then every community that reads the same way is checked against its own clock. The multiple is the honest part: both sides come from the same estimator, so '2.4× the reach' means a typical post in that community, in its best window, against a typical post in the community this one is in now. It splits into the community difference and the timing difference, and the sentence under the headline says which of the two is doing the work. A typical post means the middle of the pack, not the average, so one runaway post cannot talk a community up. It is a claim about a typical post, not a forecast for yours — a post that went viral where it is will not repeat that by moving. Communities with nothing loaded are listed separately, because they have no clock at all: they are unknowns, not better bets. Match is out of 100 and measures shared vocabulary and subject, not size.">?</button>
               </header>
               <div id="focus-body"></div>
             </div>
+          </div>
 
+          <div class="dash-section" id="dash-briefing" role="tabpanel">
             <div class="card">
               <header class="card-header">
                 <div>
                   <h2>What this data is telling you</h2>
-                  <span class="hint">Where and when to post next, read from your own loaded posts</span>
+                  <span class="hint">Where and when to post next, read from your own loaded posts — separate from placing one article</span>
                 </div>
                 <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one names a community rather than averaging across them. Communities are compared on their typical post, not on totals — a sub does not become the better place to post just because more of its posts happen to be loaded, and a line is left out entirely when there is not enough data behind it. Under When, each percentage is how much better a typical post does at that time than that community's own average, and 'at least +20%' is how far it might realistically fall short. Where the whole day is much the same, the community is listed as having no pattern rather than being handed an hour. The badge grades how much to trust it: STRONG means the pattern held up when tested against chance and even the worst case is a gain, so about a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, about 1-in-7; WEAK means worth knowing but easily chance. Communities with fewer than 8 posts are not graded at all. Totals are in the row above and the full breakdowns are on the other tabs.">?</button>
               </header>
-              <ul id="dash-briefing" class="briefing"></ul>
+              <ul id="briefing-list" class="briefing"></ul>
             </div>
           </div>
 
@@ -753,7 +758,11 @@
               </label>
             </div>
           </div>
-          <p class="meta" id="syndicate-status">Politics and News from your Feedly export. Tech is optional. Sports and entertainment folders are skipped.</p>
+          <div class="syn-search-row">
+            <label class="group-label" for="syndicate-search">Filter</label>
+            <input id="syndicate-search" type="search" placeholder="Search titles, sources, keywords…" autocomplete="off" aria-label="Filter headlines" />
+          </div>
+          <p class="meta" id="syndicate-status">Politics and News from your Feedly export, plus added civic desks. Tech is optional. Sports and entertainment folders are skipped.</p>
         </div>
 
         <div class="syn-layout">
@@ -1140,42 +1149,42 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=20260817"></script>
+<script src="./vendor/marked.min.js?v=20260818"></script>
 
-<script src="./js/dom.js?v=20260817"></script>
-<script src="./js/util.js?v=20260817"></script>
-<script src="./js/state.js?v=20260817"></script>
-<script src="./js/router.js?v=20260817"></script>
-<script src="./js/sync.js?v=20260817"></script>
-<script src="./js/archive.js?v=20260817"></script>
-<script src="./js/reddit.js?v=20260817"></script>
-<script src="./js/postcache.js?v=20260817"></script>
-<script src="./js/live.js?v=20260817"></script>
-<script src="./js/refresh.js?v=20260817"></script>
-<script src="./js/subindex.js?v=20260817"></script>
-<script src="./js/seeds.js?v=20260817"></script>
-<script src="./js/rules.js?v=20260817"></script>
-<script src="./js/timing.js?v=20260817"></script>
-<script src="./js/analysis.js?v=20260817"></script>
-<script src="./js/discovery.js?v=20260817"></script>
-<script src="./js/charts.js?v=20260817"></script>
-<script src="./js/campaigns.js?v=20260817"></script>
-<script src="./js/reset.js?v=20260817"></script>
-<script src="./js/analyze.js?v=20260817"></script>
-<script src="./js/crosspost.js?v=20260817"></script>
-<script src="./js/nextmove.js?v=20260817"></script>
-<script src="./js/syndicate.js?v=20260817"></script>
-<script src="./js/sidebar.js?v=20260817"></script>
-<script src="./js/composer.js?v=20260817"></script>
-<script src="./js/ui.js?v=20260817"></script>
-<script src="./js/views/focus.js?v=20260817"></script>
-<script src="./js/views/dashboard.js?v=20260817"></script>
-<script src="./js/views/campaign.js?v=20260817"></script>
-<script src="./js/views/communities.js?v=20260817"></script>
-<script src="./js/views/posts.js?v=20260817"></script>
-<script src="./js/views/syndicate.js?v=20260817"></script>
-<script src="./js/demo.js?v=20260817"></script>
-<script src="./js/app.js?v=20260817"></script>
+<script src="./js/dom.js?v=20260818"></script>
+<script src="./js/util.js?v=20260818"></script>
+<script src="./js/state.js?v=20260818"></script>
+<script src="./js/router.js?v=20260818"></script>
+<script src="./js/sync.js?v=20260818"></script>
+<script src="./js/archive.js?v=20260818"></script>
+<script src="./js/reddit.js?v=20260818"></script>
+<script src="./js/postcache.js?v=20260818"></script>
+<script src="./js/live.js?v=20260818"></script>
+<script src="./js/refresh.js?v=20260818"></script>
+<script src="./js/subindex.js?v=20260818"></script>
+<script src="./js/seeds.js?v=20260818"></script>
+<script src="./js/rules.js?v=20260818"></script>
+<script src="./js/timing.js?v=20260818"></script>
+<script src="./js/analysis.js?v=20260818"></script>
+<script src="./js/discovery.js?v=20260818"></script>
+<script src="./js/charts.js?v=20260818"></script>
+<script src="./js/campaigns.js?v=20260818"></script>
+<script src="./js/reset.js?v=20260818"></script>
+<script src="./js/analyze.js?v=20260818"></script>
+<script src="./js/crosspost.js?v=20260818"></script>
+<script src="./js/nextmove.js?v=20260818"></script>
+<script src="./js/syndicate.js?v=20260818"></script>
+<script src="./js/sidebar.js?v=20260818"></script>
+<script src="./js/composer.js?v=20260818"></script>
+<script src="./js/ui.js?v=20260818"></script>
+<script src="./js/views/focus.js?v=20260818"></script>
+<script src="./js/views/dashboard.js?v=20260818"></script>
+<script src="./js/views/campaign.js?v=20260818"></script>
+<script src="./js/views/communities.js?v=20260818"></script>
+<script src="./js/views/posts.js?v=20260818"></script>
+<script src="./js/views/syndicate.js?v=20260818"></script>
+<script src="./js/demo.js?v=20260818"></script>
+<script src="./js/app.js?v=20260818"></script>
 
 <script>
   (function () {

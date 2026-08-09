@@ -188,7 +188,13 @@
      * and they take any number of subs, not one. */
     if (state.activeSubs && state.activeSubs.size) {
       const active = new Set(Array.from(state.activeSubs).map((s) => String(s).toLowerCase()));
-      list = list.filter((p) => active.has(String(p.subreddit || "").toLowerCase()));
+      list = list.filter((p) => {
+        /* Syndicated headlines have no home sub — they are inventory for
+         * Plan, not a chip. Dropping them here is how Open in Plan looked
+         * empty after adopt. */
+        if (p && p.syndicated) return true;
+        return active.has(String(p.subreddit || "").toLowerCase());
+      });
     } else if (state.knownSubs && state.knownSubs.length) {
       /* Every chip off is an empty scope, not "show everything". */
       list = [];
@@ -693,6 +699,8 @@
         return syncVisiblePosts();
       case "watch":
         return Refresh.watchNow();
+      case "prune":
+        return Promise.resolve(Refresh.pruneOlderThanWindow());
       case "all":
       case "go":
       default:

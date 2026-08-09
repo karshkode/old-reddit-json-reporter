@@ -291,10 +291,16 @@
       limit: target,
       fresh: true,
     });
-    if (primary.length >= target || listing === "new") return primary;
 
-    const need = target - primary.length;
-    let fill;
+    /* Ranked listings (hot/top) start at the archive's confirmed-score
+     * cliff (~48h), so the freshest posts never appear even when the
+     * primary page is "full". Always union a page of `new` so the
+     * inventory reaches as recent as the archive has filed — live
+     * scores then cover the blind window. */
+    if (listing === "new") return primary.slice(0, target);
+
+    const need = Math.max(target - primary.length, Math.min(50, Math.ceil(target * 0.15)));
+    let fill = [];
     try {
       fill = await Reddit.fetchSubredditListing(sub, {
         listing: "new",
@@ -304,17 +310,20 @@
         t: time === "hour" || time === "day" ? "week"
           : time === "week" ? "month"
             : time === "month" ? "year" : "all",
-        limit: need,
+        limit: Math.max(need, 25),
         fresh: true,
       });
     } catch (_) {
-      return primary;
+      return primary.slice(0, target);
     }
-    if (!fill || !fill.length) return primary;
+    if (!fill || !fill.length) return primary.slice(0, target);
 
     const seen = new Set(primary.map((p) => p.id));
+    /* Prefer newest fill posts first so the gap above the score cliff
+     * is what lands, then pad with older ones if still under target. */
+    const recent = fill.slice().sort((a, b) => (b.created_utc || 0) - (a.created_utc || 0));
     const out = primary.slice();
-    for (const p of fill) {
+    for (const p of recent) {
       if (!p || seen.has(p.id)) continue;
       seen.add(p.id);
       out.push(p);
@@ -323,6 +332,49 @@
     return out;
   }
   Refresh.fetchUpTo = fetchUpTo;
+
+  /* Drop inventory posts older than the configured time window.
+   * Sync patches do not age anything out on their own — without this,
+   * widening or narrowing the window left stale month-old posts sitting
+   * next to a "week" setting and muddying every chart. Imported and
+   * syndicated posts are kept: the user brought those in on purpose. */
+  Refresh.pruneOlderThanWindow = function (opts) {
+    opts = opts || {};
+    const s = state();
+    const key = s.timeWindow || "week";
+    const secs = ({
+      hour: 3600,
+      day: 86400,
+      week: 604800,
+      month: 2592000,
+      year: 31536000,
+      all: 0,
+    })[key];
+    if (!secs) {
+      if (opts.toast !== false) Util.toast("Time window is All — nothing to prune.");
+      return { removed: 0, window };
+    }
+    const cutoff = Math.floor(Date.now() / 1000) - secs;
+    const before = s.posts.length;
+    const kept = [];
+    let removed = 0;
+    for (const p of s.posts) {
+      if (!p) continue;
+      if (p.imported || p.syndicated) { kept.push(p); continue; }
+      if ((p.created_utc || 0) < cutoff) { removed++; continue; }
+      kept.push(p);
+    }
+    if (!removed) {
+      if (opts.toast !== false) Util.toast(`Nothing older than ${key} to drop.`);
+      return { removed: 0, kept: before, window };
+    }
+    s.posts = kept;
+    if (App.persistPostCache) App.persistPostCache().catch(() => {});
+    if (opts.render !== false) App.rerenderAll();
+    const line = `Dropped ${Util.fmtNum(removed)} post${removed === 1 ? "" : "s"} older than ${key} · ${Util.fmtNum(kept.length)} kept`;
+    if (opts.toast !== false) Util.toast(line);
+    return { removed, kept: kept.length, window: key, line };
+  };
 
   /* Every loaded subreddit's listing again, folded in rather than
    * swapped for. Reading a listing is the only way to learn a post

@@ -1550,7 +1550,7 @@
   /* opts.timingLimit — how many communities the When row lists before
    * it truncates. "all" once the user has asked for the rest. */
   UI.renderBriefing = function (rows, opts) {
-    const el = document.getElementById("dash-briefing");
+    const el = document.getElementById("briefing-list") || document.getElementById("dash-briefing");
     if (!el) return;
     if (!rows || !rows.length) {
       el.innerHTML = `<p class="hint">Nothing to summarise yet.</p>`;
