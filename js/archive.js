@@ -471,5 +471,26 @@
     return { ok: subs.length > 0, ms: Date.now() - t0 };
   };
 
+  /* Posts pointing at the same article URL — optionally scoped to one
+   * subreddit. Used to enforce "do not re-post the same link" rules
+   * against the full archive, not only the posts already loaded. */
+  Archive.searchByUrl = async function (url, opts) {
+    opts = opts || {};
+    const target = String(url || "").trim();
+    if (target.length < 12) return [];
+    const limit = Math.min(parseInt(opts.limit, 10) || 25, 50);
+    const params = { url: target, limit: limit, sort: "desc" };
+    if (opts.subreddit) params.subreddit = String(opts.subreddit).replace(/^\/?r\//i, "");
+    const raw = await get("/posts/search", params, opts.signal);
+    const list = (raw || []).map(stamp);
+    if (typeof Reddit !== "undefined" && Reddit.normalizePost) {
+      return list.map((p) => {
+        try { return Reddit.normalizePost(p); }
+        catch (_) { return p; }
+      });
+    }
+    return list;
+  };
+
   window.Archive = Archive;
 })();

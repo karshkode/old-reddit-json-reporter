@@ -138,12 +138,13 @@
           <div class="action-menu-list" role="menu">
             <span class="action-menu-head">Sync</span>
             <button class="btn small" type="button" role="menuitem" data-sync="new"
-                    title="Read every loaded subreddit again and add whatever is new, keeping everything already collected">New posts everywhere</button>
-            <button class="btn small" type="button" role="menuitem" data-sync="stale">Only what's out of date</button>
+                    title="Re-read every community in Showing and fold in whatever is new, without emptying the inventory">Communities I'm showing</button>
+            <button class="btn small" type="button" role="menuitem" data-sync="stale"
+                    title="Only re-read communities that have never been synced, or were synced more than 15 minutes ago">Only what's out of date</button>
             <button class="btn small" type="button" role="menuitem" data-sync="campaigns">Campaign posts</button>
             <button class="btn small" type="button" role="menuitem" data-sync="visible">Posts on screen</button>
             <button class="btn small" type="button" role="menuitem" data-sync="watch"
-                    title="Read current upvotes and comments from Reddit for everything under 36 hours old, where the archive still says 1">Recent posts, live from Reddit</button>
+                    title="Re-read current upvotes and comments from Reddit for posts under 36 hours old (where the archive still says 1). This is score top-up, not a campaign live stream.">Recent scores from Reddit</button>
             <button class="btn small" type="button" role="menuitem" data-sync="prune"
                     title="Remove loaded posts older than the Settings time window (week, month, …). Imported and syndicated articles are kept.">Drop posts older than window</button>
             <span class="action-menu-head">Refresh</span>
@@ -193,7 +194,11 @@
                   <h2>Where should a post go next?</h2>
                   <span class="hint">Pick a post, paste a link, or open one from Syndicate — get a community and an hour</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How this card is built" data-help="This works from one post rather than from your whole collection. The post's title, body and flair are read for what it is about, then every community that reads the same way is checked against its own clock. The multiple is the honest part: both sides come from the same estimator, so '2.4× the reach' means a typical post in that community, in its best window, against a typical post in the community this one is in now. It splits into the community difference and the timing difference, and the sentence under the headline says which of the two is doing the work. A typical post means the middle of the pack, not the average, so one runaway post cannot talk a community up. It is a claim about a typical post, not a forecast for yours — a post that went viral where it is will not repeat that by moving. Communities with nothing loaded are listed separately, because they have no clock at all: they are unknowns, not better bets. Match is out of 100 and measures shared vocabulary and subject, not size.">?</button>
+                <div class="card-actions">
+                  <button class="btn small" type="button" data-sync="new"
+                          title="Re-read every community in Showing so Plan uses fresh posts and clocks">↻ Sync showing</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="This works from one post rather than from your whole collection. The post's title, body and flair are read for what it is about, then every community that reads the same way is checked against its own clock. The multiple is the honest part: both sides come from the same estimator, so '2.4× the reach' means a typical post in that community, in its best window, against a typical post in the community this one is in now. It splits into the community difference and the timing difference, and the sentence under the headline says which of the two is doing the work. A typical post means the middle of the pack, not the average, so one runaway post cannot talk a community up. It is a claim about a typical post, not a forecast for yours — a post that went viral where it is will not repeat that by moving. Communities with nothing loaded are listed separately, because they have no clock at all: they are unknowns, not better bets. Match is out of 100 and measures shared vocabulary and subject, not size.">?</button>
+                </div>
               </header>
               <div id="focus-body"></div>
             </div>
@@ -206,7 +211,11 @@
                   <h2>What this data is telling you</h2>
                   <span class="hint">Where and when to post next, read from your own loaded posts — separate from placing one article</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one names a community rather than averaging across them. Communities are compared on their typical post, not on totals — a sub does not become the better place to post just because more of its posts happen to be loaded, and a line is left out entirely when there is not enough data behind it. Under When, each percentage is how much better a typical post does at that time than that community's own average, and 'at least +20%' is how far it might realistically fall short. Where the whole day is much the same, the community is listed as having no pattern rather than being handed an hour. The badge grades how much to trust it: STRONG means the pattern held up when tested against chance and even the worst case is a gain, so about a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, about 1-in-7; WEAK means worth knowing but easily chance. Communities with fewer than 8 posts are not graded at all. Totals are in the row above and the full breakdowns are on the other tabs.">?</button>
+                <div class="card-actions">
+                  <button class="btn small" type="button" data-sync="new"
+                          title="Re-read every community in Showing so this briefing reflects current posts">↻ Sync showing</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one names a community rather than averaging across them. Communities are compared on their typical post, not on totals — a sub does not become the better place to post just because more of its posts happen to be loaded, and a line is left out entirely when there is not enough data behind it. Under When, each percentage is how much better a typical post does at that time than that community's own average, and 'at least +20%' is how far it might realistically fall short. Where the whole day is much the same, the community is listed as having no pattern rather than being handed an hour. The badge grades how much to trust it: STRONG means the pattern held up when tested against chance and even the worst case is a gain, so about a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, about 1-in-7; WEAK means worth knowing but easily chance. Communities with fewer than 8 posts are not graded at all. Totals are in the row above and the full breakdowns are on the other tabs.">?</button>
+                </div>
               </header>
               <ul id="briefing-list" class="briefing"></ul>
             </div>
@@ -562,6 +571,12 @@
             <h2>Communities</h2>
             <p>Search Reddit for subreddits, see the communities most similar to any of them, or bulk-load a whole curated sphere into your dashboard.</p>
           </div>
+          <div class="card-actions">
+            <button class="btn" type="button" data-sync="new"
+                    title="Re-read every community in Showing">↻ Sync showing</button>
+            <button class="btn" type="button" data-sync="stale"
+                    title="Only re-read communities that are unread or older than 15 minutes">↻ Sync stale</button>
+          </div>
         </div>
 
         <nav class="section-rail" id="communities-rail" role="tablist" aria-label="Communities sections">
@@ -645,6 +660,8 @@
                    since dropped it off the listing. -->
               <button class="btn small" type="button" data-sync="visible"
                       title="Re-read only the posts currently listed below">↻ Sync these</button>
+              <button class="btn small" type="button" data-sync="new"
+                      title="Re-read every community in Showing and fold in new posts">↻ Sync communities</button>
               <button class="card-help" type="button" aria-label="What you can do from a post"
                       data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first.">?</button>
             </div>
@@ -745,13 +762,18 @@
             <h2>Syndicate</h2>
             <p class="lede">Pull Politics and News feeds, read keywords from each headline and summary, and match the article to communities that take that kind of link.</p>
           </div>
+          <div class="card-actions">
+            <button class="btn" type="button" data-sync="new"
+                    title="Re-read communities in Showing so local duplicate checks stay current">↻ Sync communities</button>
+          </div>
         </header>
 
         <div class="card syn-toolbar-card">
           <div class="syn-toolbar">
             <div class="syn-folders" id="syndicate-folders" aria-label="Feed folders"></div>
             <div class="syn-toolbar-actions">
-              <button type="button" class="btn primary" id="syndicate-pull">Pull latest</button>
+              <button type="button" class="btn primary" id="syndicate-pull"
+                      title="Re-fetch the enabled RSS/Atom feeds">↻ Pull latest</button>
               <label class="btn ghost small syn-opml-label">
                 Import OPML
                 <input type="file" id="syndicate-opml" accept=".opml,.xml,text/x-opml,text/xml" hidden />
@@ -862,7 +884,7 @@
         <input type="checkbox" id="live-toggle" checked />
         <span>
           <span class="field-label">Live scores for new posts</span>
-          <span class="hint">Reads current upvotes and comments straight from Reddit for anything under 36 hours old, where the archive still says 1. Older posts keep using the archive, which by then knows the same numbers.</span>
+          <span class="hint">While this tab is open, quietly re-reads current upvotes and comments from Reddit for posts under 36 hours old — where the archive still says 1. Not a campaign live stream. Older posts keep using the archive.</span>
         </span>
       </label>
       <p class="hint" id="live-status"></p>

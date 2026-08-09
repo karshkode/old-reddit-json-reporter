@@ -15,23 +15,25 @@
    * opts.onOverflow what the overflow chip opens */
   const CHIP_LIMIT = 10;
 
-  /* Whether the numbers on screen are current, shown only when there is
-   * something young enough for the distinction to matter. On an
-   * inventory of month-old posts the archive is authoritative and a
-   * "live" badge would be noise claiming to be reassurance. */
+  /* Automatic score top-up for young posts — not a campaign watch and
+   * not a stream. Shown only when Live lookups are on and something in
+   * the inventory is still inside the archive's blind window (~36h),
+   * where scores otherwise sit at 1. */
   UI.renderWatchBadge = function (watch) {
     const host = document.getElementById("watch-badge");
     if (!host) return;
     if (!watch || !watch.on || !watch.count) {
       host.hidden = true;
       host.textContent = "";
+      host.removeAttribute("title");
       return;
     }
-    const when = watch.at ? Util.relTime(watch.at / 1000) : "now";
+    const when = watch.at ? Util.relTime(watch.at / 1000) : "just now";
+    const n = watch.count;
     host.hidden = false;
     host.className = "watch-badge";
-    host.innerHTML = `<span class="live-dot"></span><span>Live · ${watch.count} recent post${watch.count === 1 ? "" : "s"} · ${Util.escapeHtml(when)}</span>`;
-    host.title = "Posts under 36 hours old are read straight from Reddit, because the archive still reports them as 1 upvote.";
+    host.innerHTML = `<span class="live-dot"></span><span>Updating scores · ${n} post${n === 1 ? "" : "s"} under 36h · checked ${Util.escapeHtml(when)}</span>`;
+    host.title = "Not a campaign live view. Posts newer than about 36 hours still read as 1 upvote in the archive, so this tab quietly re-reads their current score and comment count from Reddit every couple of minutes while it is open. Turn live scores off in Settings to stop.";
   };
 
   UI.renderSubChips = function (subs, active, onToggle, onRemove, opts) {

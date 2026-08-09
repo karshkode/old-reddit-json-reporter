@@ -405,20 +405,80 @@
 
   /* Does this post already exist in this community, by URL?
    *
-   * Used for unique_link. Only looks at what is loaded — the archive
-   * is not asked live — so a miss means "not in your inventory", not
-   * "definitely never posted". The UI says so. */
+   * Used for unique_link. Only looks at what is loaded — a miss means
+   * "not in your inventory", not "definitely never posted". Prefer
+   * Rules.findPostedLink when the archive can be asked. */
   Rules.alreadyPosted = function (post, sub, posts) {
-    const url = !post || post.is_self ? null : (post.url_canonical || post.url);
-    if (!url || url.length < 12) return null;
+    const urls = linkKeys(post);
+    if (!urls.length) return null;
     const key = String(sub || "").toLowerCase();
+    const selfId = post && post.id ? String(post.id).replace(/^t3_/, "") : "";
     const list = posts || (window.AppState && AppState.postsForSub && AppState.postsForSub(key)) || [];
     for (const other of list) {
-      if (!other || other.id === post.id) continue;
+      if (!other) continue;
+      const otherId = String(other.id || "").replace(/^t3_/, "");
+      if (selfId && otherId === selfId) continue;
       if (String(other.subreddit || "").toLowerCase() !== key) continue;
       if (other.is_self) continue;
-      const otherUrl = other.url_canonical || other.url;
-      if (otherUrl && otherUrl === url) return other;
+      const otherKeys = linkKeys(other);
+      if (otherKeys.some((u) => urls.indexOf(u) !== -1)) return other;
+    }
+    return null;
+  };
+
+  function linkKeys(post) {
+    if (!post || post.is_self) return [];
+    const out = [];
+    const seen = new Set();
+    const push = (u) => {
+      const s = String(u || "").trim();
+      if (s.length < 12 || seen.has(s)) return;
+      seen.add(s);
+      out.push(s);
+    };
+    push(post.url_canonical || "");
+    push(post.url || "");
+    if (window.Reddit && Reddit.canonicalizeUrl && post.url) {
+      try { push(Reddit.canonicalizeUrl(post.url)); } catch (_) {}
+    }
+    return out;
+  }
+
+  /* Local inventory first, then the Arctic Shift archive for that
+   * subreddit. Returns { post, source: "local"|"archive" } or null.
+   * Best-effort: archive failures are treated as "not found". */
+  Rules.findPostedLink = async function (post, sub, opts) {
+    opts = opts || {};
+    const local = Rules.alreadyPosted(post, sub, opts.posts);
+    if (local) return { post: local, source: "local" };
+
+    const urls = linkKeys(post);
+    if (!urls.length) return null;
+    if (!window.Archive || typeof Archive.searchByUrl !== "function") return null;
+    if (window.Demo && Demo.isActive && Demo.isActive()) return null;
+
+    const key = String(sub || "").toLowerCase();
+    const selfId = post && post.id ? String(post.id).replace(/^t3_/, "") : "";
+    for (const url of urls) {
+      let hits = [];
+      try {
+        hits = await Archive.searchByUrl(url, {
+          subreddit: key,
+          limit: opts.limit || 10,
+          signal: opts.signal,
+        });
+      } catch (err) {
+        console.warn(`[rules] archive url search r/${key}:`, err && err.message);
+        continue;
+      }
+      for (const hit of hits || []) {
+        if (!hit) continue;
+        const hitId = String(hit.id || "").replace(/^t3_/, "");
+        if (selfId && hitId === selfId) continue;
+        if (String(hit.subreddit || "").toLowerCase() !== key) continue;
+        if (hit.is_self) continue;
+        return { post: hit, source: "archive" };
+      }
     }
     return null;
   };

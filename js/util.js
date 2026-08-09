@@ -35,8 +35,11 @@
 
   /* Local-time short formatter: YYYY-MM-DD HH:MM in the user's timezone. */
   Util.fmtDateShort = function (epochSeconds) {
-    if (!epochSeconds) return "—";
-    const d = new Date(epochSeconds * 1000);
+    if (epochSeconds == null || epochSeconds === "" || Number.isNaN(+epochSeconds)) return "—";
+    let t = +epochSeconds;
+    if (!t) return "—";
+    if (t > 1e12) t = t / 1000;
+    const d = new Date(t * 1000);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -45,15 +48,60 @@
     return yyyy + "-" + mm + "-" + dd + " " + hh + ":" + mi;
   };
 
+  /* Relative age for a Unix timestamp. Accepts seconds (Reddit's
+   * created_utc) or milliseconds; anything in the future — clock skew,
+   * a feed dated ahead of the machine — collapses to "just now" so the
+   * UI never prints "-15224s ago". The old path hit `diff < 60` for
+   * every negative number and echoed the raw seconds. */
   Util.relTime = function (epochSeconds) {
-    if (!epochSeconds) return "—";
-    const diff = Date.now() / 1000 - epochSeconds;
-    if (diff < 60) return Math.round(diff) + "s ago";
+    if (epochSeconds == null || epochSeconds === "" || Number.isNaN(+epochSeconds)) return "—";
+    let t = +epochSeconds;
+    if (!t) return "—";
+    /* Milliseconds look like 1.7e12; Reddit seconds are ~1.7e9. */
+    if (t > 1e12) t = t / 1000;
+    const diff = Date.now() / 1000 - t;
+    if (diff < 0 || diff < 45) return "just now";
     if (diff < 3600) return Math.round(diff / 60) + "m ago";
     if (diff < 86400) return Math.round(diff / 3600) + "h ago";
     if (diff < 86400 * 30) return Math.round(diff / 86400) + "d ago";
     if (diff < 86400 * 365) return Math.round(diff / (86400 * 30)) + "mo ago";
     return Math.round(diff / (86400 * 365)) + "y ago";
+  };
+
+  /* Undo leftover HTML entities in plain text — feed titles that ship
+   * literally as "NYT &GT; TOP STORIES", double-encoded &amp;amp;, etc.
+   * Safe to call on already-clean strings. */
+  Util.decodeEntities = function (s) {
+    if (s == null || s === "") return "";
+    let str = String(s);
+    if (str.indexOf("&") === -1) return str;
+    if (typeof document !== "undefined") {
+      const tmp = document.createElement("textarea");
+      for (let i = 0; i < 2; i++) {
+        if (str.indexOf("&") === -1) break;
+        tmp.innerHTML = str;
+        const next = tmp.value;
+        if (next === str) break;
+        str = next;
+      }
+    }
+    /* Named entities some browsers leave alone when uppercased, plus
+     * numeric forms that never went through a DOM. */
+    return str
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, "\"")
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => {
+        const n = parseInt(h, 16);
+        return Number.isFinite(n) ? String.fromCodePoint(n) : _;
+      })
+      .replace(/&#(\d+);/g, (_, d) => {
+        const n = parseInt(d, 10);
+        return Number.isFinite(n) ? String.fromCodePoint(n) : _;
+      });
   };
 
   /* Local-time clock string — "14:23" — for the Posts table's "When"
@@ -63,8 +111,11 @@
    * of which posts happened to survive the front-page rotation long
    * enough to be in the snapshot. */
   Util.fmtClockTime = function (epochSeconds) {
-    if (!epochSeconds) return "";
-    const d = new Date(epochSeconds * 1000);
+    if (epochSeconds == null || epochSeconds === "" || Number.isNaN(+epochSeconds)) return "";
+    let t = +epochSeconds;
+    if (!t) return "";
+    if (t > 1e12) t = t / 1000;
+    const d = new Date(t * 1000);
     const hh = String(d.getHours()).padStart(2, "0");
     const mi = String(d.getMinutes()).padStart(2, "0");
     return hh + ":" + mi;
