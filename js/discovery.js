@@ -1161,6 +1161,19 @@
           for (const name of Seeds.expand([key]) || []) add(name, label);
         }
       }
+      /* Syndicated articles (and anything else without a home sub) have
+       * no sphere siblings to seed from. Without this, Discovery only
+       * finds whatever the short title ranks — often self-post rooms
+       * that then hard-block a link — and Plan says every community
+       * would reject the article. Seed the civic news spheres so link
+       * rooms stay in the pool. */
+      if (window.Seeds && (post.syndicated || !post.subreddit)) {
+        for (const key of ["media_news", "progressive", "democracy", "voting"]) {
+          if (!Seeds.ISSUE_SPHERES[key]) continue;
+          const label = Seeds.labelOf(key);
+          for (const name of Seeds.expand([key]) || []) add(name, label);
+        }
+      }
       for (const hit of SubIndex.nearest(vector, { exclude: [home], limit: 20 })) {
         add(hit.record.display_name, null);
       }

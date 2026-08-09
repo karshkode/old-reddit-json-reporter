@@ -34,13 +34,16 @@
    * bars and each community's own curve now open inside the
    * recommendation they belong to, so Trends is for the whole-collection
    * view rather than a detour in the middle of a decision. */
-  const SECTIONS = ["plan", "trends", "communities"];
+  /* Plan places one post. Briefing reads the loaded collection. Putting
+   * them on the same tab made a syndicated article look like it was
+   * answering "what this data is telling you" — two jobs, two tabs. */
+  const SECTIONS = ["plan", "briefing", "trends", "communities"];
   const RAIL = "dashboard-section-rail";
 
   /* Where the retired tabs went, so old links and saved state still
    * land somewhere sensible instead of silently falling back to Plan. */
   const MOVED = {
-    summary: "plan",
+    summary: "briefing",
     timing: "trends",
     charts: "trends",
     themes: "trends",
@@ -162,7 +165,7 @@
     painted.add(section);
 
     const posts = bundle.posts;
-    if (section === "plan") {
+    if (section === "briefing") {
       UI.renderBriefing(
         Analysis.postingBriefing(posts, { agg: bundle.agg, timing: timingModel }),
         { timingLimit: briefingTimingLimit }
@@ -318,7 +321,7 @@
 
     Dom.delegate(document, "click", '[data-action="expand-briefing-timing"]', () => {
       briefingTimingLimit = "all";
-      painted.delete("plan");
+      painted.delete("briefing");
       paintSection();
     });
 

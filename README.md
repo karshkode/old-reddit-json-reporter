@@ -244,13 +244,18 @@ sports, podcasts and pop/entertainment folders are skipped, and **Tech**
 is available but off until you turn it on.
 
 **Pull latest** reads each enabled feed (via a CORS-friendly reader, then
-a proxy fallback), keeps a handful of recent items, and extracts keywords
-from the title and whatever summary/body the feed carried. Matching one
+a proxy fallback), keeps a handful of recent items with source/time chips
+and thumbnails when the feed provides them, and extracts keywords from
+the title and summary. A search box filters the list. Matching one
 headline runs the same discovery path as Where-next on a synthetic link
-post — so format rules apply (r/politics wants a fresh article, not a
-text dump) and each row can open Reddit's submit page with the link
-filled in. You can also re-import a fresh OPML; Yankees/Giants-style
-folders stay out.
+post — so format rules apply — and **Open in Plan** carries that match
+into the dashboard Plan tab (Briefing stays on its own tab). Extra civic
+desks (ProPublica, Democracy Now, The Nation, NPR Politics, …) ship
+alongside the Feedly Politics/News folders.
+
+Sync can **Drop posts older than window** to prune inventory to the
+Settings time window, and every sync unions a page of `new` so posts
+newer than the archive's ~48h confirmed-score cliff still land.
 
 ---
 
