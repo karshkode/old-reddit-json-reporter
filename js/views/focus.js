@@ -29,6 +29,9 @@
   const cache = new Map();
 
   let focusId = null;
+  /* Syndicated headlines live here, not in AppState.posts — adopting
+   * them into the inventory is what put fake rows in the Posts table. */
+  let focusDraft = null;
   let timing = null;
   let dataSignature = "";
   let busy = false;
@@ -49,7 +52,9 @@
    * ------------------------------------------------------------------ */
 
   function findPost(id) {
-    if (!id || !window.AppState) return null;
+    if (!id) return null;
+    if (focusDraft && focusDraft.id === id) return focusDraft;
+    if (!window.AppState) return null;
     return AppState.posts.find((p) => p && p.id === id) || null;
   }
 
@@ -57,9 +62,10 @@
 
   View.set = function (id) {
     focusId = id || null;
+    if (!focusId || !(focusDraft && focusDraft.id === focusId)) focusDraft = null;
     lastError = "";
     try {
-      if (focusId) localStorage.setItem(KEY, focusId);
+      if (focusId && !(focusDraft && focusDraft.syndicated)) localStorage.setItem(KEY, focusId);
       else localStorage.removeItem(KEY);
     } catch (_) {}
     render();
@@ -439,12 +445,13 @@
       ? `<span class="focus-kind" title="What kind of post this is — used to skip communities whose rules reject it">${esc(kind.label)}</span>`
       : "";
     /* Syndicated articles have no Reddit home — show the outlet, never
-     * a blank "r/". A suggested home from matching is labelled as such. */
+     * a blank "r/". A match suggestion is labelled as such and must not
+     * look like an existing submission. */
     let whereBit;
-    if (post.syndicated && !post.subreddit) {
-      whereBit = `<span class="focus-source">${esc(post.source_label || post.author || "Syndicated")}</span>`;
-    } else if (post.syndicated && post.subreddit) {
-      whereBit = `<span class="focus-source">${esc(post.source_label || "Syndicated")}</span> · suggested r/${esc(post.subreddit)}`;
+    if (post.syndicated) {
+      const tip = post.suggested_sub || post.subreddit;
+      whereBit = `<span class="focus-source">${esc(post.source_label || post.author || "Syndicated")}</span>`
+        + (tip ? ` · suggested r/${esc(tip)}` : "");
     } else {
       whereBit = `r/${esc(post.subreddit || "?")}`;
     }
@@ -479,6 +486,9 @@
     const all = [post].concat(copies);
     const byS = new Map();
     for (const p of all) {
+      /* A syndicated draft is not a place the story has reached — even
+       * when an older build stuffed a suggested sub into `subreddit`. */
+      if (!p || p.syndicated) continue;
       const key = String(p.subreddit || "").toLowerCase();
       if (!key) continue;
       const prev = byS.get(key);
@@ -929,10 +939,16 @@
   View.focusPost = function (post, opts) {
     if (!post) return;
     opts = opts || {};
-    if (window.Analyze && Analyze.adopt) Analyze.adopt(post);
     focusId = post.id;
     lastError = "";
-    try { localStorage.setItem(KEY, focusId); } catch (_) {}
+    if (post.syndicated || String(post.id || "").indexOf("art_") === 0) {
+      focusDraft = post;
+      try { localStorage.removeItem(KEY); } catch (_) {}
+    } else {
+      focusDraft = null;
+      if (window.Analyze && Analyze.adopt) Analyze.adopt(post);
+      try { localStorage.setItem(KEY, focusId); } catch (_) {}
+    }
 
     Router.go("dashboard");
     if (window.DashboardView) DashboardView.goToSection("plan");

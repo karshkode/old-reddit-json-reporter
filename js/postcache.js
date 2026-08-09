@@ -451,11 +451,14 @@
 
   Cache.filterByActiveSubs = function (cached, activeSubs) {
     if (!Array.isArray(cached) || !cached.length) return [];
-    if (!Array.isArray(activeSubs) || !activeSubs.length) return cached.slice();
+    const real = cached.filter((p) =>
+      p && !p.syndicated && String(p.id || "").indexOf("art_") !== 0
+    );
+    if (!Array.isArray(activeSubs) || !activeSubs.length) return real.slice();
     const set = new Set(activeSubs.map((s) => String(s).toLowerCase()));
-    /* Hand-added posts survive regardless of which subs are loaded —
-     * see the note in Cache.merge. */
-    return cached.filter((p) => p && (p.imported || (p.subreddit && set.has(String(p.subreddit).toLowerCase()))));
+    /* Hand-added Reddit posts survive regardless of which subs are
+     * loaded — see the note in Cache.merge. Syndicated drafts do not. */
+    return real.filter((p) => p.imported || (p.subreddit && set.has(String(p.subreddit).toLowerCase())));
   };
 
   /* ------------------------- relative time ----------------------- */
