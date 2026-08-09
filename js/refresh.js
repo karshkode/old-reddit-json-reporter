@@ -141,7 +141,8 @@
    * way. Deliberately says "no change" rather than reporting zeroes:
    * finding nothing new is the common outcome and it is not a
    * failure. */
-  function summarize(scopeLabel, patch, errors) {
+  function summarize(scopeLabel, patch, errors, opts) {
+    opts = opts || {};
     const failed = (errors && errors.length) || 0;
     const bits = [];
     if (patch.added) bits.push(`${patch.added} new`);
@@ -155,6 +156,20 @@
     let line = bits.length ? `${scopeLabel} · ${bits.join(", ")}` : `${scopeLabel} · no change`;
     if (patch.scoreDelta) {
       line += ` (${patch.scoreDelta > 0 ? "+" : "−"}${Util.fmtNum(Math.abs(patch.scoreDelta))} upvotes)`;
+    }
+    /* When the user asked for 500 and a community only yielded 80, say
+     * so. Silence here is what made a shortfall look like a hardcoded
+     * page size. */
+    if (opts.perSubGot && opts.perSubGot.length && opts.target) {
+      const short = opts.perSubGot.filter((r) => !r.error && r.got < opts.target);
+      if (short.length === 1) {
+        line += ` · r/${short[0].sub} returned ${short[0].got} of ${opts.target}`;
+      } else if (short.length > 1) {
+        const avg = Math.round(short.reduce((n, r) => n + r.got, 0) / short.length);
+        line += ` · ${short.length} subs under ${opts.target}/sub (avg ${avg})`;
+      } else if (opts.perSubGot.length === 1) {
+        line += ` · ${opts.perSubGot[0].got} of ${opts.target} asked`;
+      }
     }
     if (failed) line += ` · ${failed} couldn't be read`;
     return line;
@@ -213,27 +228,27 @@
 
     if (showProgress) Util.setProgress(0, `Syncing ${label}…`);
 
+    const target = Math.max(1, Number(s.limit) || 100);
+    const perSubGot = [];
+
     try {
       await Util.pmap(list, SUB_CONCURRENCY, async (sub) => {
         try {
-          const posts = await Reddit.fetchSubredditListing(sub, {
-            listing: s.listing,
-            t: s.timeWindow,
-            limit: s.limit,
-            fresh: true,
-          });
+          const posts = await fetchUpTo(sub, target, s);
           for (const p of posts) collected.push(p);
-          s.markSynced(sub, { count: posts.length });
+          perSubGot.push({ sub, got: posts.length, want: target });
+          s.markSynced(sub, { count: posts.length, want: target });
         } catch (err) {
           const message = (err && err.message) || String(err);
           errors.push({ sub, message });
+          perSubGot.push({ sub, got: 0, want: target, error: message });
           s.markSynced(sub, { count: 0, error: message });
         } finally {
           done++;
           if (showProgress) {
             Util.setProgress(
               Math.min(95, (done / list.length) * 100),
-              `Syncing ${label}… ${done}/${list.length}`
+              `Syncing ${label}… ${done}/${list.length} · ${target}/sub`
             );
           }
         }
@@ -248,15 +263,66 @@
         s.pendingChanges = false;
       }
       const patch = apply(collected, opts);
-      const line = summarize(label, patch, errors);
+      const line = summarize(label, patch, errors, { perSubGot, target });
       if (showProgress) Util.hideProgress(line);
       if (opts.toast !== false) Util.toast(line, errors.length ? "error" : "");
-      return Object.assign({ scope: "subs", subs: list, errors, label, line }, patch);
+      return Object.assign({ scope: "subs", subs: list, errors, label, line, perSubGot, target }, patch);
     } finally {
       release(key);
       if (showProgress) Refresh.repaintBanner();
     }
   };
+
+  /* Pull up to `target` posts for one subreddit, using the configured
+   * listing first and filling any shortfall from `new`.
+   *
+   * Hot/top over a week often cannot produce 500 confirmed scores —
+   * the archive only has about five days of settled posts in that
+   * window, and a quiet community may not have posted that many. The
+   * old path stopped there and quietly looked like a hardcoded 100.
+   * Asking `new` for the remainder is how a 500 setting becomes 500
+   * posts when the community actually has them. */
+  async function fetchUpTo(sub, target, s) {
+    const listing = s.listing || "hot";
+    const time = s.timeWindow || "week";
+    const primary = await Reddit.fetchSubredditListing(sub, {
+      listing: listing,
+      t: time,
+      limit: target,
+      fresh: true,
+    });
+    if (primary.length >= target || listing === "new") return primary;
+
+    const need = target - primary.length;
+    let fill;
+    try {
+      fill = await Reddit.fetchSubredditListing(sub, {
+        listing: "new",
+        /* Widen the window for the fill so a week-bound hot listing
+         * that ran dry can still reach the configured count from the
+         * community's actual history. */
+        t: time === "hour" || time === "day" ? "week"
+          : time === "week" ? "month"
+            : time === "month" ? "year" : "all",
+        limit: need,
+        fresh: true,
+      });
+    } catch (_) {
+      return primary;
+    }
+    if (!fill || !fill.length) return primary;
+
+    const seen = new Set(primary.map((p) => p.id));
+    const out = primary.slice();
+    for (const p of fill) {
+      if (!p || seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push(p);
+      if (out.length >= target) break;
+    }
+    return out;
+  }
+  Refresh.fetchUpTo = fetchUpTo;
 
   /* Every loaded subreddit's listing again, folded in rather than
    * swapped for. Reading a listing is the only way to learn a post

@@ -268,18 +268,39 @@
 
   /* Include or exclude many from the next fetch without unloading
    * them. Only ever touches subs already known, so a stale selection
-   * cannot smuggle a name back in. */
+   * cannot smuggle a name back in.
+   *
+   *   setActive(names, true|false)  flip those names on or off
+   *   setActive(names)              replace the whole active set with
+   *                                 exactly these names (used by the
+   *                                 multi-select filter, which speaks
+   *                                 in wholes rather than deltas) */
   state.setActive = function (names, on) {
     const want = new Set([].concat(names || [])
       .map((n) => String(n || "").toLowerCase())
       .filter(Boolean));
-    if (!want.size) return 0;
     let changed = 0;
-    for (const s of state.knownSubs) {
-      if (!want.has(s.toLowerCase())) continue;
-      const has = state.activeSubs.has(s);
-      if (on && !has) { state.activeSubs.add(s); changed++; }
-      else if (!on && has) { state.activeSubs.delete(s); changed++; }
+
+    if (arguments.length < 2) {
+      /* Replace. Empty selection is allowed — it means "show nothing",
+       * which is what every chip being off already means. */
+      const next = new Set();
+      for (const s of state.knownSubs) {
+        if (want.has(s.toLowerCase())) next.add(s);
+      }
+      if (next.size !== state.activeSubs.size
+          || Array.from(next).some((s) => !state.activeSubs.has(s))) {
+        state.activeSubs = next;
+        changed = 1;
+      }
+    } else {
+      if (!want.size) return 0;
+      for (const s of state.knownSubs) {
+        if (!want.has(s.toLowerCase())) continue;
+        const has = state.activeSubs.has(s);
+        if (on && !has) { state.activeSubs.add(s); changed++; }
+        else if (!on && has) { state.activeSubs.delete(s); changed++; }
+      }
     }
     if (changed) state.persist();
     return changed;

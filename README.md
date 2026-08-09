@@ -30,6 +30,7 @@ bundled sample data without touching the network.
 - [Posting times are per subreddit](#posting-times-are-per-subreddit)
 - [From one post to a campaign](#from-one-post-to-a-campaign)
 - [How discovery works](#how-discovery-works)
+- [Sync uses the posts-per-sub setting](#sync-uses-the-posts-per-sub-setting)
 - [Demo mode](#demo-mode)
 - [Cross-device session sync](#cross-device-session-sync)
 - [How it works](#how-it-works)
@@ -220,12 +221,17 @@ Where subreddits come from. Three tabs:
 
 ### Posts
 
-A sortable, paginated table of every loaded post with per-view sub
-filtering, title/author/flair search, and post-ID filtering. Tapping a
-row opens a detail panel: top comments with sentiment, thread
-temperature, upvote ratio, permalink, a title-quality score broken down
-by factor (length, caps ratio, punctuation, numerals, brackets,
-sentiment, clickbait), and **where else this post could go** — see
+A sortable, paginated table of every loaded post with title/author/flair
+search and post-ID filtering. Which communities are in view is not a
+Posts-only control: the **Showing** chips at the top of every page are
+the filter, and the Posts page's multi-select mirrors them. Turn chips
+off (or pick several communities in the multi-select) and the dashboard
+Plan, campaigns and this table all read the same subset — so "only some
+subreddits loaded" is never a silent Posts-page leftover. Tapping a row
+opens a detail panel: top comments with sentiment, thread temperature,
+upvote ratio, permalink, a title-quality score broken down by factor
+(length, caps ratio, punctuation, numerals, brackets, sentiment,
+clickbait), and **where else this post could go** — see
 [below](#from-one-post-to-a-campaign).
 
 ---
@@ -307,9 +313,21 @@ should go, why, when, and in what order.
 
 Pick a post from your inventory or paste a Reddit link. Its title, body
 and flair are read for what it is about, every community that reads the
-same way is checked against its own clock, and the result is a ranked
-list — each with a match out of 100, how it compares on reach, and the
-hour to use.
+same way is checked against its own clock **and against that community's
+posting rules**, and the result is a ranked list — each with a match out
+of 100, how it compares on reach, and the hour to use.
+
+**Format is part of the match.** A text post that fits r/politics on
+subject still belongs nowhere near its submit box — that room takes
+fresh articles, not self-posts — and a news link that fits
+r/WhitePeopleTwitter on theme is still a removal there, because the
+room only takes social-media screenshots. Where-next classifies the
+post (self, link, image, video, gallery, or a screenshot tied to
+Twitter/X, Bluesky, Threads, and so on) and refuses communities whose
+curated rules reject that kind. Hard failures leave the ranked moves
+and show under *would reject this format*; soft warnings stay on the
+row so you can still see the subject match. Unknown communities stay
+open — the catalog does not invent rules.
 
 **Each recommendation opens in place to show its workings.** The four
 bars the match is made of — Theme, Sphere, Reach, Activity — and that
@@ -421,6 +439,22 @@ want the campaign without loading anything.
 Rows are pre-checked only when they share actual vocabulary with the
 post. A sphere sibling with no overlap is worth showing but not worth
 loading on your behalf.
+
+---
+
+## Sync uses the posts-per-sub setting
+
+Settings → **Posts per subreddit** is the target every sync aims for —
+including Sync New when you add communities to an existing list. It was
+easy to mistake a shortfall for a hardcoded 100: the archive pages at
+100 posts, and *hot* / *top* over a week often cannot produce 500
+confirmed scores even when you asked for 500.
+
+A sync now pulls the configured listing first, then fills any shortfall
+from `new` with a wider time window, so a 500 setting becomes 500 posts
+when the community actually has them. When it does not, the toast says
+so — `r/example returned 87 of 500` — rather than quietly stopping at
+whatever the first page held.
 
 ---
 
@@ -588,6 +622,8 @@ index and current view.
 | `js/seeds.js` | The curated catalog — issue, state and audience spheres, starter bundles |
 | `js/analysis.js` | Aggregates, activism-tuned lexicon sentiment, keywords and bigrams, themes, per-sub profiles and per-sub posting times, campaign profiles, comment-side analysis, title quality |
 | `js/discovery.js` | The discovery pipeline: campaign and single-post vectors, sphere ranking, candidate scoring, filtering, similar communities |
+| `js/rules.js` | Post-kind classification and curated community posting rules (unique links, social screenshots, …) for Where-next |
+| `js/refresh.js` | Scoped sync: one or more subs, post ids, campaigns, stale-only; fills toward the configured posts-per-sub limit |
 | `js/charts.js` | Chart.js wrappers plus dynamic mount/destroy for cards that come and go |
 | `js/campaigns.js` | Campaign storage with an in-memory mirror for blocked-storage browsers |
 | `js/sync.js` | Session payload, base64url codec, share links, merge/replace |

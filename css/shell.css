@@ -433,8 +433,15 @@
     flex-wrap: nowrap;
     gap: var(--s-2);
   }
+  /* Keep the word on screen. Hiding it made the chips look like a
+   * sync-scope control again, which is how people missed that they
+   * filter every view. */
   .scopebar-label {
-    display: none;
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    max-width: 3.6rem;
+    line-height: 1.1;
   }
   .scopebar-chips {
     flex: 1 1 auto;

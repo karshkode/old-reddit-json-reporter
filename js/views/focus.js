@@ -434,11 +434,15 @@
     const read = ["title"];
     if (body) read.push("body");
     if (post.flair) read.push("flair");
+    const kind = window.Rules ? Rules.classify(post) : null;
+    const kindBit = kind
+      ? `<span class="focus-kind" title="What kind of post this is — used to skip communities whose rules reject it">${esc(kind.label)}</span>`
+      : "";
     return `
       <div class="focus-chosen">
         <div class="focus-chosen-main">
           <div class="focus-chosen-title">${esc(trunc(post.title || "(untitled)", 120))}</div>
-          <div class="focus-chosen-meta">r/${esc(post.subreddit)} · ${Util.fmtNum(post.score || 0)} pts · read from ${esc(read.join(" and "))}</div>
+          <div class="focus-chosen-meta">r/${esc(post.subreddit)} · ${Util.fmtNum(post.score || 0)} pts · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
         </div>
         <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
       </div>
@@ -552,6 +556,12 @@
 
   function answerHtml(result) {
     if (!result.lead && !result.moves.length && !result.unmeasured.length) {
+      if (result.blocked && result.blocked.length) {
+        return `
+          <p class="focus-status">Every community that reads like this post would reject it — ${esc((result.kind && result.kind.label) || "this format")} against their rules.</p>
+          ${blockedHtml(result)}
+          ${footnoteHtml(result)}`;
+      }
       return `<p class="focus-status">Nothing in the catalog or your loaded communities reads like this post.
               Try loading a sphere that covers its subject from Communities.</p>`;
     }
@@ -574,9 +584,33 @@
             ${result.unmeasured.map((m) => unmeasuredHtml(m, result.post)).join("")}
           </ul>
         </details>` : ""}
+      ${blockedHtml(result)}
       ${runHtml(result)}
       ${footnoteHtml(result)}
     `;
+  }
+
+  /* Communities that match on subject but reject this post's format.
+     Listed so the user knows why a "perfect" room is missing — silence
+     looked like the matcher failed. */
+  function blockedHtml(result) {
+    const list = result.blocked || [];
+    if (!list.length) return "";
+    const kind = (result.kind && result.kind.label) || "this format";
+    return `
+      <details class="focus-blocked">
+        <summary>${result.blockedCount} would reject ${esc(kind)}</summary>
+        <p class="hint">Matched on subject, blocked by posting rules. Reformat the post or pick a different room.</p>
+        <ul class="focus-blocked-list">
+          ${list.map((m) => `
+            <li class="focus-blocked-row">
+              <span class="focus-move-sub">r/${esc(m.name)}</span>
+              <span class="badge bad">${esc((m.ruleReasons && m.ruleReasons[0]) || "against the rules")}</span>
+              ${m.rules && m.rules.rule && m.rules.rule.note
+                ? `<span class="focus-blocked-note">${esc(m.rules.rule.note)}</span>` : ""}
+            </li>`).join("")}
+        </ul>
+      </details>`;
   }
 
   /* Everything loaded was about something else. Not a failure — the
@@ -658,6 +692,7 @@
     const floor = m.graded && m.ratioLow && m.ratioLow > 1.02
       ? `at least ${m.ratioLow.toFixed(1).replace(/\.0$/, "")}×`
       : "";
+    const ruleBit = rulesSig(m);
     return `
       <div class="focus-signals">
         <span class="focus-sig" title="How much this post's words and subject look like this community, out of 100">
@@ -671,8 +706,21 @@
             ? `<b>${esc(m.slotLabel)}</b> ${m.lift > 0 ? `+${Math.round(m.lift)}% there` : "its peak"}`
             : `<b>any time</b> no peak hour there`}
         </span>
+        ${ruleBit}
       </div>
     `;
+  }
+
+  function rulesSig(m) {
+    if (!m || !m.rules || !m.rules.rule) return "";
+    if (m.rules.ok) {
+      const tip = m.rules.rule.note || "This post's format clears this community's posting rules.";
+      return `<span class="focus-sig focus-sig-rules is-ok" title="${esc(tip)}"><b>rules</b> ok</span>`;
+    }
+    /* Soft failure — uncertain, not banned. Shown so the user can
+       decide, rather than silently demoted. */
+    const why = (m.ruleReasons && m.ruleReasons[0]) || "may not fit the rules";
+    return `<span class="focus-sig focus-sig-rules is-warn" title="${esc(m.rules.rule.note || why)}"><b>rules</b> ${esc(why)}</span>`;
   }
 
   /* Why this community, and when — the two answers that used to live in
