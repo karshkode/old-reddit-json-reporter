@@ -221,11 +221,35 @@
         </li>`;
     }).join("");
 
-    const blockedBit = blocked.length ? `
-      <details class="focus-blocked syn-blocked">
-        <summary>${blocked.length} would reject this link format</summary>
+    const already = blocked.filter((c) => c.alreadyPosted && c.alreadyPosted.post);
+    const otherBlocked = blocked.filter((c) => !(c.alreadyPosted && c.alreadyPosted.post));
+    const alreadyBit = already.length ? `
+      <div class="syn-already">
+        <p class="group-label">Already on the sub</p>
         <ul class="focus-blocked-list">
-          ${blocked.slice(0, 8).map((c) => `
+          ${already.slice(0, 8).map((c) => {
+            const dup = c.alreadyPosted.post;
+            const src = c.alreadyPosted.source === "archive" ? "full archive" : "your loaded posts";
+            const link = dup.permalink
+              || (dup.id ? `https://www.reddit.com/r/${encodeURIComponent(c.name || c.key)}/comments/${encodeURIComponent(String(dup.id).replace(/^t3_/, ""))}/` : "");
+            const when = dup.created_utc ? Util.relTime(dup.created_utc) : "";
+            const score = dup.score != null ? `${Util.fmtNum(dup.score)} pts` : "";
+            return `
+              <li class="focus-blocked-row syn-already-row">
+                <span class="focus-move-sub">r/${esc(c.name || c.key)}</span>
+                <span class="badge bad">already posted</span>
+                <span class="meta">${esc([score, when, src].filter(Boolean).join(" · "))}</span>
+                ${link ? `<a class="btn tiny ghost" href="${esc(link)}" target="_blank" rel="noopener">Open existing</a>` : ""}
+              </li>`;
+          }).join("")}
+        </ul>
+      </div>` : "";
+
+    const blockedBit = otherBlocked.length ? `
+      <details class="focus-blocked syn-blocked">
+        <summary>${otherBlocked.length} would reject this link format</summary>
+        <ul class="focus-blocked-list">
+          ${otherBlocked.slice(0, 8).map((c) => `
             <li class="focus-blocked-row">
               <span class="focus-move-sub">r/${esc(c.name || c.key)}</span>
               <span class="badge bad">${esc((c.ruleReasons && c.ruleReasons[0]) || "against the rules")}</span>
@@ -233,10 +257,16 @@
         </ul>
       </details>` : "";
 
+    const archiveNote = result.archiveChecked
+      ? `<p class="hint syn-archive-note">Checked the archive for rooms that forbid re-posting the same article URL (e.g. r/politics).</p>`
+      : "";
+
     return `
       ${sphereBit}
+      ${alreadyBit}
       <ol class="syn-cands">${rows}</ol>
-      ${blockedBit}`;
+      ${blockedBit}
+      ${archiveNote}`;
   }
 
   async function runMatch(article) {

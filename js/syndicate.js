@@ -370,24 +370,46 @@
     return n ? (n.getAttribute(name) || "") : "";
   }
 
+  function cleanText(s) {
+    const raw = String(s == null ? "" : s);
+    return (Util.decodeEntities ? Util.decodeEntities(raw) : raw).replace(/\s+/g, " ").trim();
+  }
+
   function makeArticle(raw) {
     const link = String(raw.link || "").trim();
-    const title = String(raw.title || "Untitled").trim();
-    const body = String(raw.content || raw.summary || "").trim();
-    const summary = String(raw.summary || body).trim().slice(0, 600);
-    const publishedMs = Date.parse(raw.published) || 0;
+    const title = cleanText(raw.title) || "Untitled";
+    const body = cleanText(raw.content || raw.summary || "");
+    const summary = cleanText(raw.summary || body).slice(0, 600);
+    let publishedMs = 0;
+    if (raw.published != null && raw.published !== "") {
+      if (typeof raw.published === "number") {
+        publishedMs = raw.published > 1e12 ? raw.published : raw.published * 1000;
+      } else {
+        const asNum = Number(raw.published);
+        if (Number.isFinite(asNum) && asNum > 1e8) {
+          publishedMs = asNum > 1e12 ? asNum : asNum * 1000;
+        } else {
+          publishedMs = Date.parse(raw.published) || 0;
+        }
+      }
+    }
     const id = hashId((link || title) + "|" + (raw.feedId || ""));
+    let urlCanonical = link;
+    if (window.Reddit && Reddit.canonicalizeUrl && link) {
+      try { urlCanonical = Reddit.canonicalizeUrl(link) || link; } catch (_) {}
+    }
     return {
       id: id,
       title: title,
       link: link,
+      url_canonical: urlCanonical,
       summary: summary,
       body: body.slice(0, 4000),
       published: publishedMs ? Math.floor(publishedMs / 1000) : 0,
       image: String(raw.image || "").trim(),
-      source: raw.source || "",
+      source: cleanText(raw.source) || "",
       feedId: raw.feedId || "",
-      category: raw.category || "",
+      category: cleanText(raw.category) || "",
     };
   }
 
@@ -520,12 +542,17 @@
       }) || ((match && match.candidates) || [])[0];
       if (pick) home = pick.name || pick.key || "";
     }
+    let urlCanonical = article.url_canonical || url;
+    if (window.Reddit && Reddit.canonicalizeUrl && url) {
+      try { urlCanonical = Reddit.canonicalizeUrl(url) || urlCanonical; } catch (_) {}
+    }
     return {
       id: "art_" + article.id,
       title: article.title,
       selftext: article.body || article.summary || "",
       is_self: false,
       url: url || "https://example.invalid/" + article.id,
+      url_canonical: urlCanonical || url,
       domain: domain,
       permalink: url,
       subreddit: home || "",
@@ -567,7 +594,9 @@
 
   /* Match one article to communities. Uses Discovery.forPost so Rules
    * and sphere ranking stay consistent with Where-next; articles are
-   * synthetic link posts, which is what r/politics-shaped rooms want. */
+   * synthetic link posts, which is what r/politics-shaped rooms want.
+   * After the subject match, unique_link rooms are checked against the
+   * archive so "already on r/politics" is visible before you submit. */
   Syndicate.match = async function (article, opts) {
     opts = opts || {};
     if (!article) throw new Error("No article.");
@@ -585,12 +614,17 @@
         const name = c.name || c.key;
         let rules = null;
         if (window.Rules && Rules.evaluate) {
-          rules = Rules.evaluate(post, name, { posts: [] });
+          rules = Rules.evaluate(post, name, {
+            posts: (window.AppState && AppState.posts) || [],
+          });
         }
         return Object.assign({}, c, {
           rules: rules,
           blocked: !!(rules && rules.hard && !rules.ok),
           ruleReasons: (rules && rules.reasons) || [],
+          alreadyPosted: rules && rules.duplicate
+            ? { post: rules.duplicate, source: "local" }
+            : null,
         });
       });
       return {
@@ -602,6 +636,7 @@
         blocked: enriched.filter((c) => c.blocked),
         spheres: (related && related.spheres) || [],
         terms: keywords,
+        archiveChecked: false,
       };
     }
 
@@ -628,10 +663,65 @@
       throw new Error("Discovery is not loaded.");
     }
 
-    const result = pack(related);
+    let result = pack(related);
+    if (opts.skipArchive !== true && window.Rules && Rules.findPostedLink) {
+      result = await annotateArchiveDupes(result, post, opts);
+    }
     matchCache[article.id] = result;
     return result;
   };
+
+  async function annotateArchiveDupes(result, post, opts) {
+    const pool = [].concat(result.candidates || [], result.blocked || []);
+    const need = pool.filter((c) => {
+      if (c.alreadyPosted) return false;
+      const reqs = c.rules && c.rules.rule && c.rules.rule.requires;
+      return reqs && reqs.indexOf("unique_link") !== -1;
+    });
+    if (!need.length) {
+      result.archiveChecked = true;
+      return result;
+    }
+
+    /* Cap concurrent archive queries — unique_link rooms are few. */
+    const CONCURRENCY = 3;
+    let i = 0;
+    async function worker() {
+      while (i < need.length) {
+        const c = need[i++];
+        const name = c.name || c.key;
+        try {
+          const hit = await Rules.findPostedLink(post, name, {
+            posts: (window.AppState && AppState.posts) || [],
+            signal: opts.signal,
+            limit: 8,
+          });
+          if (!hit) continue;
+          c.alreadyPosted = hit;
+          c.blocked = true;
+          c.rules = Object.assign({}, c.rules || {}, {
+            ok: false,
+            hard: true,
+            duplicate: hit.post,
+            reasons: ["this link is already on the sub"],
+          });
+          c.ruleReasons = ["this link is already on the sub"];
+        } catch (err) {
+          console.warn(`[syndicate] archive dupe r/${name}:`, err && err.message);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, need.length) }, () => worker()));
+
+    const all = pool.slice();
+    result.candidates = all.filter((c) => !c.blocked);
+    result.blocked = all.filter((c) => c.blocked);
+    result.archiveChecked = true;
+    if (typeof opts.onPartial === "function") {
+      try { opts.onPartial(result); } catch (_) {}
+    }
+    return result;
+  }
 
   /* ------------------------------------------------------------------
    * DEMO FIXTURES

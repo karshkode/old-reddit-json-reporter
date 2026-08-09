@@ -1949,6 +1949,21 @@ body.sheet-open {
   gap: var(--s-2);
 }
 .syn-blocked { margin-top: var(--s-4); }
+.syn-already {
+  margin: 0 0 var(--s-4);
+  padding: var(--s-3);
+  border: 1px solid color-mix(in srgb, var(--bad, #c44) 35%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bad, #c44) 8%, var(--bg));
+}
+.syn-already .group-label { margin: 0 0 var(--s-2); }
+.syn-already-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: center;
+}
+.syn-archive-note { margin-top: var(--s-3); }
 .syn-detail-empty { padding: var(--s-4); }
 
 @media (max-width: 560px) {
