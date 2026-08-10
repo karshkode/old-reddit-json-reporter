@@ -184,6 +184,19 @@
   Syndicate.pulling = function () { return pulling; };
   Syndicate.matchOf = function (id) { return matchCache[id] || null; };
 
+  /* Top cleared communities for a matched article (empty until suggest
+   * or match has run). Used by the headline list to show destinations
+   * without opening each card. */
+  Syndicate.suggestionsOf = function (id, limit) {
+    const m = matchCache[id];
+    if (!m || !m.candidates || !m.candidates.length) return [];
+    return m.candidates.slice(0, limit == null ? 3 : limit);
+  };
+
+  Syndicate.clearMatches = function () {
+    matchCache = {};
+  };
+
   /* ------------------------------------------------------------------
    * OPML
    * ------------------------------------------------------------------ */
@@ -677,6 +690,54 @@
     }
     matchCache[article.id] = result;
     return result;
+  };
+
+  /* Rank many headlines without making the user press Match on each.
+   * Offline by default (catalog + loaded subs) so a pull of 100+ feeds
+   * can paint suggestions quickly; archive uniqueness waits until a
+   * headline is opened. */
+  let suggesting = false;
+  Syndicate.suggesting = function () { return suggesting; };
+
+  Syndicate.suggestMany = async function (list, opts) {
+    opts = opts || {};
+    const want = (list || []).filter((a) => {
+      if (!a || !a.id) return false;
+      if (opts.force) return true;
+      return !matchCache[a.id];
+    });
+    if (!want.length) {
+      return { done: 0, total: 0, skipped: (list || []).length };
+    }
+    if (suggesting && !opts.force) {
+      return { done: 0, total: want.length, busy: true };
+    }
+    suggesting = true;
+    let done = 0;
+    const errors = [];
+    try {
+      await Util.pmap(want, opts.concurrency || 2, async (article) => {
+        try {
+          await Syndicate.match(article, {
+            live: opts.live === true,
+            skipArchive: opts.skipArchive !== false,
+            limit: opts.limit || 8,
+            force: !!opts.force,
+            onPartial: opts.onPartial,
+          });
+        } catch (err) {
+          errors.push({ id: article.id, message: (err && err.message) || String(err) });
+        } finally {
+          done++;
+          if (typeof opts.onProgress === "function") {
+            try { opts.onProgress(done, want.length, article); } catch (_) {}
+          }
+        }
+      });
+      return { done: done, total: want.length, errors: errors };
+    } finally {
+      suggesting = false;
+    }
   };
 
   async function annotateArchiveDupes(result, post, opts) {

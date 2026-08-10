@@ -21,6 +21,16 @@
   let selectedId = null;
   let matchBusy = null;
   let searchQuery = "";
+  let suggestToken = 0;
+  let listPaintTimer = null;
+  /* Article ids whose offline suggestion has already been upgraded with
+   * live descriptions + archive uniqueness for this session. */
+  const upgraded = new Set();
+
+  /* How many headlines get a destination after Pull / Suggest. Offline
+   * match is cheap; capping keeps a 150-headline pull from monopolising
+   * the tab. The rest fill in as you scroll-select or tap Suggest again. */
+  const AUTO_SUGGEST_CAP = 60;
 
   View.subtitle = function () {
     const n = filtered().length;
@@ -48,6 +58,7 @@
     renderFolders();
     renderList();
     renderDetail();
+    paintSuggestButton();
     const sub = Dom.byId("topbar-title-sub");
     if (sub && Router.current() === "syndicate") {
       sub.hidden = false;
@@ -55,6 +66,11 @@
     }
     const search = Dom.byId("syndicate-search");
     if (search && search.value !== searchQuery) search.value = searchQuery;
+    /* Selecting a headline (or opening the view with one already
+     * picked) should show destinations without a second click. */
+    if (selectedId) {
+      queueMicrotask(() => ensureSelectedMatched());
+    }
   };
 
   function renderFolders() {
@@ -110,6 +126,15 @@
     }
     if (empty) empty.hidden = true;
 
+    const matched = list.filter((a) => Syndicate.matchOf(a.id)).length;
+    if (meta && total && !searchQuery) {
+      if (Syndicate.suggesting && Syndicate.suggesting()) {
+        meta.textContent = `${Util.fmtNum(total)} articles · suggesting destinations…`;
+      } else if (matched) {
+        meta.textContent = `${Util.fmtNum(total)} articles · ${Util.fmtNum(matched)} with destinations`;
+      }
+    }
+
     host.innerHTML = list.map((a) => {
       const active = a.id === selectedId ? " is-active" : "";
       const when = whenBits(a);
@@ -117,6 +142,18 @@
       const keyHtml = keys.length
         ? `<div class="syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>`
         : "";
+      const tips = Syndicate.suggestionsOf(a.id, 3);
+      const tipHtml = tips.length
+        ? `<div class="syn-suggests" title="Where this article should go">
+             ${tips.map((c, i) => {
+               const name = c.name || c.key;
+               const score = c.score != null ? Math.round(c.score) : "";
+               return `<span class="syn-suggest${i === 0 ? " is-top" : ""}">r/${esc(name)}${score !== "" ? `<em>${score}</em>` : ""}</span>`;
+             }).join("")}
+           </div>`
+        : (matchBusy === a.id
+          ? `<div class="syn-suggests is-pending"><span class="meta">Matching…</span></div>`
+          : "");
       const thumb = a.image
         ? `<img class="syn-thumb" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
         : `<div class="syn-thumb syn-thumb-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
@@ -131,7 +168,7 @@
             </div>
             <div class="syn-title">${esc(a.title)}</div>
             ${a.summary ? `<div class="syn-sum">${esc(a.summary.slice(0, 140))}${a.summary.length > 140 ? "…" : ""}</div>` : ""}
-            ${keyHtml}
+            ${tipHtml || keyHtml}
           </div>
         </button>`;
     }).join("");
@@ -174,13 +211,17 @@
           <div class="keyword-cloud">${keys.map((k) => `<span class="kw"><code>${esc(k)}</code></span>`).join("") || "<span class=\"meta\">none yet</span>"}</div>
         </div>
         <div class="syn-article-actions">
-          <button type="button" class="btn primary" data-action="syn-match" ${matchBusy === article.id ? "disabled" : ""}>
-            ${matchBusy === article.id ? "Matching…" : cached ? "Refresh match" : "Where should this go?"}
+          <button type="button" class="btn ${cached ? "ghost" : "primary"}" data-action="syn-match" ${matchBusy === article.id ? "disabled" : ""}>
+            ${matchBusy === article.id ? "Matching…" : cached ? "Refresh match" : "Matching…"}
           </button>
           ${window.FocusView ? `<button type="button" class="btn ghost" data-action="syn-focus">Open in Plan</button>` : ""}
         </div>
         <div id="syndicate-match" class="syn-match">
-          ${cached ? matchHtml(cached, post) : "<p class=\"hint\">Match to see communities ranked by subject — blocked rooms (wrong format) are listed separately.</p>"}
+          ${cached
+            ? matchHtml(cached, post)
+            : `<p class="hint">${matchBusy === article.id
+              ? "Ranking communities from the title and summary…"
+              : "Destinations appear automatically from keywords and civic spheres."}</p>`}
         </div>
       </article>`;
   }
@@ -276,29 +317,147 @@
       ${archiveNote}`;
   }
 
-  async function runMatch(article) {
-    if (!article || matchBusy) return;
-    matchBusy = article.id;
-    View.render();
+  function scheduleListPaint() {
+    if (listPaintTimer) return;
+    listPaintTimer = setTimeout(() => {
+      listPaintTimer = null;
+      if (Router.current() !== "syndicate") return;
+      renderList();
+      paintSuggestButton();
+    }, 280);
+  }
+
+  function paintSuggestButton() {
+    const btn = Dom.byId("syndicate-suggest");
+    if (!btn) return;
+    const busy = !!(Syndicate.suggesting && Syndicate.suggesting());
+    btn.disabled = busy || !filtered().length;
+    btn.textContent = busy ? "Suggesting…" : "Suggest destinations";
+  }
+
+  /* Rank one article. Offline suggestions can already be on the card;
+   * opening the detail upgrades with live descriptions + archive
+   * uniqueness for unique_link rooms. */
+  async function runMatch(article, opts) {
+    opts = opts || {};
+    if (!article) return null;
+    if (matchBusy && matchBusy !== article.id && !opts.background) return null;
+    if (!opts.background) matchBusy = article.id;
+    if (!opts.silent) {
+      const btn = document.querySelector('[data-action="syn-match"]');
+      if (btn && selectedId === article.id) {
+        btn.disabled = true;
+        btn.textContent = "Matching…";
+      }
+    }
     try {
       const result = await Syndicate.match(article, {
+        force: !!opts.force,
+        live: opts.live !== false && !(window.Demo && Demo.isActive()),
+        skipArchive: opts.skipArchive === true,
+        limit: opts.limit || 12,
         onPartial: () => {
+          if (selectedId !== article.id) return;
           const host = Dom.byId("syndicate-match");
-          if (host) host.innerHTML = matchHtml(Syndicate.matchOf(article.id) || { candidates: [], blocked: [], keywords: Syndicate.keywords(article) }, Syndicate.asPost(article));
+          if (host) {
+            host.innerHTML = matchHtml(
+              Syndicate.matchOf(article.id) || { candidates: [], blocked: [], keywords: Syndicate.keywords(article) },
+              Syndicate.asPost(article)
+            );
+          }
+          scheduleListPaint();
         },
       });
-      const host = Dom.byId("syndicate-match");
-      if (host) host.innerHTML = matchHtml(result, result.post);
-    } catch (err) {
-      const host = Dom.byId("syndicate-match");
-      if (host) host.innerHTML = `<p class="focus-status is-err">${esc((err && err.message) || err)}</p>`;
-    } finally {
-      matchBusy = null;
-      const btn = document.querySelector('[data-action="syn-match"]');
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = "Refresh match";
+      if (selectedId === article.id) {
+        const host = Dom.byId("syndicate-match");
+        if (host) host.innerHTML = matchHtml(result, result.post);
+        const btn = document.querySelector('[data-action="syn-match"]');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Refresh match";
+          btn.classList.remove("primary");
+          btn.classList.add("ghost");
+        }
       }
+      scheduleListPaint();
+      return result;
+    } catch (err) {
+      if (selectedId === article.id) {
+        const host = Dom.byId("syndicate-match");
+        if (host) host.innerHTML = `<p class="focus-status is-err">${esc((err && err.message) || err)}</p>`;
+      }
+      return null;
+    } finally {
+      if (matchBusy === article.id) matchBusy = null;
+    }
+  }
+
+  /* Auto-match the selected headline; upgrade a batch offline hit with
+   * archive uniqueness when the user actually opens it. */
+  function ensureSelectedMatched() {
+    const article = Syndicate.articles().find((a) => a.id === selectedId);
+    if (!article) return;
+    const cached = Syndicate.matchOf(article.id);
+    if (!cached) {
+      runMatch(article, { live: true, skipArchive: false });
+      return;
+    }
+    if (!cached.archiveChecked) {
+      runMatch(article, { force: true, live: true, skipArchive: false, silent: true });
+    }
+  }
+
+  async function suggestVisible(opts) {
+    opts = opts || {};
+    const list = filtered().slice(0, opts.cap || AUTO_SUGGEST_CAP);
+    if (!list.length) {
+      Util.toast("Pull headlines first, then suggest destinations.");
+      return;
+    }
+    const token = ++suggestToken;
+    paintSuggestButton();
+    const status = Dom.byId("syndicate-status");
+    if (status && opts.announce !== false) {
+      status.textContent = `Suggesting destinations for ${list.length} headline${list.length === 1 ? "" : "s"}…`;
+    }
+    try {
+      const res = await Syndicate.suggestMany(list, {
+        live: false,
+        skipArchive: true,
+        concurrency: 2,
+        limit: 8,
+        force: !!opts.force,
+        onProgress: (done, total) => {
+          if (token !== suggestToken) return;
+          if (status) status.textContent = `Suggesting destinations ${done}/${total}…`;
+          scheduleListPaint();
+        },
+        onPartial: () => {
+          if (token !== suggestToken) return;
+          scheduleListPaint();
+        },
+      });
+      if (token !== suggestToken) return;
+      if (status) {
+        const n = filtered().filter((a) => Syndicate.matchOf(a.id)).length;
+        status.textContent = n
+          ? `${Util.fmtNum(n)} headline${n === 1 ? "" : "s"} have destination suggestions`
+          : (res && res.busy)
+            ? "Still suggesting…"
+            : "No destinations found — try Sync communities, then Suggest again";
+      }
+      if (opts.toast !== false && !(res && res.busy)) {
+        Util.toast(res && res.done
+          ? `Suggested destinations for ${res.done} headline${res.done === 1 ? "" : "s"}`
+          : "Destinations already suggested");
+      }
+      View.render();
+      ensureSelectedMatched();
+    } catch (err) {
+      if (status) status.textContent = (err && err.message) || String(err);
+      Util.toast("Could not suggest destinations", "error");
+    } finally {
+      paintSuggestButton();
     }
   }
 
@@ -335,9 +494,10 @@
 
     if (window.Demo && Demo.isActive()) {
       Syndicate.loadDemo();
-      if (status) status.textContent = "Demo headlines loaded — matching stays offline.";
+      if (status) status.textContent = "Demo headlines loaded — suggesting destinations offline.";
       if (!selectedId && Syndicate.articles()[0]) selectedId = Syndicate.articles()[0].id;
       View.render();
+      suggestVisible({ toast: false, announce: false });
       return;
     }
 
@@ -366,12 +526,16 @@
           : "Syndicate · no headlines",
         res.errors.length && !res.articles.length ? "error" : ""
       );
+      View.render();
+      if (res.articles.length) {
+        suggestVisible({ toast: false, announce: true });
+      }
     } catch (err) {
       if (status) status.textContent = (err && err.message) || String(err);
       Util.toast("Could not pull feeds", "error");
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "Pull latest"; }
       View.render();
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "↻ Pull latest"; }
     }
   }
 
@@ -389,6 +553,11 @@
 
     const pull = Dom.byId("syndicate-pull");
     if (pull) pull.addEventListener("click", () => pullFeeds());
+
+    const suggestBtn = Dom.byId("syndicate-suggest");
+    if (suggestBtn) {
+      suggestBtn.addEventListener("click", () => suggestVisible({ toast: true, force: false }));
+    }
 
     const search = Dom.byId("syndicate-search");
     if (search) {
@@ -420,7 +589,7 @@
 
     Dom.delegate(document, "click", '[data-action="syn-match"]', () => {
       const article = Syndicate.articles().find((a) => a.id === selectedId);
-      runMatch(article);
+      runMatch(article, { force: true, live: true, skipArchive: false });
     });
 
     Dom.delegate(document, "click", '[data-action="syn-focus"]', () => {
@@ -440,7 +609,16 @@
     if (window.Demo && Demo.isActive() && !Syndicate.articles().length) {
       Syndicate.loadDemo();
       selectedId = Syndicate.articles()[0] && Syndicate.articles()[0].id;
+      queueMicrotask(() => suggestVisible({ toast: false, announce: false }));
+    } else if (Syndicate.articles().length) {
+      /* Returning to the view with headlines already pulled: fill any
+       * cards that never got a destination. */
+      queueMicrotask(() => {
+        const missing = filtered().filter((a) => !Syndicate.matchOf(a.id));
+        if (missing.length) suggestVisible({ toast: false, announce: false });
+      });
     }
+    paintSuggestButton();
   };
 
   Router.register("syndicate", {
