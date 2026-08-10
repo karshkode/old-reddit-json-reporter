@@ -1862,6 +1862,38 @@ body.sheet-open {
   background: var(--bg-elev-2);
   border-radius: 4px;
 }
+.syn-suggests {
+  margin-top: var(--s-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.syn-suggests.is-pending { opacity: 0.7; }
+.syn-suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-bold);
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  max-width: 100%;
+}
+.syn-suggest.is-top {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--text);
+}
+.syn-suggest em {
+  font-style: normal;
+  font-weight: var(--fw-bold);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
 .syn-article-hero {
   margin: calc(var(--s-3) * -1) calc(var(--s-3) * -1) var(--s-3);
   max-height: 180px;

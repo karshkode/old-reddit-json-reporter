@@ -32,7 +32,7 @@
  * users. CACHE_VERSION below is now only a "throw everything away"
  * lever for when the cache format itself changes.
  */
-const CACHE_VERSION = "v2026080922";
+const CACHE_VERSION = "v2026081014";
 const CACHE_NAME = "rj-static-" + CACHE_VERSION;
 
 const SHELL = "./index.html";
