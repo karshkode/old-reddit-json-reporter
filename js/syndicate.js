@@ -24,6 +24,9 @@
   const FEED_CONCURRENCY = 3;
   /* Headlines survive page refresh in localStorage this long, then drop. */
   const ARTICLE_TTL_MS = 24 * 60 * 60 * 1000;
+  /* Bump when match-cache shape or suggest semantics change so stale
+   * destination tips from an older build are discarded (articles stay). */
+  const MATCH_CACHE_REV = 2;
 
   /* Curated from data/subscriptions.opml. Politics + News on by
    * default; Tech available; sports / podcasts / pop folders skipped. */
@@ -191,6 +194,7 @@
       }
       store.headlineCache = {
         savedAt: Date.now(),
+        matchRev: MATCH_CACHE_REV,
         articles: articles.map((a) => ({
           id: a.id,
           title: a.title,
@@ -231,7 +235,14 @@
     }
     articles = cache.articles.filter((a) => a && a.id && (a.title || a.link));
     matchCache = {};
-    const matches = cache.matches && typeof cache.matches === "object" ? cache.matches : {};
+    /* Older builds sorted the suggest queue by destination strength, so
+     * unmatched progressive headlines never entered the cap window and
+     * weak Fox-tier tips got frozen in the 24h cache. Drop destination
+     * tips from those revisions; keep the headlines. */
+    const matchesOk = Number(cache.matchRev) === MATCH_CACHE_REV;
+    const matches = matchesOk && cache.matches && typeof cache.matches === "object"
+      ? cache.matches
+      : {};
     for (const a of articles) {
       const packed = matches[a.id];
       if (!packed) continue;
@@ -241,6 +252,7 @@
       });
     }
     restoredFromCache = articles.length > 0;
+    if (!matchesOk && articles.length) persistHeadlinesNow();
   }
 
   hydrateHeadlines();
@@ -873,12 +885,21 @@
   let suggesting = false;
   Syndicate.suggesting = function () { return suggesting; };
 
+  /* True when a headline was ranked but has no chip above the floor —
+   * these should be eligible for another suggest pass, not frozen. */
+  Syndicate.hasStrongDestination = function (id) {
+    return Syndicate.suggestionsOf(id, 1).length > 0;
+  };
+
   Syndicate.suggestMany = async function (list, opts) {
     opts = opts || {};
+    const refreshWeak = opts.refreshWeak !== false;
     const want = (list || []).filter((a) => {
       if (!a || !a.id) return false;
       if (opts.force) return true;
-      return !matchCache[a.id];
+      if (!matchCache[a.id]) return true;
+      if (refreshWeak && !Syndicate.hasStrongDestination(a.id)) return true;
+      return false;
     });
     if (!want.length) {
       return { done: 0, total: 0, skipped: (list || []).length };
@@ -896,7 +917,8 @@
             live: opts.live === true,
             skipArchive: opts.skipArchive !== false,
             limit: opts.limit || 8,
-            force: !!opts.force,
+            /* Re-rank weak / empty tips; force also refreshes strong ones. */
+            force: !!opts.force || !!matchCache[article.id],
             playbook: opts.playbook || Syndicate.playbook(),
             onPartial: opts.onPartial,
           });
