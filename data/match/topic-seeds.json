@@ -1,0 +1,29 @@
+{
+  "_comment": "When a syndicated article ranks issue spheres above minAbsolute, seed those spheres (and optional extras). Otherwise fall back to media_news only — never dump progressive/democracy/voting into every headline.",
+  "minAbsolute": 0.035,
+  "bySphere": {
+    "consumer_protection": ["consumer_protection", "healthcare", "media_news"],
+    "healthcare": ["healthcare", "media_news"],
+    "labor": ["labor", "progressive", "media_news"],
+    "voting": ["voting", "democracy", "progressive"],
+    "election_law": ["election_law", "voting", "democracy", "progressive"],
+    "climate": ["climate", "media_news"],
+    "reproductive": ["reproductive", "progressive", "women"],
+    "immigration": ["immigration", "racial_justice", "progressive"],
+    "education": ["education", "media_news"],
+    "housing": ["housing", "urbanism", "progressive"],
+    "palestine_gaza": ["palestine_gaza", "progressive", "media_news"],
+    "racial_justice": ["racial_justice", "progressive", "criminal_justice"],
+    "media_news": ["media_news"],
+    "democracy": ["democracy", "progressive", "media_news"],
+    "criminal_justice": ["criminal_justice", "racial_justice", "progressive"],
+    "gun_violence": ["gun_violence", "progressive"],
+    "disability": ["disability", "safety_net", "healthcare"],
+    "safety_net": ["safety_net", "progressive", "healthcare"],
+    "tech_privacy": ["tech_privacy", "media_news"],
+    "urbanism": ["urbanism", "climate", "housing"],
+    "progressive": ["progressive", "media_news"],
+    "movement": ["movement", "progressive", "labor"]
+  },
+  "fallback": ["media_news"]
+}

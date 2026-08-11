@@ -246,12 +246,19 @@ is available but off until you turn it on.
 **Pull latest** reads each enabled feed (via a CORS-friendly reader, then
 a proxy fallback), keeps a handful of recent items with source/time chips
 and thumbnails when the feed provides them, and extracts keywords from
-the title and summary. A search box filters the list. Matching one
-headline runs the same discovery path as Where-next on a synthetic link
-post — so format rules apply — and **Open in Plan** carries that match
-into the dashboard Plan tab (Briefing stays on its own tab). Extra civic
-desks (ProPublica, Democracy Now, The Nation, NPR Politics, …) ship
-alongside the Feedly Politics/News folders.
+the title and summary. A search box filters the list. After pull (or
+**Suggest destinations**), headlines are ranked offline and cards show
+strong destination chips only (fit ≥ 35). Matching uses the same path as
+Where-next on a synthetic link post — format rules and archive uniqueness
+apply — and **Open in Plan** carries that match into the dashboard Plan
+tab (Briefing stays on its own tab). Extra civic desks (ProPublica,
+Democracy Now, The Nation, NPR Politics, …) ship alongside the Feedly
+Politics/News folders.
+
+Destination quality is driven by versioned lexicons in
+[`data/match/`](data/match/) (triggers, offtopic terms, source tiers,
+topic→sphere seeds). See [`data/match/README.md`](data/match/README.md)
+for the daily agent update checklist.
 
 Sync can **Drop posts older than window** to prune inventory to the
 Settings time window, and every sync unions a page of `new` so posts
@@ -564,6 +571,15 @@ coincidence — including when the honest answer is "this really is a
 racial justice community, but your campaign is not a racial justice
 campaign". The **Relevant / All** toggle re-filters the scored list in
 place — no refetch, no waiting.
+
+Syndicated / no-home posts no longer dump every progressive, democracy
+and voting community into the pool. They seed only the issue spheres the
+headline actually ranked (via `data/match/topic-seeds.json`), falling
+back to `media_news`. Multi-word trigger phrases no longer leak bare
+component words into sphere vectors. Absolute sphere floors and the same
+**Relevant** gate used by Discover keep thin matches off Syndicate chips.
+Preferred progressive outlets get a small ranking lift; hostile hosts a
+soft penalty — feeds are not hidden.
 
 `Discovery.forPost` is the single-post variant of the same machinery,
 minus the two phases that need Reddit's search. It runs from the post

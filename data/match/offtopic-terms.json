@@ -1,0 +1,18 @@
+{
+  "_comment": "Terms that mark a community as entertainment/gaming/etc., not a civic destination. Used by Discovery.offtopicHits. Prefer words that appear in subreddit descriptions.",
+  "terms": [
+    "anime", "manga", "waifu", "cosplay", "fandom", "fanfic", "shipping",
+    "gaming", "gamer", "videogame", "console", "playstation", "xbox", "nintendo", "steam", "speedrun",
+    "celebrity", "gossip", "kardashian", "influencer", "tiktok", "onlyfans",
+    "porn", "nsfw", "hentai", "gonewild", "nude",
+    "crypto", "bitcoin", "ethereum", "nft", "altcoin", "memecoin", "daytrading",
+    "sports", "football", "basketball", "baseball", "hockey", "soccer", "fantasy", "nfl", "nba", "mlb",
+    "recipe", "cooking", "baking", "restaurant", "cookbook", "mealprep",
+    "meme", "memes", "shitpost", "circlejerk", "copypasta",
+    "makeup", "skincare", "fashion", "sneakers", "watches",
+    "dating", "relationship", "tinder", "hookup",
+    "movie", "movies", "television", "netflix", "marvel", "starwars",
+    "series", "episode", "episodes", "seasons", "sitcom", "starring", "spoilers", "rewatch",
+    "cinema", "actor", "actress", "screenwriter", "hbo", "hulu", "showtime"
+  ]
+}

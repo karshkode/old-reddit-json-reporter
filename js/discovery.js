@@ -46,13 +46,22 @@
   const SIM_CEILING = 0.32;
 
   /* Below this, the best-matching sphere is indistinguishable from
-   * coincidental word overlap and no sphere is offered at all. */
-  const MIN_SPHERE_SIGNAL = 0.012;
+   * coincidental word overlap and no sphere is offered at all.
+   * Raised from 0.012 so a near-noise "best" cannot crown civic
+   * runners-up at 40% relative confidence. */
+  const MIN_SPHERE_SIGNAL = 0.028;
 
-  /* How much a sphere's curated vocabulary counts for, and how much of
-   * that a multi-word entry passes down to its individual words. */
+  /* How much a sphere's curated vocabulary counts for. Multi-word
+   * phrases used to leak a fraction of their weight onto each bare
+   * word (PHRASE_WORD_SHARE), which made "food stamp" teach the
+   * safety_net sphere the word "food" and pulled salmonella recalls
+   * toward BasicIncome. Phrases now contribute only as phrases /
+   * bigrams. */
   const TRIGGER_WEIGHT = 2.5;
-  const PHRASE_WORD_SHARE = 0.24;
+  const PHRASE_WORD_SHARE = 0;
+
+  /* Syndicate / forPost chip floor — below this, hide the suggestion. */
+  Discovery.MIN_SUGGEST_SCORE = 35;
 
   /* Terms that signal a community is in the civic / organising space at
    * all. A candidate can match a campaign's exact vocabulary by accident
@@ -81,7 +90,7 @@
     "porn nsfw hentai gonewild nude",
     "crypto bitcoin ethereum nft altcoin memecoin trading daytrading",
     "sports football basketball baseball hockey soccer fantasy nfl nba mlb",
-    "recipe cooking baking food restaurant",
+    "recipe cooking baking restaurant cookbook mealprep",
     "meme memes shitpost circlejerk copypasta",
     "makeup skincare fashion sneakers watches",
     "dating relationship tinder hookup",
@@ -95,10 +104,17 @@
   ].join(" ")).split(/\s+/).filter(Boolean);
 
   Discovery.CIVIC_TERMS = CIVIC_TERMS;
-  Discovery.OFFTOPIC_TERMS = OFFTOPIC_TERMS;
+  Discovery.OFFTOPIC_TERMS = OFFTOPIC_TERMS.slice();
 
   const civicVector = SubIndex.vectorFromText(CIVIC_TERMS.join(" "), 1);
-  const offtopicSet = new Set(OFFTOPIC_TERMS.map((t) => SubIndex.stem(t)));
+  let offtopicSet = new Set(OFFTOPIC_TERMS.map((t) => SubIndex.stem(t)));
+
+  Discovery.setOfftopicTerms = function (terms) {
+    const list = (terms || []).map((t) => String(t || "").toLowerCase().trim()).filter(Boolean);
+    if (!list.length) return;
+    Discovery.OFFTOPIC_TERMS = list;
+    offtopicSet = new Set(list.map((t) => SubIndex.stem(t)));
+  };
 
   function clamp01(x) {
     return Math.max(0, Math.min(1, x));
@@ -305,18 +321,19 @@
      * gated by an absolute floor, otherwise a campaign about nothing in
      * the catalog would still crown a 100% winner out of noise. */
     const best = ranked.length ? ranked[0].score : 0;
-    if (best < MIN_SPHERE_SIGNAL) return [];
+    const absFloor = opts.minAbsolute == null ? MIN_SPHERE_SIGNAL : opts.minAbsolute;
+    if (best < absFloor) return [];
 
-    for (const s of ranked) s.confidence = Math.round(clamp01(s.score / best) * 100);
+    for (const s of ranked) {
+      s.confidence = Math.round(clamp01(s.score / best) * 100);
+      s.absolute = s.score;
+    }
 
-    /* The floor applies to every sphere, not just the leader. It used to
-     * gate the leader alone, so a runner-up matching on one incidental
-     * word rode in behind a strong first place: a post flaired "Police
-     * State" pulled in the racial justice sphere on the word "police",
-     * and from there every racial justice community in the catalog. */
+    /* Relative confidence alone crowned runners-up behind a near-noise
+     * best match. Every kept sphere must also clear the absolute floor. */
     const floor = opts.minConfidence == null ? 20 : opts.minConfidence;
     return ranked
-      .filter((s) => s.score >= MIN_SPHERE_SIGNAL && s.confidence >= floor)
+      .filter((s) => s.score >= absFloor && s.confidence >= floor)
       .slice(0, opts.limit || 8);
   };
 
@@ -461,6 +478,21 @@
       0.06 * queryBoost +
       catalogBoost;
     raw -= 0.26 * offtopicPenalty;
+
+    /* Progressive-desk source tier on the *article* (ctx.sourceBoost),
+     * not the candidate. Preferred outlets get a small lift; hostile /
+     * right-tabloid hosts a soft penalty so weak matches fall under the
+     * chip floor instead of looking like destinations. */
+    if (ctx.sourceBoost) raw += ctx.sourceBoost;
+
+    /* When theme is close, prefer rooms curated under progressive /
+     * democracy / labor spheres — the product's audience. */
+    if (catalogSpheres.length && theme >= 0.2) {
+      const progressiveHit = catalogSpheres.some((k) =>
+        /^(progressive|labor|voting|democracy|movement|election_law)$/.test(String(k).replace(/^(state|demo):/, ""))
+      );
+      if (progressiveHit) raw += 0.025;
+    }
 
     const composite = clamp01(raw);
     const overlap = SubIndex.overlapTerms(ctx.vector, vec, 6, ctx.idf);
@@ -1161,15 +1193,16 @@
           for (const name of Seeds.expand([key]) || []) add(name, label);
         }
       }
-      /* Syndicated articles (and anything else without a home sub) have
-       * no sphere siblings to seed from. Without this, Discovery only
-       * finds whatever the short title ranks — often self-post rooms
-       * that then hard-block a link — and Plan says every community
-       * would reject the article. Seed the civic news spheres so link
-       * rooms stay in the pool. */
+      /* Syndicated articles: seed only the spheres the text actually
+       * ranked (via MatchLex.topicSeeds), falling back to media_news.
+       * Dumping progressive/democracy/voting into every headline is how
+       * a Tesla crash competed inside NeutralPolitics by construction. */
       if (window.Seeds && (post.syndicated || !post.subreddit)) {
-        for (const key of ["media_news", "progressive", "democracy", "voting"]) {
-          if (!Seeds.ISSUE_SPHERES[key]) continue;
+        const seedKeys = (window.MatchLex && MatchLex.seedKeysFor)
+          ? MatchLex.seedKeysFor(spheres)
+          : ((spheres && spheres.length) ? spheres.map((s) => s.key) : ["media_news"]);
+        for (const key of seedKeys) {
+          if (!Seeds.ISSUE_SPHERES[key] && !Seeds.DEMOGRAPHIC_SPHERES[key]) continue;
           const label = Seeds.labelOf(key);
           for (const name of Seeds.expand([key]) || []) add(name, label);
         }
@@ -1212,12 +1245,18 @@
       }
 
       const idf = SubIndex.idfFor(records.map((r) => r.vector).concat([vector]));
+      let sourceBoost = 0;
+      if (window.MatchLex && MatchLex.sourceBoost) {
+        const host = post.domain || "";
+        sourceBoost = MatchLex.sourceBoost(host);
+      }
       const ctx = {
         vector: vector,
         idf: idf,
         spheres: withVectors,
         subProfiles: (window.AppState && AppState.subProfiles) || {},
         subject: "post",
+        sourceBoost: sourceBoost,
       };
 
       const scored = records.map((r) => {
@@ -1235,22 +1274,35 @@
       });
       scored.sort((a, b) => b.composite - a.composite);
 
+      /* Relevant-mode gate for single-post / Syndicate paths — Discover
+       * already applied this; forPost used to skip it and surface thin
+       * theme scores as destinations. */
+      const strict = opts.strict !== false;
+      const filtered = Discovery.applyFilter(scored, strict);
+      const communities = filtered.kept.slice(0, opts.limit || 12);
+
       return {
         post: post,
         vector: vector,
         terms: Discovery.topTerms(vector, 8, idf),
         spheres: spheres,
         home: SubIndex.get(home) || null,
-        communities: scored.slice(0, opts.limit || 12),
+        communities: communities,
+        scored: scored,
+        filterDropped: filtered.dropped,
         pool: gathered.names.size,
         resolved: records.length - stubs.size,
+        sourceBoost: sourceBoost,
       };
     }
 
-    const minConfidence = opts.minConfidence == null ? 40 : opts.minConfidence;
+    const minConfidence = opts.minConfidence == null ? 45 : opts.minConfidence;
     let spheres = Discovery.rankSpheres(vector, {
       limit: opts.sphereLimit || 4,
       minConfidence: minConfidence,
+      minAbsolute: opts.minAbsolute == null
+        ? ((window.MatchLex && MatchLex.topicSeeds && MatchLex.topicSeeds.minAbsolute) || MIN_SPHERE_SIGNAL)
+        : opts.minAbsolute,
     });
 
     const partial = build(spheres);
@@ -1288,6 +1340,9 @@
     spheres = Discovery.rankSpheres(vector, {
       limit: opts.sphereLimit || 4,
       minConfidence: minConfidence,
+      minAbsolute: opts.minAbsolute == null
+        ? ((window.MatchLex && MatchLex.topicSeeds && MatchLex.topicSeeds.minAbsolute) || MIN_SPHERE_SIGNAL)
+        : opts.minAbsolute,
     });
 
     return build(spheres);

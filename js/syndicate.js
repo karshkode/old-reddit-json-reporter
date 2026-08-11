@@ -186,11 +186,26 @@
 
   /* Top cleared communities for a matched article (empty until suggest
    * or match has run). Used by the headline list to show destinations
-   * without opening each card. */
+   * without opening each card. Weak scores stay hidden — one strong
+   * pick beats three mediocre civic catch-alls. */
+  Syndicate.MIN_SUGGEST_SCORE = 35;
+
   Syndicate.suggestionsOf = function (id, limit) {
     const m = matchCache[id];
     if (!m || !m.candidates || !m.candidates.length) return [];
-    return m.candidates.slice(0, limit == null ? 3 : limit);
+    const floor = (window.Discovery && Discovery.MIN_SUGGEST_SCORE != null)
+      ? Discovery.MIN_SUGGEST_SCORE
+      : Syndicate.MIN_SUGGEST_SCORE;
+    const strong = m.candidates.filter((c) => (c.score == null ? 0 : c.score) >= floor);
+    if (!strong.length) return [];
+    const cap = limit == null ? 3 : limit;
+    /* Prefer a single clear leader when runners-up are far behind. */
+    if (strong.length >= 2 && cap > 1) {
+      const top = strong[0].score || 0;
+      const second = strong[1].score || 0;
+      if (top - second >= 12) return strong.slice(0, 1);
+    }
+    return strong.slice(0, cap);
   };
 
   Syndicate.clearMatches = function () {

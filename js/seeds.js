@@ -97,7 +97,20 @@
       "PlannedParenthood", "StrikeForRoe", "birthcontrol", "WomensHealth",
     ],
     immigration: [
-      "immigration", "USCIS", "DACA",
+      "immigration", "USCIS", "DACA", "immigrationreform", "AbolishICE",
+      "Undocumented", "asylum",
+    ],
+    /* Product recalls, FDA/FTC enforcement and consumer lawsuits — kept
+       separate from safety_net so "food recall" does not crown BasicIncome. */
+    consumer_protection: [
+      "ConsumerProtection", "personalfinance", "Scams", "fraudnet",
+      "foodsafety", "publichealth", "legaladvice",
+    ],
+    /* Election administration and voting-rights litigation, distinct from
+       GOTV rooms under voting. */
+    election_law: [
+      "electionreform", "Keep_Track", "law", "democracy", "VoteBlue",
+      "EndFPTP", "Ask_Lawyers", "Constitution",
     ],
     education: [
       "StudentLoans", "Teachers", "TeachersInTransition", "education",
@@ -304,7 +317,16 @@
       "dreamer", "daca", "refugee", "visa", "citizenship", "naturalization", "sanctuary",
       "uscis", "green card", "work permit", "tps", "humanitarian parole", "removal proceedings", "deport",
       "detainee", "cbp", "border patrol", "immigration court", "immigration bond", "credible fear",
-      "public charge", "e verify", "family separation", "undocumented", "mixed status", "sanctuary city"],
+      "public charge", "e verify", "family separation", "undocumented", "mixed status", "sanctuary city",
+      "immigration lawsuit", "asylum ban", "travel ban", "in-state tuition", "title 42", "temporary protected status"],
+    consumer_protection: ["recall", "product recall", "food recall", "salmonella", "listeria", "e coli",
+      "contamination", "contaminated", "fda recall", "consumer protection", "false advertising",
+      "class action", "product liability", "consumer fraud", "ftc", "cfpb", "foodborne", "food poisoning",
+      "outbreak", "unsafe product", "consumer rights", "adulterated"],
+    election_law: ["election lawsuit", "election law", "voting rights act", "vra", "consent decree",
+      "mail in ballot", "mail-in ballot", "election rules", "secretary of state", "board of elections",
+      "voter purge", "election interference", "election subversion", "fake elector", "doj lawsuit",
+      "voting rights lawsuit", "gerrymander lawsuit", "redistricting lawsuit", "preclearance"],
     education: ["education", "school", "schools", "student", "students", "loan", "loans", "debt", "forgiveness",
       "teacher", "teachers", "university", "college", "tuition", "curriculum", "schoolboard", "school board",
       "bookban", "book ban", "publicschool", "public school", "pell grant",
@@ -367,7 +389,7 @@
       "eligibility", "recertification", "work requirement", "benefits cliff", "poverty", "poverty line",
       "low income", "food insecurity", "food bank", "food pantry", "liheap", "child tax credit", "eitc",
       "basic income", "ubi", "guaranteed income", "cash assistance", "social security", "retirement", "pension",
-      "cost of living", "means testing", "hunger", "paycheck to paycheck"],
+      "cost of living", "means testing", "paycheck to paycheck", "snap benefits", "benefit cut"],
     tech_privacy: ["privacy", "surveillance", "data center", "datacenter", "server farm", "artificial intelligence",
       "algorithm", "algorithmic", "automation", "chatbot", "llm", "training data", "scraping",
       "facial recognition", "biometric", "tracking", "tracker", "gdpr", "data broker", "encryption", "backdoor",
@@ -423,6 +445,8 @@
     climate:          "Climate",
     reproductive:     "Reproductive rights",
     immigration:      "Immigration",
+    consumer_protection: "Consumer protection",
+    election_law:     "Election law",
     education:        "Education",
     housing:          "Housing",
     palestine_gaza:   "Palestine / Gaza",
@@ -517,6 +541,9 @@
   Seeds.spheresOf = function (subName) {
     if (!_subToSpheres) buildIndex();
     return _subToSpheres.get(String(subName || "").toLowerCase()) || [];
+  };
+  Seeds.invalidateIndex = function () {
+    _subToSpheres = null;
   };
   Seeds.isCatalogMember = function (subName) {
     return Seeds.spheresOf(subName).length > 0;

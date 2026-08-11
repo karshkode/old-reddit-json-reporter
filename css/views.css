@@ -1870,6 +1870,7 @@ body.sheet-open {
   align-items: center;
 }
 .syn-suggests.is-pending { opacity: 0.7; }
+.syn-suggests.is-weak .meta { color: var(--text-mute); font-size: var(--fs-2xs); }
 .syn-suggest {
   display: inline-flex;
   align-items: center;
