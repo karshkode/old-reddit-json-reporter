@@ -1744,6 +1744,23 @@ body.sheet-open {
   gap: var(--s-2);
   align-items: center;
 }
+.syn-playbook {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  min-width: 9.5rem;
+}
+.syn-playbook .group-label { margin: 0; font-size: 0.7rem; }
+.syn-playbook select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border, #ccc);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface, #fff);
+  color: inherit;
+  max-width: 14rem;
+}
 .syn-opml-label { cursor: pointer; margin: 0; }
 .syn-search-row {
   display: flex;

@@ -198,6 +198,98 @@
     return SubIndex.vectorFromText(text || "", 2);
   };
 
+  /* Named things worth searching the index for: bill numbers, civic
+   * acronyms, and Title-Case multi-word phrases from a headline. Used to
+   * widen the forPost candidate pool beyond sphere membership. */
+  const ENTITY_ACRONYMS = new Set([
+    "FDA", "EPA", "FTC", "CFPB", "ICE", "DHS", "DOJ", "USCIS", "SCOTUS",
+    "ACLU", "NAACP", "SEIU", "NLRB", "OSHA", "CDC", "NIH", "HUD", "FEC",
+    "DACA", "TPS", "CHIP", "SNAP", "WIC", "SSI", "SSDI", "ACA", "IRA",
+  ]);
+
+  Discovery.extractEntities = function (text) {
+    const raw = String(text || "");
+    if (!raw.trim()) return [];
+    const out = [];
+    const seen = new Set();
+    function push(s) {
+      const t = String(s || "").replace(/\s+/g, " ").trim();
+      if (t.length < 3 || t.length > 64) return;
+      const k = t.toLowerCase();
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(t);
+    }
+
+    const billRe = /\b(?:H\.?\s*R\.?|S\.|H\.?\s*Res\.?|H\.?\s*J\.?\s*Res\.?)\s*\d{1,5}\b/gi;
+    let m;
+    while ((m = billRe.exec(raw))) push(m[0]);
+
+    const acRe = /\b([A-Z]{3,6})\b/g;
+    while ((m = acRe.exec(raw))) {
+      if (ENTITY_ACRONYMS.has(m[1])) push(m[1]);
+    }
+
+    const skipLead = /^(The|This|That|With|From|After|Before|Under|Over|Into|About|When|What|Where|While|During|According|House|Senate|White|United|New|North|South|East|West)$/;
+    const tcRe = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g;
+    while ((m = tcRe.exec(raw))) {
+      const phrase = m[1];
+      const first = phrase.split(/\s+/)[0];
+      if (skipLead.test(first) && phrase.split(/\s+/).length < 3) continue;
+      push(phrase);
+    }
+    return out.slice(0, 12);
+  };
+
+  /* How well similar *link* posts already did in a candidate community.
+   * Uses the loaded campaign inventory (AppState) — cheap and offline.
+   * Optional ctx.linkPriors can supply archive-sampled values keyed by
+   * lowercase sub name when the live forPost pass warms them. */
+  Discovery.linkEngagementPrior = function (subName, artVec, opts) {
+    opts = opts || {};
+    const key = String(subName || "").toLowerCase();
+    if (!key || !artVec || !Object.keys(artVec).length) {
+      return { score: 0, n: 0, samples: 0 };
+    }
+    if (opts.priors && opts.priors[key] != null) {
+      const cached = opts.priors[key];
+      if (typeof cached === "number") return { score: clamp01(cached), n: 1, samples: 1, cached: true };
+      return {
+        score: clamp01(cached.score || 0),
+        n: cached.n || 0,
+        samples: cached.samples || 0,
+        cached: true,
+      };
+    }
+
+    const posts = (window.AppState && AppState.postsForSub)
+      ? AppState.postsForSub(subName)
+      : [];
+    const hits = [];
+    for (const p of posts) {
+      if (!p || p.is_self) continue;
+      const one = {};
+      SubIndex.addText(one, p.title || "", 3);
+      if (p.flair) SubIndex.addText(one, p.flair, 1);
+      if (!Object.keys(one).length) continue;
+      const sim = SubIndex.cosine(artVec, one);
+      if (sim < 0.08) continue;
+      const eng = clamp01(Math.log1p(Math.max(0, p.score || 0)) / Math.log1p(500));
+      hits.push({ sim: sim, eng: eng });
+    }
+    if (!hits.length) return { score: 0, n: 0, samples: posts.length };
+
+    hits.sort((a, b) => a.eng - b.eng);
+    const median = hits[Math.floor(hits.length / 2)].eng;
+    let best = 0;
+    for (const h of hits) best = Math.max(best, h.sim * h.eng);
+    return {
+      score: clamp01(0.55 * median + 0.45 * best),
+      n: hits.length,
+      samples: posts.length,
+    };
+  };
+
   /* ==================================================================
    * SPHERE PROFILES
    * ================================================================== */
@@ -442,6 +534,14 @@
     const subProfile = ctx.subProfiles && ctx.subProfiles[record.key];
     const engagement = engagementScore(record, subProfile);
 
+    /* Similar link posts in this sub (from inventory / warmed archive).
+     * Only moves the needle when we actually saw overlapping titles. */
+    const linkPrior = Discovery.linkEngagementPrior(record.display_name, ctx.vector, {
+      priors: ctx.linkPriors,
+    });
+    const linkFit = linkPrior.n > 0 ? linkPrior.score : 0;
+    const linkWeight = ctx.linkPriorWeight == null ? 1 : Number(ctx.linkPriorWeight) || 1;
+
     /* How many of the independent search angles turned this sub up. It
      * carries a little more weight than it used to: post mining was the
      * other corroborating signal, and the archive cannot search Reddit
@@ -470,10 +570,11 @@
     const popularityEffective = megaGeneric ? popularity * 0.2 : popularity;
 
     let raw =
-      0.38 * theme +
+      0.34 * theme +
       0.20 * sphereScore +
       0.10 * civic +
-      0.09 * engagement +
+      0.08 * engagement +
+      0.08 * linkFit * linkWeight +
       0.07 * popularityEffective +
       0.06 * queryBoost +
       catalogBoost;
@@ -514,6 +615,8 @@
         sphereLabel: bestSphere ? bestSphere.label : null,
         civic: civic,
         engagement: engagement,
+        linkFit: linkFit,
+        linkSamples: linkPrior.n,
         popularity: popularity,
         queryHits: queryHits,
         offtopic: offtopic,
@@ -529,6 +632,7 @@
         catalogSpheres: catalogSpheres, catalogAffinity: catalogAffinity,
         offtopic: offtopic,
         megaGeneric: megaGeneric, engagement: engagement,
+        linkFit: linkFit, linkSamples: linkPrior.n,
         subject: ctx.subject,
       }),
     };
@@ -574,6 +678,9 @@
     }
     if (s.queryHits >= 2) {
       out.push(`Matched ${s.queryHits} of the search angles independently`);
+    }
+    if (s.linkSamples > 0 && s.linkFit >= 0.25) {
+      out.push(`Similar link posts here have done well (${Math.round(s.linkFit * 100)}% prior from ${s.linkSamples} overlap${s.linkSamples === 1 ? "" : "s"})`);
     }
     if (record.subscribers) {
       const fmt = window.Util ? Util.fmtNum : (n) => String(n);
@@ -1151,6 +1258,11 @@
       throw new Error("This post has no readable text to match communities against.");
     }
 
+    const playbook = (window.MatchLex && MatchLex.playbook)
+      ? MatchLex.playbook(opts.playbook)
+      : null;
+    const linkPriors = Object.assign({}, opts.linkPriors || {});
+
     const home = String(post.subreddit || "").toLowerCase();
     const excludeSet = new Set([home].concat((opts.exclude || []).map((s) => String(s).toLowerCase())));
     excludeSet.delete("");
@@ -1168,11 +1280,15 @@
       .map((s) => String(s).toLowerCase())
       .filter((s) => s && !excludeSet.has(s)));
 
-    /* Candidate names come from three offline sources: the spheres the
-     * post text matches, the spheres the home sub is catalogued under
-     * (a labour post in a labour sub should surface labour siblings
-     * even when the title is too short to rank a sphere), and the
-     * nearest descriptions in whatever the index has already cached. */
+    const bodyText = (window.Util && Util.postBody)
+      ? Util.postBody(post)
+      : (post.selftext || post.body || "");
+    const entityBlob = [post.title, bodyText].filter(Boolean).join("\n");
+    const entities = Discovery.extractEntities(entityBlob);
+
+    /* Candidate names come from offline sources: the spheres the post
+     * text matches, home-sub siblings, topic/playbook seeds, entity
+     * hits in the local index, and nearest cached descriptions. */
     function gatherNames(spheres) {
       const names = new Map(); /* lowercase key -> display name */
       const via = new Map();   /* lowercase key -> sphere label */
@@ -1194,17 +1310,26 @@
         }
       }
       /* Syndicated articles: seed only the spheres the text actually
-       * ranked (via MatchLex.topicSeeds), falling back to media_news.
-       * Dumping progressive/democracy/voting into every headline is how
-       * a Tesla crash competed inside NeutralPolitics by construction. */
+       * ranked (via MatchLex.topicSeeds / playbook), falling back to
+       * media_news. Dumping progressive/democracy/voting into every
+       * headline is how a Tesla crash competed inside NeutralPolitics. */
       if (window.Seeds && (post.syndicated || !post.subreddit)) {
         const seedKeys = (window.MatchLex && MatchLex.seedKeysFor)
-          ? MatchLex.seedKeysFor(spheres)
+          ? MatchLex.seedKeysFor(spheres, opts.playbook)
           : ((spheres && spheres.length) ? spheres.map((s) => s.key) : ["media_news"]);
         for (const key of seedKeys) {
           if (!Seeds.ISSUE_SPHERES[key] && !Seeds.DEMOGRAPHIC_SPHERES[key]) continue;
           const label = Seeds.labelOf(key);
           for (const name of Seeds.expand([key]) || []) add(name, label);
+        }
+      }
+      for (const ent of entities) {
+        for (const record of SubIndex.searchLocal(ent, 4)) {
+          add(record.display_name, null);
+        }
+        const exact = String(ent).replace(/^r\//i, "");
+        if (window.Seeds && Seeds.isCatalogMember && Seeds.isCatalogMember(exact)) {
+          add(exact, null);
         }
       }
       for (const hit of SubIndex.nearest(vector, { exclude: [home], limit: 20 })) {
@@ -1250,6 +1375,9 @@
         const host = post.domain || "";
         sourceBoost = MatchLex.sourceBoost(host);
       }
+      if (playbook && playbook.sourceBoostScale != null && sourceBoost) {
+        sourceBoost *= Number(playbook.sourceBoostScale) || 1;
+      }
       const ctx = {
         vector: vector,
         idf: idf,
@@ -1257,6 +1385,10 @@
         subProfiles: (window.AppState && AppState.subProfiles) || {},
         subject: "post",
         sourceBoost: sourceBoost,
+        linkPriors: linkPriors,
+        linkPriorWeight: playbook && playbook.linkPriorWeight != null
+          ? playbook.linkPriorWeight
+          : 1,
       };
 
       const scored = records.map((r) => {
@@ -1286,6 +1418,8 @@
         vector: vector,
         terms: Discovery.topTerms(vector, 8, idf),
         spheres: spheres,
+        entities: entities,
+        playbook: playbook ? playbook.id : "default",
         home: SubIndex.get(home) || null,
         communities: communities,
         scored: scored,
@@ -1296,13 +1430,18 @@
       };
     }
 
-    const minConfidence = opts.minConfidence == null ? 45 : opts.minConfidence;
+    const defaultAbs = (window.MatchLex && MatchLex.topicSeeds && MatchLex.topicSeeds.minAbsolute) || MIN_SPHERE_SIGNAL;
+    const minAbsolute = opts.minAbsolute != null
+      ? opts.minAbsolute
+      : (playbook && playbook.minAbsolute != null ? playbook.minAbsolute : defaultAbs);
+    const minConfidence = opts.minConfidence != null
+      ? opts.minConfidence
+      : (playbook && playbook.minConfidence != null ? playbook.minConfidence : 45);
+
     let spheres = Discovery.rankSpheres(vector, {
       limit: opts.sphereLimit || 4,
       minConfidence: minConfidence,
-      minAbsolute: opts.minAbsolute == null
-        ? ((window.MatchLex && MatchLex.topicSeeds && MatchLex.topicSeeds.minAbsolute) || MIN_SPHERE_SIGNAL)
-        : opts.minAbsolute,
+      minAbsolute: minAbsolute,
     });
 
     const partial = build(spheres);
@@ -1334,15 +1473,63 @@
       clearTimeout(timer);
     }
 
+    /* Light archive sample for top candidates with no local link prior —
+     * a few scoped searches, not a site-wide crawl. */
+    if (opts.linkPriors !== false && window.Archive && Archive.fetchRedditUrl) {
+      const query = (Discovery.topTerms(vector, 3) || [])
+        .map((t) => (typeof t === "string" ? t : t.term))
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(" ");
+      const need = (partial.communities || [])
+        .filter((c) => c && c.name && !(linkPriors[String(c.name).toLowerCase()]))
+        .filter((c) => {
+          const local = Discovery.linkEngagementPrior(c.name, vector);
+          return local.n === 0;
+        })
+        .slice(0, 4);
+      if (query && need.length) {
+        await Util.pmap(need, 2, async (c) => {
+          try {
+            const url = `https://www.reddit.com/r/${encodeURIComponent(c.name)}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&limit=12&sort=relevance`;
+            const listing = await Archive.fetchRedditUrl(url);
+            const children = (listing && listing.data && listing.data.children) || [];
+            const hits = [];
+            for (const ch of children) {
+              const d = ch && ch.data;
+              if (!d || d.is_self) continue;
+              const one = {};
+              SubIndex.addText(one, d.title || "", 3);
+              if (!Object.keys(one).length) continue;
+              const sim = SubIndex.cosine(vector, one);
+              if (sim < 0.08) continue;
+              const eng = clamp01(Math.log1p(Math.max(0, d.score || 0)) / Math.log1p(500));
+              hits.push({ sim: sim, eng: eng });
+            }
+            if (!hits.length) return;
+            hits.sort((a, b) => a.eng - b.eng);
+            const median = hits[Math.floor(hits.length / 2)].eng;
+            let best = 0;
+            for (const h of hits) best = Math.max(best, h.sim * h.eng);
+            linkPriors[String(c.name).toLowerCase()] = {
+              score: clamp01(0.55 * median + 0.45 * best),
+              n: hits.length,
+              samples: children.length,
+            };
+          } catch (err) {
+            console.warn("[forPost] link prior sample:", c.name, err && err.message);
+          }
+        });
+      }
+    }
+
     /* Descriptions sharpen the sphere vectors, so the ranking is worth
      * redoing rather than reusing the offline guess. */
     Discovery.invalidateSpheres();
     spheres = Discovery.rankSpheres(vector, {
       limit: opts.sphereLimit || 4,
       minConfidence: minConfidence,
-      minAbsolute: opts.minAbsolute == null
-        ? ((window.MatchLex && MatchLex.topicSeeds && MatchLex.topicSeeds.minAbsolute) || MIN_SPHERE_SIGNAL)
-        : opts.minAbsolute,
+      minAbsolute: minAbsolute,
     });
 
     return build(spheres);

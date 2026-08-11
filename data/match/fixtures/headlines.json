@@ -1,0 +1,51 @@
+[
+  {
+    "id": "food-recall",
+    "title": "FDA announces salmonella recall of frozen chicken dinners sold nationwide",
+    "summary": "The agency said contaminated poultry products may cause foodborne illness.",
+    "expectSpheres": ["consumer_protection"],
+    "avoidSpheres": ["safety_net", "progressive", "voting"]
+  },
+  {
+    "id": "election-lawsuit",
+    "title": "DOJ files voting rights lawsuit over voter purge and mail-in ballot rules",
+    "summary": "The complaint cites the Voting Rights Act and a consent decree dispute.",
+    "expectSpheres": ["election_law", "voting", "democracy"],
+    "avoidSpheres": ["consumer_protection", "climate"]
+  },
+  {
+    "id": "labor-win",
+    "title": "Starbucks workers win union recognition after nationwide strike wave",
+    "summary": "Baristas celebrate a labor board ruling and new organizing momentum.",
+    "expectSpheres": ["labor"],
+    "avoidSpheres": ["consumer_protection", "election_law"]
+  },
+  {
+    "id": "climate-epa",
+    "title": "EPA finalizes methane rule for oil and gas as climate advocates cheer",
+    "summary": "The Clean Air Act rule targets emissions from drilling and pipelines.",
+    "expectSpheres": ["climate"],
+    "avoidSpheres": ["immigration", "safety_net"]
+  },
+  {
+    "id": "ice-raid",
+    "title": "ICE raid at factory sparks protest over asylum and deportation policy",
+    "summary": "Advocates condemn immigration enforcement and call for sanctuary protections.",
+    "expectSpheres": ["immigration"],
+    "avoidSpheres": ["consumer_protection", "climate"]
+  },
+  {
+    "id": "celebrity-noise",
+    "title": "Pop star announces surprise album and world tour dates",
+    "summary": "Fans flood social media after the celebrity teases a new streaming release.",
+    "expectSpheres": [],
+    "avoidSpheres": ["progressive", "democracy", "voting", "labor"]
+  },
+  {
+    "id": "sports-noise",
+    "title": "NBA playoffs: underdog wins game seven in last-second buzzer beater",
+    "summary": "Fantasy basketball scores spiked after the basketball upset.",
+    "expectSpheres": [],
+    "avoidSpheres": ["progressive", "voting", "labor"]
+  }
+]

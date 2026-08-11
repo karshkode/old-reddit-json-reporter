@@ -29,6 +29,21 @@
     penalty: 0.05,
   };
 
+  const FALLBACK_PLAYBOOKS = {
+    default: {
+      id: "default",
+      label: "Balanced",
+      hint: "Topic-conditioned seeds from the headline",
+      seedKeys: null,
+      minAbsolute: null,
+      minConfidence: null,
+      sourceBoostScale: 1,
+      linkPriorWeight: 1,
+    },
+  };
+
+  let playbooks = Object.assign({}, FALLBACK_PLAYBOOKS);
+
   MatchLex.ready = function () { return ready; };
   MatchLex.version = function () { return version; };
 
@@ -51,6 +66,16 @@
     if (kind === "preferred") return tiers.boost;
     if (kind === "hostile") return -tiers.penalty;
     return 0;
+  };
+
+  MatchLex.playbooks = function () {
+    return Object.keys(playbooks).map((id) => Object.assign({ id: id }, playbooks[id]));
+  };
+
+  MatchLex.playbook = function (id) {
+    const key = id && playbooks[id] ? id : "default";
+    const pb = playbooks[key] || FALLBACK_PLAYBOOKS.default;
+    return Object.assign({ id: key }, pb);
   };
 
   async function fetchJson(name) {
@@ -93,9 +118,33 @@
     };
   }
 
+  function applyPlaybooks(data) {
+    if (!data || typeof data !== "object") return;
+    const next = Object.assign({}, FALLBACK_PLAYBOOKS);
+    for (const [id, raw] of Object.entries(data)) {
+      if (id.charAt(0) === "_") continue;
+      if (!raw || typeof raw !== "object") continue;
+      next[id] = Object.assign({ id: id }, FALLBACK_PLAYBOOKS.default, raw, { id: id });
+    }
+    playbooks = next;
+  }
+
   /* Which issue spheres to dump into a syndicated article's candidate
-   * pool, given the spheres Discovery already ranked for its text. */
-  MatchLex.seedKeysFor = function (rankedSpheres) {
+   * pool. Playbooks with an explicit seedKeys list replace the topic map;
+   * otherwise ranked spheres drive topic-seeds.json extras. */
+  MatchLex.seedKeysFor = function (rankedSpheres, playbookId) {
+    const pb = MatchLex.playbook(playbookId);
+    if (pb && Array.isArray(pb.seedKeys) && pb.seedKeys.length) {
+      const keys = [];
+      const seen = new Set();
+      for (const k of pb.seedKeys) {
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        keys.push(k);
+      }
+      return keys;
+    }
+
     const cfg = MatchLex.topicSeeds;
     const floor = cfg.minAbsolute == null ? 0.035 : cfg.minAbsolute;
     const keys = [];
@@ -123,18 +172,20 @@
     if (loading) return loading;
     loading = (async () => {
       try {
-        const [ver, triggers, offtopic, sources, topics] = await Promise.all([
+        const [ver, triggers, offtopic, sources, topics, books] = await Promise.all([
           fetchJson("version.json").catch(() => null),
           fetchJson("sphere-triggers.json").catch(() => null),
           fetchJson("offtopic-terms.json").catch(() => null),
           fetchJson("source-tiers.json").catch(() => null),
           fetchJson("topic-seeds.json").catch(() => null),
+          fetchJson("playbooks.json").catch(() => null),
         ]);
         if (ver) version = ver;
         applyTriggers(triggers);
         applyOfftopic(offtopic);
         applySourceTiers(sources);
         applyTopicSeeds(topics);
+        applyPlaybooks(books);
         if (window.Seeds && typeof Seeds.invalidateIndex === "function") Seeds.invalidateIndex();
         if (window.Discovery && typeof Discovery.invalidateSpheres === "function") {
           Discovery.invalidateSpheres();

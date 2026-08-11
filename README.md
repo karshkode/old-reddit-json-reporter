@@ -258,8 +258,11 @@ Politics/News folders.
 
 Destination quality is driven by versioned lexicons in
 [`data/match/`](data/match/) (triggers, offtopic terms, source tiers,
-topic→sphere seeds). See [`data/match/README.md`](data/match/README.md)
-for the daily agent update checklist.
+topic→sphere seeds, campaign playbooks). Matching also uses a link
+engagement prior from loaded posts (and a light archive sample on live
+match) plus entity search to widen the candidate pool. See
+[`data/match/README.md`](data/match/README.md) for the daily agent loop
+(`node scripts/propose-lexicon-update.mjs`) and playbook notes.
 
 Sync can **Drop posts older than window** to prune inventory to the
 Settings time window, and every sync unions a page of `new` so posts

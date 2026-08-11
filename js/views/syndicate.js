@@ -59,6 +59,7 @@
     renderList();
     renderDetail();
     paintSuggestButton();
+    paintPlaybook();
     const sub = Dom.byId("topbar-title-sub");
     if (sub && Router.current() === "syndicate") {
       sub.hidden = false;
@@ -343,6 +344,29 @@
     btn.textContent = busy ? "Suggesting…" : "Suggest destinations";
   }
 
+  function paintPlaybook() {
+    const sel = Dom.byId("syndicate-playbook");
+    if (!sel || !Syndicate.playbook) return;
+    const books = (window.MatchLex && MatchLex.playbooks)
+      ? MatchLex.playbooks()
+      : null;
+    if (books && books.length) {
+      const cur = sel.value;
+      const html = books.map((b) =>
+        `<option value="${esc(b.id)}" title="${esc(b.hint || "")}">${esc(b.label || b.id)}</option>`
+      ).join("");
+      if (sel.dataset.painted !== String(books.length)) {
+        sel.innerHTML = html;
+        sel.dataset.painted = String(books.length);
+      }
+      if (cur && !books.some((b) => b.id === cur)) {
+        /* keep going */
+      }
+    }
+    const want = Syndicate.playbook();
+    if (sel.value !== want) sel.value = want;
+  }
+
   /* Rank one article. Offline suggestions can already be on the card;
    * opening the detail upgrades with live descriptions + archive
    * uniqueness for unique_link rooms. */
@@ -565,6 +589,23 @@
     const suggestBtn = Dom.byId("syndicate-suggest");
     if (suggestBtn) {
       suggestBtn.addEventListener("click", () => suggestVisible({ toast: true, force: false }));
+    }
+
+    const playbook = Dom.byId("syndicate-playbook");
+    if (playbook) {
+      playbook.addEventListener("change", () => {
+        Syndicate.setPlaybook(playbook.value || "default");
+        const pb = window.MatchLex && MatchLex.playbook
+          ? MatchLex.playbook(Syndicate.playbook())
+          : null;
+        Util.toast(pb
+          ? `Playbook · ${pb.label}`
+          : "Playbook updated");
+        View.render();
+        if (filtered().length) {
+          suggestVisible({ toast: false, announce: true, force: true });
+        }
+      });
     }
 
     const search = Dom.byId("syndicate-search");
