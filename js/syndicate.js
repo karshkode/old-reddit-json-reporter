@@ -5,11 +5,10 @@
  * answers the next question: given a headline and whatever body the
  * feed carried, which Reddit communities take that kind of article.
  *
- * The default catalog is the Politics and News folders from a Feedly
- * OPML export. Sports, podcasts and pop/entertainment folders are left
- * out on purpose — this tool's discovery engine is civic, and matching
- * Yankees recaps into progressive spheres would only invent confidence.
- * Tech is kept as an optional folder (off by default).
+ * The default catalog is Politics and News folders from an OPML export.
+ * Sports, podcasts and pop/entertainment folders are left out on purpose
+ * — discovery is civic, and matching sports recaps into progressive
+ * spheres would only invent confidence. Tech is optional (off by default).
  *
  * Feeds do not send CORS headers, so a browser cannot read them
  * directly. Fetch goes through a short chain of public readers
@@ -27,7 +26,7 @@
   const ARTICLE_TTL_MS = 24 * 60 * 60 * 1000;
 
   /* Curated from data/subscriptions.opml. Politics + News on by
-   * default; Tech available; Yankees / Giants / Listen / pop skipped. */
+   * default; Tech available; sports / podcasts / pop folders skipped. */
   const CATALOG = [
     {"title":"TechCrunch","xmlUrl":"http://feeds.feedburner.com/Techcrunch","htmlUrl":"https://techcrunch.com/","category":"Tech","defaultOn":false,"altUrl":"https://feeds.feedburner.com/Techcrunch","id":"2bce280c81"},
     {"title":"TheAppleBlog — Apple and iOS News, Tips and Reviews","xmlUrl":"http://theappleblog.com/feed/","htmlUrl":"https://gigaom.com/","category":"Tech","defaultOn":false,"altUrl":"https://theappleblog.com/feed/","id":"f6c179c799"},
@@ -127,6 +126,7 @@
   let matchCache = {}; /* article id -> match result */
   let pulling = false;
   let persistHeadlinesTimer = null;
+  let restoredFromCache = false;
 
   function loadStore() {
     try {
@@ -240,9 +240,16 @@
         blocked: Array.isArray(packed.blocked) ? packed.blocked : [],
       });
     }
+    restoredFromCache = articles.length > 0;
   }
 
   hydrateHeadlines();
+
+  Syndicate.restoredFromCache = function () { return restoredFromCache; };
+  Syndicate.cacheSavedAt = function () {
+    const t = store.headlineCache && store.headlineCache.savedAt;
+    return t ? Number(t) : 0;
+  };
 
   Syndicate.catalog = function () {
     const custom = Array.isArray(store.customFeeds) ? store.customFeeds : [];
@@ -388,7 +395,7 @@
 
   Syndicate.importOpml = function (text) {
     const parsed = Syndicate.parseOpml(text);
-    if (!parsed.length) throw new Error("No Politics/News feeds found in that OPML (sports and entertainment folders are skipped).");
+    if (!parsed.length) throw new Error("No Politics or News feeds found in that OPML.");
     store.customFeeds = parsed;
     /* Turn on every category that arrived, except Tech stays off unless
      * the user flips it — same default as the shipped catalog. */
@@ -680,6 +687,7 @@
           if (prevMatches[a.id]) nextMatches[a.id] = prevMatches[a.id];
         }
         matchCache = nextMatches;
+        restoredFromCache = false;
         persistHeadlinesNow();
       }
       /* If every feed failed, keep the cached list so a flaky pull does

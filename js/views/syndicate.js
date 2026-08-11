@@ -2,8 +2,8 @@
  * SYNDICATE VIEW
  * ---------------------------------------------------------------------
  * Headlines in, communities out. Pull Politics/News feeds from the
- * curated Feedly catalog (or a fresh OPML), read keywords from each
- * title and summary, and rank where the article should be submitted.
+ * curated catalog (or a fresh OPML), read keywords from each title and
+ * summary, and rank where the article should be submitted.
  * ===================================================================== */
 (function () {
   "use strict";
@@ -133,7 +133,7 @@
         empty.hidden = false;
         empty.innerHTML = total
           ? `<strong>No matches</strong><p>Nothing in the pulled headlines matches “${esc(searchQuery)}”.</p>`
-          : `<strong>No headlines yet</strong><p>Tap <em>Pull latest</em> to read the enabled folders, or import a Feedly OPML. Yankees, Giants and other entertainment lists stay out.</p>`;
+          : `<strong>No headlines yet</strong><p>Tap <em>Pull latest</em> to read the enabled folders, or import an OPML feed list. Sports and entertainment folders are skipped on import.</p>`;
       }
       return;
     }
@@ -643,7 +643,7 @@
         try {
           const text = await f.text();
           const n = Syndicate.importOpml(text);
-          Util.toast(`Imported ${n.length} feeds from OPML (sports/entertainment skipped)`);
+          Util.toast(`Imported ${n.length} feeds from OPML`);
           Dom.byId("syndicate-status").textContent = `${n.length} feeds from ${f.name}`;
           View.render();
         } catch (err) {
@@ -682,8 +682,11 @@
        * strongest card and only re-suggest headlines that never matched. */
       if (!selectedId && filtered()[0]) selectedId = filtered()[0].id;
       const status = Dom.byId("syndicate-status");
-      if (status && !status.textContent) {
-        status.textContent = `${Util.fmtNum(Syndicate.articles().length)} headlines restored from cache (kept 24h)`;
+      if (status && Syndicate.restoredFromCache && Syndicate.restoredFromCache()) {
+        const when = Syndicate.cacheSavedAt && Syndicate.cacheSavedAt()
+          ? Util.relTime(Math.floor(Syndicate.cacheSavedAt() / 1000))
+          : "";
+        status.textContent = `${Util.fmtNum(Syndicate.articles().length)} headlines from cache${when ? ` · saved ${when}` : ""} · kept 24h`;
       }
       queueMicrotask(() => {
         const missing = filtered().filter((a) => !Syndicate.matchOf(a.id));
