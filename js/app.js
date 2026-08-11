@@ -3972,6 +3972,17 @@
     safeRun("bind", bind);
     safeRun("actionMenus", () => Dom.wireActionMenus());
     safeRun("wireTopbarHeightVar", wireTopbarHeightVar);
+    safeRun("matchLex", () => {
+      /* Overlay data/match/*.json lexicons before the first Syndicate /
+       * Discovery rank so daily trigger/source updates take effect. */
+      if (window.MatchLex && MatchLex.load) {
+        MatchLex.load().then(() => {
+          if (Router.current() === "syndicate" && window.SyndicateView) {
+            try { SyndicateView.render(); } catch (_) {}
+          }
+        }).catch(() => {});
+      }
+    });
     safeRun("subIndex", () => {
       /* Warm the local subreddit index so the catalog can show real
        * member counts and similarity search has something to compare

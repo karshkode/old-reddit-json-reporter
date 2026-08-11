@@ -126,12 +126,12 @@
     }
     if (empty) empty.hidden = true;
 
-    const matched = list.filter((a) => Syndicate.matchOf(a.id)).length;
+    const matched = list.filter((a) => Syndicate.suggestionsOf(a.id, 1).length).length;
     if (meta && total && !searchQuery) {
       if (Syndicate.suggesting && Syndicate.suggesting()) {
         meta.textContent = `${Util.fmtNum(total)} articles · suggesting destinations…`;
       } else if (matched) {
-        meta.textContent = `${Util.fmtNum(total)} articles · ${Util.fmtNum(matched)} with destinations`;
+        meta.textContent = `${Util.fmtNum(total)} articles · ${Util.fmtNum(matched)} with strong destinations`;
       }
     }
 
@@ -142,18 +142,22 @@
       const keyHtml = keys.length
         ? `<div class="syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>`
         : "";
+      const cached = Syndicate.matchOf(a.id);
       const tips = Syndicate.suggestionsOf(a.id, 3);
-      const tipHtml = tips.length
-        ? `<div class="syn-suggests" title="Where this article should go">
+      let tipHtml = "";
+      if (tips.length) {
+        tipHtml = `<div class="syn-suggests" title="Where this article should go">
              ${tips.map((c, i) => {
                const name = c.name || c.key;
                const score = c.score != null ? Math.round(c.score) : "";
                return `<span class="syn-suggest${i === 0 ? " is-top" : ""}">r/${esc(name)}${score !== "" ? `<em>${score}</em>` : ""}</span>`;
              }).join("")}
-           </div>`
-        : (matchBusy === a.id
-          ? `<div class="syn-suggests is-pending"><span class="meta">Matching…</span></div>`
-          : "");
+           </div>`;
+      } else if (matchBusy === a.id) {
+        tipHtml = `<div class="syn-suggests is-pending"><span class="meta">Matching…</span></div>`;
+      } else if (cached) {
+        tipHtml = `<div class="syn-suggests is-weak"><span class="meta">No strong destination</span></div>`;
+      }
       const thumb = a.image
         ? `<img class="syn-thumb" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
         : `<div class="syn-thumb syn-thumb-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
@@ -227,7 +231,11 @@
   }
 
   function matchHtml(result, post) {
-    const cands = result.candidates || [];
+    const floor = (window.Discovery && Discovery.MIN_SUGGEST_SCORE != null)
+      ? Discovery.MIN_SUGGEST_SCORE
+      : (Syndicate.MIN_SUGGEST_SCORE || 35);
+    const allCands = result.candidates || [];
+    const cands = allCands.filter((c) => (c.score == null ? 0 : c.score) >= floor);
     const blocked = result.blocked || [];
     const spheres = (result.spheres || []).slice(0, 4);
     const sphereBit = spheres.length
@@ -237,10 +245,10 @@
       : "";
 
     if (!cands.length && !blocked.length) {
-      return `${sphereBit}<p class="focus-status">No communities cleared the bar for this headline. Try loading a related sphere from Communities.</p>`;
+      return `${sphereBit}<p class="focus-status">No strong destination for this headline (need fit ≥ ${floor}). Try a related sphere from Communities, or Refresh match after Sync.</p>`;
     }
 
-    const rows = cands.slice(0, 10).map((c) => {
+    const rows = cands.slice(0, 8).map((c) => {
       const name = c.name || c.key;
       const score = c.score != null ? Math.round(c.score) : (c.fit != null ? Math.round(c.fit) : "—");
       const reasons = (c.overlapTerms || []).slice(0, 4).map((t) =>
