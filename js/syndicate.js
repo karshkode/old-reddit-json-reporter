@@ -127,6 +127,7 @@
   let matchCache = {}; /* article id -> match result */
   let pulling = false;
   let persistHeadlinesTimer = null;
+  let restoredFromCache = false;
 
   function loadStore() {
     try {
@@ -240,9 +241,16 @@
         blocked: Array.isArray(packed.blocked) ? packed.blocked : [],
       });
     }
+    restoredFromCache = articles.length > 0;
   }
 
   hydrateHeadlines();
+
+  Syndicate.restoredFromCache = function () { return restoredFromCache; };
+  Syndicate.cacheSavedAt = function () {
+    const t = store.headlineCache && store.headlineCache.savedAt;
+    return t ? Number(t) : 0;
+  };
 
   Syndicate.catalog = function () {
     const custom = Array.isArray(store.customFeeds) ? store.customFeeds : [];
@@ -388,7 +396,7 @@
 
   Syndicate.importOpml = function (text) {
     const parsed = Syndicate.parseOpml(text);
-    if (!parsed.length) throw new Error("No Politics/News feeds found in that OPML (sports and entertainment folders are skipped).");
+    if (!parsed.length) throw new Error("No Politics or News feeds found in that OPML.");
     store.customFeeds = parsed;
     /* Turn on every category that arrived, except Tech stays off unless
      * the user flips it — same default as the shipped catalog. */
@@ -680,6 +688,7 @@
           if (prevMatches[a.id]) nextMatches[a.id] = prevMatches[a.id];
         }
         matchCache = nextMatches;
+        restoredFromCache = false;
         persistHeadlinesNow();
       }
       /* If every feed failed, keep the cached list so a flaky pull does
