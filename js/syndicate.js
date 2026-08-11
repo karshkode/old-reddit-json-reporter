@@ -134,6 +134,7 @@
       enabledCategories: { Politics: true, News: true, Tech: false },
       customFeeds: [], /* from OPML import, same shape as CATALOG */
       disabledFeedIds: [],
+      playbook: "default",
     };
   }
 
@@ -183,6 +184,21 @@
   Syndicate.articles = function () { return articles.slice(); };
   Syndicate.pulling = function () { return pulling; };
   Syndicate.matchOf = function (id) { return matchCache[id] || null; };
+
+  Syndicate.playbook = function () {
+    const id = store.playbook || "default";
+    if (window.MatchLex && MatchLex.playbook) return MatchLex.playbook(id).id;
+    return id;
+  };
+
+  Syndicate.setPlaybook = function (id) {
+    const next = String(id || "default");
+    if (store.playbook === next) return;
+    store.playbook = next;
+    persist();
+    /* Seed maps change with the playbook — old ranks are misleading. */
+    matchCache = {};
+  };
 
   /* Top cleared communities for a matched article (empty until suggest
    * or match has run). Used by the headline list to show destinations
@@ -681,6 +697,7 @@
       related = await Discovery.forPost(post, {
         limit: opts.limit || 12,
         include: include,
+        playbook: opts.playbook || Syndicate.playbook(),
         live: opts.live !== false && !(window.Demo && Demo.isActive()),
         onPartial: (partial) => {
           matchCache[article.id] = pack(partial);
@@ -738,6 +755,7 @@
             skipArchive: opts.skipArchive !== false,
             limit: opts.limit || 8,
             force: !!opts.force,
+            playbook: opts.playbook || Syndicate.playbook(),
             onPartial: opts.onPartial,
           });
         } catch (err) {

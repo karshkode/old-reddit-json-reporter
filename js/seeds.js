@@ -74,13 +74,13 @@
     healthcare: [
       "MedicareForAll", "healthcare", "HealthInsurance", "medicare",
       "Medicaid", "MedicalBill", "publichealth", "medicine", "AskDocs",
-      "nursing",
+      "nursing", "Health", "diabetes", "cancer", "healthIT",
     ],
     labor: [
       "WorkReform", "antiwork", "union", "Unions", "unionsolidarity",
       "labor", "workingclass", "WorkersRights", "WorkersStrikeBack",
       "Workers_Revolt", "IWW", "EmploymentLaw", "LaborLaw", "WorkersComp",
-      "AmazonFC", "starbucksbaristas",
+      "AmazonFC", "starbucksbaristas", "Unionize", "gigwork", "UPSERS",
     ],
     voting: [
       "VoteDEM", "VoteBlue", "Keep_Track", "EndFPTP", "democracy",
@@ -98,26 +98,30 @@
     ],
     immigration: [
       "immigration", "USCIS", "DACA", "immigrationreform", "AbolishICE",
-      "Undocumented", "asylum",
+      "Undocumented", "asylum", "ImmigrationLaw", "Refugees", "Dreamers",
     ],
     /* Product recalls, FDA/FTC enforcement and consumer lawsuits — kept
        separate from safety_net so "food recall" does not crown BasicIncome. */
     consumer_protection: [
       "ConsumerProtection", "personalfinance", "Scams", "fraudnet",
-      "foodsafety", "publichealth", "legaladvice",
+      "foodsafety", "publichealth", "legaladvice", "AskLegal",
+      "povertyfinance", "CustomerService",
     ],
     /* Election administration and voting-rights litigation, distinct from
        GOTV rooms under voting. */
     election_law: [
       "electionreform", "Keep_Track", "law", "democracy", "VoteBlue",
-      "EndFPTP", "Ask_Lawyers", "Constitution",
+      "EndFPTP", "Ask_Lawyers", "Constitution", "supremecourt", "scotus",
+      "Voting", "RankedChoiceVoting",
     ],
     education: [
       "StudentLoans", "Teachers", "TeachersInTransition", "education",
       "Professors", "academia", "AskAcademia", "CollegeRant",
+      "StudentLoanForgiveness",
     ],
     housing: [
       "Renters", "Tenant", "TenantHelp", "LandlordLove", "homeless", "yimby",
+      "housing", "affordablehousing", "TenantUnion",
     ],
     palestine_gaza: [
       "Palestine", "palestinenews", "Gaza", "IsraelPalestine", "jewishleft",
