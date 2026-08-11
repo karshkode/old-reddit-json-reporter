@@ -1752,14 +1752,25 @@ body.sheet-open {
   min-width: 9.5rem;
 }
 .syn-playbook .group-label { margin: 0; font-size: 0.7rem; }
+/* Match other selects (--bg-elev-2 / --text). The old rule used a
+ * non-existent --surface token that fell back to #fff, so Safari kept
+ * light text on a white field. Use background-color so base.css's
+ * chevron background-image still shows. */
 .syn-playbook select {
   font: inherit;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border, #ccc);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--surface, #fff);
-  color: inherit;
+  font-size: var(--fs-sm);
+  padding: 0.35rem var(--s-6) 0.35rem 0.5rem;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-elev-2);
+  color: var(--text);
   max-width: 14rem;
+  color-scheme: dark;
+}
+html[data-theme="light"] .syn-playbook select,
+html.theme-light .syn-playbook select {
+  color-scheme: light;
 }
 .syn-opml-label { cursor: pointer; margin: 0; }
 .syn-search-row {
