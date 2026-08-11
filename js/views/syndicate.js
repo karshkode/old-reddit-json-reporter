@@ -2,8 +2,8 @@
  * SYNDICATE VIEW
  * ---------------------------------------------------------------------
  * Headlines in, communities out. Pull Politics/News feeds from the
- * curated Feedly catalog (or a fresh OPML), read keywords from each
- * title and summary, and rank where the article should be submitted.
+ * curated catalog (or a fresh OPML), read keywords from each title and
+ * summary, and rank where the article should be submitted.
  * ===================================================================== */
 (function () {
   "use strict";

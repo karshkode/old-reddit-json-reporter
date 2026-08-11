@@ -5,11 +5,10 @@
  * answers the next question: given a headline and whatever body the
  * feed carried, which Reddit communities take that kind of article.
  *
- * The default catalog is the Politics and News folders from a Feedly
- * OPML export. Sports, podcasts and pop/entertainment folders are left
- * out on purpose — this tool's discovery engine is civic, and matching
- * Yankees recaps into progressive spheres would only invent confidence.
- * Tech is kept as an optional folder (off by default).
+ * The default catalog is Politics and News folders from an OPML export.
+ * Sports, podcasts and pop/entertainment folders are left out on purpose
+ * — discovery is civic, and matching sports recaps into progressive
+ * spheres would only invent confidence. Tech is optional (off by default).
  *
  * Feeds do not send CORS headers, so a browser cannot read them
  * directly. Fetch goes through a short chain of public readers
@@ -27,7 +26,7 @@
   const ARTICLE_TTL_MS = 24 * 60 * 60 * 1000;
 
   /* Curated from data/subscriptions.opml. Politics + News on by
-   * default; Tech available; Yankees / Giants / Listen / pop skipped. */
+   * default; Tech available; sports / podcasts / pop folders skipped. */
   const CATALOG = [
     {"title":"TechCrunch","xmlUrl":"http://feeds.feedburner.com/Techcrunch","htmlUrl":"https://techcrunch.com/","category":"Tech","defaultOn":false,"altUrl":"https://feeds.feedburner.com/Techcrunch","id":"2bce280c81"},
     {"title":"TheAppleBlog — Apple and iOS News, Tips and Reviews","xmlUrl":"http://theappleblog.com/feed/","htmlUrl":"https://gigaom.com/","category":"Tech","defaultOn":false,"altUrl":"https://theappleblog.com/feed/","id":"f6c179c799"},
