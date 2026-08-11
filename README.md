@@ -240,7 +240,7 @@ clickbait), and **where else this post could go** — see
 ### Syndicate
 
 Headlines in, communities out. The default catalog is the **Politics**
-and **News** folders from a Feedly OPML export (`data/subscriptions.opml`);
+and **News** folders from an OPML export (`data/subscriptions.opml`);
 sports, podcasts and pop/entertainment folders are skipped, and **Tech**
 is available but off until you turn it on.
 
@@ -256,7 +256,7 @@ destination chips only (fit ≥ 35). Matching uses the same path as
 Where-next on a synthetic link post — format rules and archive uniqueness
 apply — and **Open in Plan** carries that match into the dashboard Plan
 tab (Briefing stays on its own tab). Extra civic desks (ProPublica,
-Democracy Now, The Nation, NPR Politics, …) ship alongside the Feedly
+Democracy Now, The Nation, NPR Politics, …) ship alongside the default
 Politics/News folders.
 
 Destination quality is driven by versioned lexicons in
