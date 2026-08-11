@@ -23,6 +23,8 @@
   const STORAGE_KEY = "rj.syndicate";
   const PER_FEED = 8;
   const FEED_CONCURRENCY = 3;
+  /* Headlines survive page refresh in localStorage this long, then drop. */
+  const ARTICLE_TTL_MS = 24 * 60 * 60 * 1000;
 
   /* Curated from data/subscriptions.opml. Politics + News on by
    * default; Tech available; Yankees / Giants / Listen / pop skipped. */
@@ -121,9 +123,10 @@
    * ------------------------------------------------------------------ */
 
   let store = loadStore();
-  let articles = []; /* newest first, across enabled feeds */
+  let articles = []; /* strength-sorted in the view; pull keeps newest-first */
   let matchCache = {}; /* article id -> match result */
   let pulling = false;
+  let persistHeadlinesTimer = null;
 
   function loadStore() {
     try {
@@ -142,6 +145,104 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }
     catch (_) {}
   }
+
+  function demoActive() {
+    return !!(window.Demo && Demo.isActive && Demo.isActive());
+  }
+
+  /* Compact match rows so a refresh can restore destination chips / sort
+   * without re-running Discovery for every headline immediately. */
+  function serializeMatch(m) {
+    if (!m) return null;
+    return {
+      candidates: (m.candidates || []).slice(0, 8).map((c) => ({
+        name: c.name || c.key,
+        key: c.key || c.name,
+        score: c.score,
+        blocked: !!c.blocked,
+      })),
+      blocked: (m.blocked || []).slice(0, 6).map((c) => ({
+        name: c.name || c.key,
+        key: c.key || c.name,
+        score: c.score,
+        blocked: true,
+        alreadyPosted: c.alreadyPosted
+          ? { source: c.alreadyPosted.source || "archive" }
+          : null,
+      })),
+      spheres: (m.spheres || []).slice(0, 4).map((s) => ({
+        key: s.key,
+        label: s.label,
+        confidence: s.confidence,
+      })),
+      keywords: (m.keywords || m.terms || []).slice(0, 10),
+      archiveChecked: !!m.archiveChecked,
+    };
+  }
+
+  function persistHeadlinesNow() {
+    if (demoActive()) return;
+    try {
+      const matches = {};
+      for (const a of articles) {
+        if (!a || !a.id) continue;
+        const packed = serializeMatch(matchCache[a.id]);
+        if (packed) matches[a.id] = packed;
+      }
+      store.headlineCache = {
+        savedAt: Date.now(),
+        articles: articles.map((a) => ({
+          id: a.id,
+          title: a.title,
+          link: a.link,
+          url_canonical: a.url_canonical,
+          summary: a.summary,
+          body: a.body,
+          published: a.published,
+          image: a.image,
+          source: a.source,
+          feedId: a.feedId,
+          category: a.category,
+        })),
+        matches: matches,
+      };
+      persist();
+    } catch (err) {
+      console.warn("[syndicate] could not cache headlines:", err && err.message);
+    }
+  }
+
+  function persistHeadlinesSoon() {
+    if (persistHeadlinesTimer) clearTimeout(persistHeadlinesTimer);
+    persistHeadlinesTimer = setTimeout(() => {
+      persistHeadlinesTimer = null;
+      persistHeadlinesNow();
+    }, 400);
+  }
+
+  function hydrateHeadlines() {
+    if (demoActive()) return;
+    const cache = store.headlineCache;
+    if (!cache || !Array.isArray(cache.articles) || !cache.articles.length) return;
+    if (!cache.savedAt || (Date.now() - Number(cache.savedAt)) > ARTICLE_TTL_MS) {
+      delete store.headlineCache;
+      persist();
+      return;
+    }
+    articles = cache.articles.filter((a) => a && a.id && (a.title || a.link));
+    matchCache = {};
+    const matches = cache.matches && typeof cache.matches === "object" ? cache.matches : {};
+    for (const a of articles) {
+      const packed = matches[a.id];
+      if (!packed) continue;
+      matchCache[a.id] = Object.assign({ articleId: a.id, fromCache: true }, packed, {
+        candidates: Array.isArray(packed.candidates) ? packed.candidates : [],
+        blocked: Array.isArray(packed.blocked) ? packed.blocked : [],
+      });
+    }
+  }
+
+  hydrateHeadlines();
 
   Syndicate.catalog = function () {
     const custom = Array.isArray(store.customFeeds) ? store.customFeeds : [];
@@ -198,6 +299,20 @@
     persist();
     /* Seed maps change with the playbook — old ranks are misleading. */
     matchCache = {};
+    persistHeadlinesNow();
+  };
+
+  /* Best strong-destination score for list sorting. Strong matches are
+   * ≥ floor; matched-but-weak return -1; not yet ranked return -2 so
+   * "No strong destination" rows sink under real picks. */
+  Syndicate.destinationScore = function (id) {
+    const tips = Syndicate.suggestionsOf(id, 1);
+    if (tips.length) {
+      const s = tips[0].score;
+      return s == null ? 0 : Number(s);
+    }
+    if (matchCache[id]) return -1;
+    return -2;
   };
 
   /* Top cleared communities for a matched article (empty until suggest
@@ -226,6 +341,7 @@
 
   Syndicate.clearMatches = function () {
     matchCache = {};
+    persistHeadlinesSoon();
   };
 
   /* ------------------------------------------------------------------
@@ -555,8 +671,25 @@
         const prev = byKey.get(key);
         if (!prev || (a.published || 0) > (prev.published || 0)) byKey.set(key, a);
       }
-      articles = Array.from(byKey.values()).sort((a, b) => (b.published || 0) - (a.published || 0));
-      return { articles: articles, errors: errors, feedCount: feeds.length };
+      if (byKey.size) {
+        const prevMatches = matchCache;
+        articles = Array.from(byKey.values()).sort((a, b) => (b.published || 0) - (a.published || 0));
+        /* Keep destination ranks for headlines that survived the pull. */
+        const nextMatches = {};
+        for (const a of articles) {
+          if (prevMatches[a.id]) nextMatches[a.id] = prevMatches[a.id];
+        }
+        matchCache = nextMatches;
+        persistHeadlinesNow();
+      }
+      /* If every feed failed, keep the cached list so a flaky pull does
+       * not wipe the last good headlines. */
+      return {
+        articles: articles,
+        errors: errors,
+        feedCount: feeds.length,
+        keptCache: !byKey.size && articles.length > 0,
+      };
     } finally {
       pulling = false;
     }
@@ -721,6 +854,7 @@
       result = await annotateArchiveDupes(result, post, opts);
     }
     matchCache[article.id] = result;
+    persistHeadlinesSoon();
     return result;
   };
 
@@ -884,6 +1018,14 @@
     ];
     matchCache = {};
     return articles;
+  };
+
+  /* Drop persisted headlines (Settings reset / tests). */
+  Syndicate.clearHeadlineCache = function () {
+    articles = [];
+    matchCache = {};
+    delete store.headlineCache;
+    persist();
   };
 
   window.Syndicate = Syndicate;

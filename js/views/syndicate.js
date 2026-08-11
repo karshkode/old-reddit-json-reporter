@@ -45,12 +45,24 @@
 
   function filtered() {
     const q = searchQuery.trim().toLowerCase();
-    const list = Syndicate.articles();
-    if (!q) return list;
-    return list.filter((a) => {
-      const hay = [a.title, a.summary, a.source, a.category, (Syndicate.keywords(a, 8) || []).join(" ")]
-        .join(" ").toLowerCase();
-      return hay.indexOf(q) !== -1;
+    let list = Syndicate.articles();
+    if (q) {
+      list = list.filter((a) => {
+        const hay = [a.title, a.summary, a.source, a.category, (Syndicate.keywords(a, 8) || []).join(" ")]
+          .join(" ").toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    }
+    /* Strong destinations first (score desc); "No strong destination"
+     * and unmatched sink below. Published time breaks ties. */
+    const scoreOf = Syndicate.destinationScore
+      ? (id) => Syndicate.destinationScore(id)
+      : () => -2;
+    return list.slice().sort((a, b) => {
+      const db = scoreOf(b.id);
+      const da = scoreOf(a.id);
+      if (db !== da) return db - da;
+      return (b.published || 0) - (a.published || 0);
     });
   }
 
@@ -132,7 +144,7 @@
       if (Syndicate.suggesting && Syndicate.suggesting()) {
         meta.textContent = `${Util.fmtNum(total)} articles · suggesting destinations…`;
       } else if (matched) {
-        meta.textContent = `${Util.fmtNum(total)} articles · ${Util.fmtNum(matched)} with strong destinations`;
+        meta.textContent = `${Util.fmtNum(total)} articles · ${Util.fmtNum(matched)} with strong destinations · strongest first`;
       }
     }
 
@@ -546,17 +558,23 @@
         ? ` · ${res.errors.length} feed${res.errors.length === 1 ? "" : "s"} failed`
         : "";
       if (status) {
-        status.textContent = res.articles.length
-          ? `${Util.fmtNum(res.articles.length)} headlines from ${res.feedCount} feeds${errBit}`
-          : `No headlines${errBit}`;
+        if (res.keptCache) {
+          status.textContent = `Feeds failed${errBit} — keeping ${Util.fmtNum(res.articles.length)} cached headlines`;
+        } else {
+          status.textContent = res.articles.length
+            ? `${Util.fmtNum(res.articles.length)} headlines from ${res.feedCount} feeds${errBit}`
+            : `No headlines${errBit}`;
+        }
       }
       if (res.errors.length) console.warn("[syndicate] feed errors:", res.errors);
-      if (!selectedId && res.articles[0]) selectedId = res.articles[0].id;
+      if (!selectedId && filtered()[0]) selectedId = filtered()[0].id;
       Util.toast(
-        res.articles.length
-          ? `Syndicate · ${res.articles.length} headlines`
-          : "Syndicate · no headlines",
-        res.errors.length && !res.articles.length ? "error" : ""
+        res.keptCache
+          ? `Syndicate · kept ${res.articles.length} cached headlines`
+          : res.articles.length
+            ? `Syndicate · ${res.articles.length} headlines`
+            : "Syndicate · no headlines",
+        res.errors.length && !res.articles.length && !res.keptCache ? "error" : ""
       );
       View.render();
       if (res.articles.length) {
@@ -657,11 +675,16 @@
 
     if (window.Demo && Demo.isActive() && !Syndicate.articles().length) {
       Syndicate.loadDemo();
-      selectedId = Syndicate.articles()[0] && Syndicate.articles()[0].id;
+      selectedId = filtered()[0] && filtered()[0].id;
       queueMicrotask(() => suggestVisible({ toast: false, announce: false }));
     } else if (Syndicate.articles().length) {
-      /* Returning to the view with headlines already pulled: fill any
-       * cards that never got a destination. */
+      /* Restored from the 24h cache (or still in memory): pick the
+       * strongest card and only re-suggest headlines that never matched. */
+      if (!selectedId && filtered()[0]) selectedId = filtered()[0].id;
+      const status = Dom.byId("syndicate-status");
+      if (status && !status.textContent) {
+        status.textContent = `${Util.fmtNum(Syndicate.articles().length)} headlines restored from cache (kept 24h)`;
+      }
       queueMicrotask(() => {
         const missing = filtered().filter((a) => !Syndicate.matchOf(a.id));
         if (missing.length) suggestVisible({ toast: false, announce: false });

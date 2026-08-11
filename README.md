@@ -247,9 +247,12 @@ is available but off until you turn it on.
 **Pull latest** reads each enabled feed (via a CORS-friendly reader, then
 a proxy fallback), keeps a handful of recent items with source/time chips
 and thumbnails when the feed provides them, and extracts keywords from
-the title and summary. A search box filters the list. After pull (or
-**Suggest destinations**), headlines are ranked offline and cards show
-strong destination chips only (fit ≥ 35). Matching uses the same path as
+the title and summary. Headlines (and their destination tips) are cached
+in the browser for 24 hours so a refresh does not wipe the list. A search
+box filters the list; cards sort with the strongest destinations first and
+“No strong destination” rows at the bottom. After pull (or **Suggest
+destinations**), headlines are ranked offline and cards show strong
+destination chips only (fit ≥ 35). Matching uses the same path as
 Where-next on a synthetic link post — format rules and archive uniqueness
 apply — and **Open in Plan** carries that match into the dashboard Plan
 tab (Briefing stays on its own tab). Extra civic desks (ProPublica,
