@@ -27,10 +27,12 @@
    * live descriptions + archive uniqueness for this session. */
   const upgraded = new Set();
 
-  /* How many headlines get a destination after Pull / Suggest. Offline
-   * match is cheap; capping keeps a 150-headline pull from monopolising
-   * the tab. The rest fill in as you scroll-select or tap Suggest again. */
-  const AUTO_SUGGEST_CAP = 60;
+  /* How many headlines get a destination per suggest wave. Offline match
+   * is cheap; waves keep a 300-headline pull from monopolising the tab.
+   * The queue is unmatched-first (not strength-sorted) so ranking the
+   * list for display cannot starve progressive headlines at the bottom. */
+  const AUTO_SUGGEST_CAP = 80;
+  const AUTO_SUGGEST_WAVES = 4;
 
   View.subtitle = function () {
     const n = filtered().length;
@@ -43,18 +45,20 @@
     return `${Util.fmtNum(total)} headline${total === 1 ? "" : "s"} · ${feeds} feeds`;
   };
 
-  function filtered() {
+  function applySearch(list) {
     const q = searchQuery.trim().toLowerCase();
-    let list = Syndicate.articles();
-    if (q) {
-      list = list.filter((a) => {
-        const hay = [a.title, a.summary, a.source, a.category, (Syndicate.keywords(a, 8) || []).join(" ")]
-          .join(" ").toLowerCase();
-        return hay.indexOf(q) !== -1;
-      });
-    }
-    /* Strong destinations first (score desc); "No strong destination"
-     * and unmatched sink below. Published time breaks ties. */
+    if (!q) return list;
+    return list.filter((a) => {
+      const hay = [a.title, a.summary, a.source, a.category, (Syndicate.keywords(a, 8) || []).join(" ")]
+        .join(" ").toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+  }
+
+  /* Display order: strongest destinations first. Never use this for the
+   * suggest work queue — that starved unmatched headlines after #115. */
+  function filtered() {
+    const list = applySearch(Syndicate.articles());
     const scoreOf = Syndicate.destinationScore
       ? (id) => Syndicate.destinationScore(id)
       : () => -2;
@@ -64,6 +68,25 @@
       if (db !== da) return db - da;
       return (b.published || 0) - (a.published || 0);
     });
+  }
+
+  /* Work queue for Suggest / auto-fill: newest unmatched first, then
+   * matched-but-weak ("No strong destination"), then the rest. */
+  function articlesForSuggest(opts) {
+    opts = opts || {};
+    const list = applySearch(Syndicate.articles())
+      .slice()
+      .sort((a, b) => (b.published || 0) - (a.published || 0));
+    if (opts.force) return list;
+
+    const unmatched = [];
+    const weak = [];
+    for (const a of list) {
+      if (!Syndicate.matchOf(a.id)) unmatched.push(a);
+      else if (Syndicate.hasStrongDestination && !Syndicate.hasStrongDestination(a.id)) weak.push(a);
+      else if (!Syndicate.hasStrongDestination && !(Syndicate.suggestionsOf(a.id, 1) || []).length) weak.push(a);
+    }
+    return unmatched.concat(weak);
   }
 
   View.render = function () {
@@ -453,46 +476,81 @@
 
   async function suggestVisible(opts) {
     opts = opts || {};
-    const list = filtered().slice(0, opts.cap || AUTO_SUGGEST_CAP);
-    if (!list.length) {
+    const cap = opts.cap || AUTO_SUGGEST_CAP;
+    const waves = opts.waves == null ? AUTO_SUGGEST_WAVES : opts.waves;
+    const queue = articlesForSuggest(opts);
+    if (!queue.length && !Syndicate.articles().length) {
       Util.toast("Pull headlines first, then suggest destinations.");
+      return;
+    }
+    if (!queue.length) {
+      if (opts.toast !== false) Util.toast("Destinations already suggested");
       return;
     }
     const token = ++suggestToken;
     paintSuggestButton();
     const status = Dom.byId("syndicate-status");
-    if (status && opts.announce !== false) {
-      status.textContent = `Suggesting destinations for ${list.length} headline${list.length === 1 ? "" : "s"}…`;
-    }
+    let totalDone = 0;
+    let lastRes = null;
+    const attempted = new Set();
     try {
-      const res = await Syndicate.suggestMany(list, {
-        live: false,
-        skipArchive: true,
-        concurrency: 2,
-        limit: 8,
-        force: !!opts.force,
-        onProgress: (done, total) => {
-          if (token !== suggestToken) return;
-          if (status) status.textContent = `Suggesting destinations ${done}/${total}…`;
-          scheduleListPaint();
-        },
-        onPartial: () => {
-          if (token !== suggestToken) return;
-          scheduleListPaint();
-        },
-      });
+      for (let wave = 0; wave < waves; wave++) {
+        if (token !== suggestToken) return;
+        const batch = articlesForSuggest(opts)
+          .filter((a) => opts.force || !attempted.has(a.id))
+          .slice(0, cap);
+        if (!batch.length) break;
+        for (const a of batch) attempted.add(a.id);
+        if (status && opts.announce !== false) {
+          status.textContent = waves > 1
+            ? `Suggesting destinations · wave ${wave + 1}/${waves} · ${batch.length} headlines…`
+            : `Suggesting destinations for ${batch.length} headline${batch.length === 1 ? "" : "s"}…`;
+        }
+        lastRes = await Syndicate.suggestMany(batch, {
+          live: false,
+          skipArchive: true,
+          concurrency: 2,
+          limit: 8,
+          force: !!opts.force,
+          refreshWeak: opts.refreshWeak !== false,
+          onProgress: (done, total) => {
+            if (token !== suggestToken) return;
+            if (status) {
+              status.textContent = waves > 1
+                ? `Suggesting destinations · wave ${wave + 1}/${waves} · ${done}/${total}`
+                : `Suggesting destinations ${done}/${total}…`;
+            }
+            scheduleListPaint();
+          },
+          onPartial: () => {
+            if (token !== suggestToken) return;
+            scheduleListPaint();
+          },
+        });
+        if (token !== suggestToken) return;
+        if (lastRes && lastRes.busy) break;
+        totalDone += (lastRes && lastRes.done) || 0;
+        if (!((lastRes && lastRes.done) > 0)) break;
+      }
       if (token !== suggestToken) return;
       if (status) {
+        const strong = filtered().filter((a) =>
+          Syndicate.hasStrongDestination
+            ? Syndicate.hasStrongDestination(a.id)
+            : Syndicate.suggestionsOf(a.id, 1).length
+        ).length;
         const n = filtered().filter((a) => Syndicate.matchOf(a.id)).length;
-        status.textContent = n
-          ? `${Util.fmtNum(n)} headline${n === 1 ? "" : "s"} have destination suggestions`
-          : (res && res.busy)
-            ? "Still suggesting…"
-            : "No destinations found — try Sync communities, then Suggest again";
+        status.textContent = strong
+          ? `${Util.fmtNum(strong)} with strong destinations · ${Util.fmtNum(n)} ranked`
+          : n
+            ? `${Util.fmtNum(n)} ranked · none cleared the fit floor yet`
+            : (lastRes && lastRes.busy)
+              ? "Still suggesting…"
+              : "No destinations found — try Sync communities, then Suggest again";
       }
-      if (opts.toast !== false && !(res && res.busy)) {
-        Util.toast(res && res.done
-          ? `Suggested destinations for ${res.done} headline${res.done === 1 ? "" : "s"}`
+      if (opts.toast !== false && !(lastRes && lastRes.busy)) {
+        Util.toast(totalDone
+          ? `Suggested destinations for ${totalDone} headline${totalDone === 1 ? "" : "s"}`
           : "Destinations already suggested");
       }
       View.render();
@@ -689,8 +747,12 @@
         status.textContent = `${Util.fmtNum(Syndicate.articles().length)} headlines from cache${when ? ` · saved ${when}` : ""} · kept 24h`;
       }
       queueMicrotask(() => {
-        const missing = filtered().filter((a) => !Syndicate.matchOf(a.id));
-        if (missing.length) suggestVisible({ toast: false, announce: false });
+        /* Use the unmatched-first queue, not the strength-sorted list —
+         * otherwise the already-ranked cards fill the cap and the rest
+         * of the pull never gets a destination. */
+        if (articlesForSuggest({}).length) {
+          suggestVisible({ toast: false, announce: false });
+        }
       });
     }
     paintSuggestButton();
