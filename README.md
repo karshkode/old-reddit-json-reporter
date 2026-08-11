@@ -204,8 +204,9 @@ Where subreddits come from. Three tabs:
   upgrade when the network answers. Each result can expand into its
   **similar communities**, derived from four independent signals with
   the contributing ones named.
-- **Sphere catalog** — 20 progressive issue spheres, 51 state spheres
-  (50 states plus DC), 6 audience spheres, 405 subreddits in total. Load
+- **Sphere catalog** — 22 progressive issue spheres (incl. consumer
+  protection and election law), 51 state spheres (50 states plus DC),
+  6 audience spheres. Load
   a whole sphere, pick individual subs out of one, or take a starter
   bundle (*Progressive core*, *Movement & direct action*, *Economic
   justice*, *Civil rights*, *Climate*, *Democracy & courts*, *Safety net
