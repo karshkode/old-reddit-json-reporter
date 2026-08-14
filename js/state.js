@@ -19,6 +19,7 @@
     limit: "rj.limit",
     spheres: "rj.activeSpheres",
     subSync: "rj.subSync",
+    postingAvail: "rj.postingAvail",
   };
 
   const state = {
@@ -114,6 +115,10 @@
       lastRefreshAt: 0,
     },
 
+    /* Dual-ended "I can post between X and Y" window, minutes of day.
+     * null = all day. Constrains Timing recommendations without refitting. */
+    postingAvail: null,
+
     /* When each subreddit was last read from the archive, keyed by
      * lowercase name: { at, count, error }. Without this the only
      * honest answer to "what needs fetching" is "all of it", which is
@@ -147,10 +152,19 @@
         const parsed = JSON.parse(rawSync);
         if (parsed && typeof parsed === "object") state.subSync = parsed;
       }
+      const rawAvail = localStorage.getItem(KEYS.postingAvail);
+      if (rawAvail) {
+        const parsed = JSON.parse(rawAvail);
+        if (parsed && typeof parsed.start === "number" && typeof parsed.end === "number"
+            && parsed.end > parsed.start && parsed.end - parsed.start < 1440) {
+          state.postingAvail = { start: parsed.start, end: parsed.end };
+        }
+      }
     } catch (_) {
       state.knownSubs = [];
       state.activeSubs = new Set();
       state.subSync = {};
+      state.postingAvail = null;
     }
   };
 
@@ -165,6 +179,27 @@
       /* Private browsing / storage disabled — the in-memory state still
        * works for the session, which is the honest degradation. */
     }
+  };
+
+  state.persistPostingAvail = function () {
+    try {
+      if (!state.postingAvail) localStorage.removeItem(KEYS.postingAvail);
+      else localStorage.setItem(KEYS.postingAvail, JSON.stringify(state.postingAvail));
+    } catch (_) {}
+  };
+
+  /* Set the dual-ended posting window (minutes of day). Pass null or
+   * an all-day span to clear. Returns the normalised value stored. */
+  state.setPostingAvail = function (startMin, endMin) {
+    if (startMin == null && endMin == null) {
+      state.postingAvail = null;
+    } else if (window.Timing && Timing.normalizeAvailability) {
+      state.postingAvail = Timing.normalizeAvailability(startMin, endMin);
+    } else {
+      state.postingAvail = { start: startMin, end: endMin };
+    }
+    state.persistPostingAvail();
+    return state.postingAvail;
   };
 
   state.persistSpheres = function () {

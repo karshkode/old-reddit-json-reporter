@@ -351,10 +351,22 @@
     curve.push({ x: 24, y: Math.max(0.5, fit.curveScores[0]) });
 
     const baseline = Math.max(0.5, Math.expm1(fit.grandLog));
-    const winStart = fit.window.start / 60;
-    const winEnd = fit.window.end / 60;
+    /* Prefer the (possibly availability-constrained) window on the row
+     * so the accent segment matches the times the UI is recommending. */
+    const win = (row.window && row.window.slots) ? row.window : fit.window;
+    const winStart = win.start / 60;
+    const winEnd = (win.end === 0 && win.start > 0) ? 24 : win.end / 60;
     const wraps = winEnd <= winStart;
     const inWindow = (h) => (wraps ? (h >= winStart || h <= winEnd) : (h >= winStart && h <= winEnd));
+
+    const avail = row.availability || opts.availability || null;
+    const hasAvail = avail && window.Timing && !Timing.isAllDay(avail);
+    const availStart = hasAvail ? avail.start / 60 : 0;
+    const availEnd = hasAvail ? (avail.end >= 1440 ? 24 : avail.end / 60) : 24;
+    const inAvail = (h) => {
+      if (!hasAvail) return true;
+      return h >= availStart && h <= availEnd;
+    };
 
     const points = fit.points.map((p) => ({ x: p.x, y: p.y }));
     const capped = fit.points.some((p) => p.capped);
@@ -382,7 +394,12 @@
             tension: 0.3,
             borderColor: t.mute,
             segment: {
-              borderColor: (ctx) => (inWindow(ctx.p0.parsed.x) && inWindow(ctx.p1.parsed.x) ? t.accent : t.mute),
+              borderColor: (ctx) => {
+                const x0 = ctx.p0.parsed.x, x1 = ctx.p1.parsed.x;
+                if (inWindow(x0) && inWindow(x1)) return t.accent;
+                if (hasAvail && (!inAvail(x0) || !inAvail(x1))) return hexA(t.mute, 0.35);
+                return t.mute;
+              },
               borderWidth: (ctx) => (inWindow(ctx.p0.parsed.x) && inWindow(ctx.p1.parsed.x) ? 3 : 2),
             },
           },

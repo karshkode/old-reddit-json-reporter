@@ -591,7 +591,17 @@
   /* opts.minSample — posts a sub needs before its peak is reported at
      all (default 4). Below that a single lucky post decides the hour. */
   Analysis.postingTimes = function (posts, opts) {
-    return Timing.model(posts, opts);
+    opts = opts || {};
+    const model = Timing.model(posts, opts);
+    /* opts.raw — return the unconstrained fit so a caller can re-apply
+       the dual-ended availability slider without refitting. */
+    if (opts.raw) return model;
+    const avail = opts.availability !== undefined
+      ? opts.availability
+      : (window.AppState ? AppState.postingAvail : null);
+    return window.Timing && Timing.constrainModel
+      ? Timing.constrainModel(model, avail)
+      : model;
   };
 
   /* Wrap a set of per-sub timing rows in the cross-sub summary. Kept

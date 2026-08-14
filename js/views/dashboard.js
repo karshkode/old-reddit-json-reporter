@@ -51,6 +51,7 @@
 
   /* The last analysis and the scope it was computed for. */
   let bundle = null;
+  let rawTimingModel = null; /* unconstrained fits — slider reuses these */
   let timingModel = null;
   let signature = "";
 
@@ -136,14 +137,45 @@
         window: AppState.timelineWindow,
         label: "All loaded subreddits",
       });
-      timingModel = Analysis.postingTimes(posts);
+      rawTimingModel = Analysis.postingTimes(posts, { raw: true });
+      timingModel = Timing.constrainModel(rawTimingModel, AppState.postingAvail);
       signature = sig;
       painted.clear();
+    } else if (rawTimingModel) {
+      /* Same posts — still re-apply availability in case the slider
+       * moved without a scope change (handled also by applyAvailability). */
+      timingModel = Timing.constrainModel(rawTimingModel, AppState.postingAvail);
     }
 
     UI.renderKpis(bundle.agg, timingModel);
     updateScopeSummary(bundle);
     paintSection();
+  };
+
+  /* Re-rank / re-label peaks inside the dual-ended posting window
+   * without refitting curves. */
+  View.applyAvailability = function (avail) {
+    AppState.setPostingAvail(
+      avail ? avail.start : null,
+      avail ? avail.end : null
+    );
+    if (!rawTimingModel) {
+      View.render();
+      return;
+    }
+    timingModel = Timing.constrainModel(rawTimingModel, AppState.postingAvail);
+    painted.delete("trends");
+    painted.delete("briefing");
+    /* Plan + KPIs read timingModel live. */
+    UI.renderKpis(bundle && bundle.agg, timingModel);
+    if (window.FocusView && activeSection() === "plan") {
+      FocusView.paint(timingModel, signature);
+    }
+    paintSection();
+    /* Campaign overview borrows the same availability window. */
+    if (window.CampaignView && AppState.openCampaignId && typeof CampaignView.render === "function") {
+      try { CampaignView.render(); } catch (_) {}
+    }
   };
 
   /* Draw whichever section the rail is on, once per analysis. */
@@ -330,6 +362,38 @@
       briefingTimingLimit = "all";
       painted.delete("briefing");
       paintSection();
+    });
+
+    /* Dual-ended availability slider — live on Trends + Briefing. */
+    let availTimer = 0;
+    function applyAvailSoon(avail) {
+      if (availTimer) window.clearTimeout(availTimer);
+      availTimer = window.setTimeout(() => {
+        availTimer = 0;
+        View.applyAvailability(avail);
+      }, 60);
+    }
+    function onAvailInput(e, el) {
+      const host = el.closest("[data-avail-slider]");
+      if (!host) return;
+      const startEl = host.querySelector("[data-avail-start]");
+      const endEl = host.querySelector("[data-avail-end]");
+      if (!startEl || !endEl) return;
+      let a = Number(startEl.value);
+      let b = Number(endEl.value);
+      /* Keep thumbs from crossing: the moved thumb pushes the other. */
+      if (el === startEl && a > b) { b = a; endEl.value = String(b); }
+      if (el === endEl && b < a) { a = b; startEl.value = String(a); }
+      const avail = UI.readAvailabilitySlider(host);
+      UI.syncAvailabilitySlider(host, avail);
+      applyAvailSoon(avail);
+    }
+    Dom.delegate(document, "input", "[data-avail-start]", onAvailInput);
+    Dom.delegate(document, "input", "[data-avail-end]", onAvailInput);
+    Dom.delegate(document, "click", '[data-action="avail-reset"]', () => {
+      if (availTimer) { window.clearTimeout(availTimer); availTimer = 0; }
+      AppState.setPostingAvail(null, null);
+      View.applyAvailability(null);
     });
 
     /* Drill from a row of the summary's When list into that community's

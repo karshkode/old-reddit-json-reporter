@@ -167,6 +167,93 @@
     return r.slotLabel || (r.bestHour >= 0 ? hhmm(r.bestHour) : "—");
   }
 
+  /* Dual-ended "I can post between…" control. Values are quarter-hour
+   * slots 0..96 (96 = end of day / 24:00). */
+  UI.availabilitySliderHtml = function (avail) {
+    const allDay = !avail || (window.Timing && Timing.isAllDay(avail));
+    const startSlot = allDay ? 0 : Math.round((avail.start || 0) / 15);
+    let endSlot = allDay ? 96 : Math.round((avail.end || 1440) / 15);
+    if (endSlot <= startSlot) endSlot = Math.min(96, startSlot + 1);
+    const label = allDay
+      ? "all day"
+      : (window.Timing ? Timing.availabilityLabel(avail) : `${startSlot}–${endSlot}`);
+    return `
+      <div class="avail-slider" data-avail-slider>
+        <div class="avail-slider-head">
+          <div class="avail-slider-copy">
+            <span class="avail-slider-title">I can post</span>
+            <strong class="avail-slider-label" data-avail-label>${Util.escapeHtml(label)}</strong>
+          </div>
+          <button type="button" class="btn tiny ghost" data-action="avail-reset"
+                  ${allDay ? "hidden" : ""} title="Clear the window and use each community's full-day peak">All day</button>
+        </div>
+        <div class="avail-slider-track" aria-label="Posting availability window">
+          <div class="avail-slider-rail" aria-hidden="true">
+            <div class="avail-slider-range" data-avail-range></div>
+          </div>
+          <input type="range" class="avail-thumb avail-thumb-start" data-avail-start
+                 min="0" max="96" step="1" value="${startSlot}"
+                 aria-label="Earliest I can post" />
+          <input type="range" class="avail-thumb avail-thumb-end" data-avail-end
+                 min="0" max="96" step="1" value="${endSlot}"
+                 aria-label="Latest I can post" />
+        </div>
+        <div class="avail-slider-scale" aria-hidden="true">
+          <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
+        </div>
+        <p class="avail-slider-hint meta">Drag both ends — each community’s best average is taken inside this window.</p>
+      </div>`;
+  };
+
+  UI.syncAvailabilitySlider = function (root, avail) {
+    const host = root && root.querySelector
+      ? (root.matches && root.matches("[data-avail-slider]") ? root : root.querySelector("[data-avail-slider]"))
+      : null;
+    if (!host) return;
+    const allDay = !avail || (window.Timing && Timing.isAllDay(avail));
+    const startSlot = allDay ? 0 : Math.round((avail.start || 0) / 15);
+    let endSlot = allDay ? 96 : Math.round((avail.end || 1440) / 15);
+    if (endSlot <= startSlot) endSlot = Math.min(96, startSlot + 1);
+    const a = host.querySelector("[data-avail-start]");
+    const b = host.querySelector("[data-avail-end]");
+    const label = host.querySelector("[data-avail-label]");
+    const range = host.querySelector("[data-avail-range]");
+    const reset = host.querySelector('[data-action="avail-reset"]');
+    if (a) a.value = String(startSlot);
+    if (b) b.value = String(endSlot);
+    if (label) {
+      label.textContent = allDay
+        ? "all day"
+        : (window.Timing ? Timing.availabilityLabel(avail) : "");
+    }
+    if (range) {
+      range.style.left = (startSlot / 96 * 100) + "%";
+      range.style.width = ((endSlot - startSlot) / 96 * 100) + "%";
+    }
+    if (reset) reset.hidden = !!allDay;
+    host.classList.toggle("is-constrained", !allDay);
+  };
+
+  /* Read thumbs → {start,end} minutes, or null for all-day. */
+  UI.readAvailabilitySlider = function (host) {
+    if (!host) return null;
+    const a = host.querySelector("[data-avail-start]");
+    const b = host.querySelector("[data-avail-end]");
+    if (!a || !b) return null;
+    let startSlot = Number(a.value);
+    let endSlot = Number(b.value);
+    if (endSlot < startSlot) {
+      const t = startSlot; startSlot = endSlot; endSlot = t;
+      a.value = String(startSlot);
+      b.value = String(endSlot);
+    }
+    if (startSlot <= 0 && endSlot >= 96) return null;
+    if (endSlot === startSlot) endSlot = Math.min(96, startSlot + 1);
+    return window.Timing
+      ? Timing.normalizeAvailability(startSlot * 15, endSlot * 15)
+      : { start: startSlot * 15, end: endSlot * 15 };
+  };
+
   /* Everything the estimate rests on, collapsed into a hover/long-press
    * title. The visible row stays scannable; the justification is one
    * gesture away rather than four lines of prose away. */
@@ -201,6 +288,9 @@
     }
     if (r.window && r.window.slots < Timing.SLOTS) {
       bits.push(`Any time between ${Timing.windowLabel(r)} works about as well`);
+    }
+    if (r.peakOutsideAvail && r.unconstrainedSlotLabel) {
+      bits.push(`Full-day peak is ${r.unconstrainedSlotLabel}; showing the best average inside your posting hours`);
     }
     if (r.effectiveN != null) {
       bits.push(`Based on about ${r.effectiveN.toFixed(0)} post${r.effectiveN.toFixed(0) === "1" ? "" : "s"} posted around that time`);
@@ -322,9 +412,9 @@
     const host = document.getElementById("posting-times");
     if (!host) return;
     opts = opts || {};
-    if (window.Charts && Charts.destroyIn) Charts.destroyIn(host);
 
     if (!model || !model.rows.length) {
+      if (window.Charts && Charts.destroyIn) Charts.destroyIn(host);
       host.innerHTML = Dom.emptyState({
         icon: "◔",
         title: "No posting times yet",
@@ -351,10 +441,26 @@
     } else {
       lead = `These ${ranked.length} communities peak up to <strong>${model.spread} hours</strong> apart, so there is no single best time. Post into each one on its own clock.`;
     }
+    if (model.availability && window.Timing && !Timing.isAllDay(model.availability)) {
+      lead += ` Showing the best averages inside <strong>${Util.escapeHtml(Timing.availabilityLabel(model.availability))}</strong>.`;
+    }
 
-    host.innerHTML = `
+    const avail = model.availability || (window.AppState && AppState.postingAvail);
+    let body = host.querySelector("[data-posting-times-body]");
+    if (!host.querySelector("[data-avail-slider]")) {
+      host.innerHTML = `${UI.availabilitySliderHtml(avail)}<div data-posting-times-body></div>`;
+      body = host.querySelector("[data-posting-times-body]");
+    } else if (!body) {
+      body = document.createElement("div");
+      body.setAttribute("data-posting-times-body", "");
+      host.appendChild(body);
+    }
+    UI.syncAvailabilitySlider(host, avail);
+    if (window.Charts && Charts.destroyIn) Charts.destroyIn(body);
+
+    body.innerHTML = `
       <p class="timing-lead">${lead}</p>
-      ${ranked.length ? chartKey() : ""}
+      ${ranked.length ? chartKey(model) : ""}
       <div class="timing-grid">
         ${shown.map((r) => timingPanel(r, tz)).join("")}
       </div>
@@ -370,7 +476,7 @@
 
     if (!window.Charts || !window.Chart) return;
     for (const row of shown) {
-      const slot = host.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
+      const slot = body.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
       if (!slot) continue;
       try {
         Charts.mount(slot, { kind: "timingCurve", data: row, opts: { compact: true } });
@@ -400,6 +506,7 @@
       + (borrowed ? ` ${borrowed} of these ${borrowed === 1 ? "is" : "are"} read from the subreddit's own traffic rather than your posts.` : "");
 
     return `
+      ${UI.availabilitySliderHtml(model.availability || (window.AppState && AppState.postingAvail))}
       <p class="timing-lead">${lead}</p>
       ${UI.timingListHtml(model, { limit: opts.limit || 6, more: opts.more })}
       ${flatNote(model)}
@@ -411,14 +518,19 @@
    * the one that matters: the curve is not the top-scoring hour, and
    * without saying so the highlighted window reads as though it should
    * sit under the tallest point. */
-  function chartKey() {
+  function chartKey(model) {
+    const avail = model && model.availability;
+    const availBit = avail && window.Timing && !Timing.isAllDay(avail)
+      ? `<span><i class="tk-avail"></i>your hours (${Util.escapeHtml(Timing.availabilityLabel(avail))})</span>`
+      : "";
     return `
       <p class="timing-key">
         <span><i class="tk-dot"></i>one post</span>
         <span><i class="tk-line"></i>what a typical post scores at that time</span>
-        <span><i class="tk-win"></i>recommended window</span>
+        <span><i class="tk-win"></i>best window inside your hours</span>
+        ${availBit}
         <span><i class="tk-base"></i>this community's all-day average</span>
-        <span class="timing-key-note">Across: hour of day. Up: upvotes, squashed so every post fits. The curve tracks the typical post, so a single breakout does not move it.</span>
+        <span class="timing-key-note">Across: hour of day. Up: upvotes, squashed so every post fits. The curve tracks the typical post, so a single breakout does not move it. Drag the slider above to only score averages inside hours you can actually post.</span>
       </p>`;
   }
 
@@ -429,6 +541,9 @@
       facts.push(`<strong>${signed(r.lift)}</strong> on a typical post${range ? ` — ${range}` : ""}`);
     }
     if (r.window && r.window.slots < Timing.SLOTS) facts.push(`anywhere in ${Timing.windowLabel(r)}`);
+    if (r.peakOutsideAvail && r.unconstrainedSlotLabel) {
+      facts.push(`full-day peak ${Util.escapeHtml(r.unconstrainedSlotLabel)} is outside your hours`);
+    }
     if (r.effectiveN != null) facts.push(`${r.effectiveN.toFixed(0)} of ${Util.fmtNum(r.count)} posts went up around then`);
     if (r.ratioAt != null && r.ratioBase != null) {
       facts.push(`${Util.fmtPct(r.ratioAt)} upvoted there vs ${Util.fmtPct(r.ratioBase)} usual`);
@@ -447,6 +562,9 @@
     const caution = (r.ratioCorr != null && r.ratioCorr < -0.3)
       ? `<span class="badge warn timing-thin">scores well, received worse</span>`
       : "";
+    const outside = r.peakOutsideAvail
+      ? `<span class="badge warn timing-thin" title="This community's absolute peak sits outside the hours you set — showing the best average inside your window instead">best inside your hours</span>`
+      : "";
 
     return `
       <div class="timing-panel" data-sub="${Util.escapeHtml(r.key)}" data-signal="${Util.escapeHtml(r.signal || "none")}">
@@ -455,7 +573,7 @@
           <span class="timing-peak">${Util.escapeHtml(slotOf(r))}${tz}</span>
         </div>
         ${r.confidence === "thin" ? `<span class="badge warn timing-thin">thin sample — ${r.count} posts</span>` : ""}
-        ${caution}
+        ${caution}${outside}
         <div class="chart-wrap short" data-timing-chart="${Util.escapeHtml(r.key)}"><canvas></canvas></div>
         <div class="timing-facts">${facts.join(" · ")}</div>
       </div>`;
@@ -1575,9 +1693,12 @@
         <span class="briefing-body">
           <span class="briefing-value">${r.value}</span>
           ${r.note ? `<span class="briefing-note">${r.note}</span>` : ""}
-          ${r.timing ? `<span class="briefing-timing">${UI.timingListHtml(r.timing, timingOpts)}</span>` : ""}
+          ${r.timing ? `${UI.availabilitySliderHtml(r.timing.availability || (window.AppState && AppState.postingAvail))}<span class="briefing-timing">${UI.timingListHtml(r.timing, timingOpts)}</span>` : ""}
         </span>
       </li>`).join("");
+    rows.forEach((r) => {
+      if (r.timing) UI.syncAvailabilitySlider(el, r.timing.availability || (window.AppState && AppState.postingAvail));
+    });
   };
 
   /* ---------- Themes ---------- */

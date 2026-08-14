@@ -2445,3 +2445,137 @@ a.syn-title:focus-visible {
   .feed-title { font-size: 15px; }
   .feed-media-link img { width: 72px; }
 }
+
+/* ---- Dual-ended posting availability slider ---- */
+.avail-slider {
+  margin: 0 0 var(--s-4);
+  padding: var(--s-3) var(--s-3) var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+}
+.avail-slider.is-constrained {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.avail-slider-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-2);
+}
+.avail-slider-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.avail-slider-title {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.avail-slider-label {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.avail-slider-track {
+  position: relative;
+  height: 28px;
+  margin: 4px 2px 0;
+}
+.avail-slider-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 80%, var(--bg));
+  pointer-events: none;
+}
+.avail-slider-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.avail-slider-track input[type="range"] {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  top: 0;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.avail-slider-track input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+.avail-slider-track input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: transparent;
+  border: 0;
+}
+.avail-slider-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg-elev);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+.avail-slider-track input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg-elev);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+.avail-slider-track input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.avail-slider-track input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.avail-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.avail-slider-hint {
+  margin: var(--s-2) 0 0;
+}
+.briefing-timing .avail-slider {
+  margin-bottom: var(--s-3);
+}
+.timing-key .tk-avail {
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+}

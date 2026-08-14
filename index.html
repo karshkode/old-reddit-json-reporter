@@ -10,11 +10,11 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081419" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081419" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081419" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081419" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081419" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081420" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081420" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081420" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081420" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081420" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
   <script src="./js/theme.js?v=2026081418"></script>
@@ -344,9 +344,9 @@
               <header class="card-header">
                 <div>
                   <h2>Best times to post, per subreddit</h2>
-                  <span class="hint">One panel per community, on its own clock — each dot is one post, the line is what a typical post scores at that time of day</span>
+                  <span class="hint">One panel per community — set the hours you can post with the dual slider, then each peak is the best average inside that window</span>
                 </div>
-                <button class="card-help" type="button" aria-label="How to read this card" data-help="Each panel plots one community's posts by time of day, not by date: across the bottom is the 24-hour clock, up the side is upvotes, squashed so that a breakout post and an ordinary one both stay on screen. The curve is what a typical post earns at that time of day, with runaway posts capped, so it is deliberately NOT dragged up to whatever hour one viral post happened to land in. The dashed line is the community's all-day average, and the highlighted stretch is the recommended window — any time inside it works about as well. Every figure compares that sub against itself, never against the others. The badge grades how much to trust the time: STRONG means the pattern held up when tested against chance and even the worst case is a gain, roughly a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, roughly 1-in-7; WEAK means worth knowing but easily chance. A community is only graded if it has at least 8 posts and the good stretch is under 12 hours wide — any wider and there is no real time of day to point at. Subs with too few posts are listed at the bottom rather than given a peak they haven't earned.">?</button>
+                <button class="card-help" type="button" aria-label="How to read this card" data-help="Drag both ends of the I can post slider to the hours you are actually free. Each panel then names the best average inside that window for that community, not the absolute peak of the whole day — so a 14:00 peak you cannot use is replaced by the strongest stretch that falls inside your hours. The curve is still the full day: your window is the band being scored, and the highlighted stretch is the recommended window clipped to it. Clear with All day to go back to unconstrained peaks. Each panel plots one community's posts by time of day: across is the 24-hour clock, up is upvotes (squashed). The curve is what a typical post earns at that time, with runaway posts capped. The dashed line is the all-day average. Badges grade trust: STRONG / LIKELY / WEAK.">?</button>
               </header>
               <div id="posting-times"></div>
             </div>
@@ -1243,7 +1243,7 @@
 
 <script src="./js/dom.js?v=2026081418"></script>
 <script src="./js/util.js?v=2026081418"></script>
-<script src="./js/state.js?v=2026081418"></script>
+<script src="./js/state.js?v=2026081420"></script>
 <script src="./js/router.js?v=2026081418"></script>
 <script src="./js/sync.js?v=2026081418"></script>
 <script src="./js/archive.js?v=2026081418"></script>
@@ -1255,10 +1255,10 @@
 <script src="./js/seeds.js?v=2026081418"></script>
 <script src="./js/matchlex.js?v=2026081418"></script>
 <script src="./js/rules.js?v=2026081418"></script>
-<script src="./js/timing.js?v=2026081418"></script>
-<script src="./js/analysis.js?v=2026081418"></script>
+<script src="./js/timing.js?v=2026081420"></script>
+<script src="./js/analysis.js?v=2026081420"></script>
 <script src="./js/discovery.js?v=2026081418"></script>
-<script src="./js/charts.js?v=2026081418"></script>
+<script src="./js/charts.js?v=2026081420"></script>
 <script src="./js/campaigns.js?v=2026081418"></script>
 <script src="./js/reset.js?v=2026081418"></script>
 <script src="./js/analyze.js?v=2026081418"></script>
@@ -1267,17 +1267,17 @@
 <script src="./js/syndicate.js?v=2026081418"></script>
 <script src="./js/sidebar.js?v=2026081419"></script>
 <script src="./js/composer.js?v=2026081418"></script>
-<script src="./js/ui.js?v=2026081419"></script>
+<script src="./js/ui.js?v=2026081420"></script>
 <script src="./js/views/focus.js?v=2026081419"></script>
 <script src="./js/views/recommend.js?v=2026081419"></script>
 <script src="./js/views/feed.js?v=2026081419"></script>
-<script src="./js/views/dashboard.js?v=2026081419"></script>
+<script src="./js/views/dashboard.js?v=2026081420"></script>
 <script src="./js/views/campaign.js?v=2026081418"></script>
 <script src="./js/views/communities.js?v=2026081418"></script>
 <script src="./js/views/posts.js?v=2026081418"></script>
 <script src="./js/views/syndicate.js?v=2026081418"></script>
 <script src="./js/demo.js?v=2026081418"></script>
-<script src="./js/app.js?v=2026081419"></script>
+<script src="./js/app.js?v=2026081420"></script>
 
 <script>
   (function () {
