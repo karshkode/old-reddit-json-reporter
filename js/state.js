@@ -52,7 +52,7 @@
 
     /* ---- Dashboard ---- */
     /* summary | timing | charts | themes | communities | crossposts */
-    dashSection: "plan",
+    dashSection: "recommend",
     timelineMode: "lines", /* lines | stacked | density | total */
     timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
 

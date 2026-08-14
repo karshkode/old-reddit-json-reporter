@@ -537,6 +537,10 @@
       num_comments: d.num_comments,
       view_count: d.view_count,
       url: d.url,
+      /* Destination Reddit would open for a link post — often the same
+       * as url, but kept separately so share/submit can prefer the
+       * real target when Reddit wraps media hosts. */
+      url_dest: d.url_overridden_by_dest || d.url || null,
       url_canonical: canonicalizeUrl(d.url),
       permalink: "https://www.reddit.com" + (d.permalink || ""),
       domain: d.domain,
@@ -564,6 +568,10 @@
       crosspost_parent_id: d.crosspost_parent || (xpParent && xpParent.name) || null,
       crosspost_parent_sub: xpParent ? xpParent.subreddit : null,
       crosspost_parent_title: xpParent ? xpParent.title : null,
+      crosspost_parent_url: xpParent ? (xpParent.url || null) : null,
+      crosspost_parent_dest: xpParent
+        ? (xpParent.url_overridden_by_dest || xpParent.url || null)
+        : null,
       selftext: isRemoved ? "" : (d.selftext || ""),
       thumbnail: d.thumbnail,
       /* Embedded-media metadata (see comment above). */
@@ -571,6 +579,9 @@
       media_author:   oe.author_name   || null,
       media_provider: oe.provider_name || (m && m.type) || null,
       media_thumbnail: oe.thumbnail_url || null,
+      /* Direct playable file when Reddit hosted the video — last resort
+       * for share URLs if nothing else embeds. */
+      media_fallback_url: (m && m.reddit_video && m.reddit_video.fallback_url) || null,
     };
   }
 
