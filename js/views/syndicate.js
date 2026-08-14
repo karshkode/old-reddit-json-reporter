@@ -30,11 +30,16 @@
   const upgraded = new Set();
 
   /* How many headlines get a destination per suggest wave. Offline match
-   * is cheap; waves keep a 300-headline pull from monopolising the tab.
-   * The queue is unmatched-first (not strength-sorted) so ranking the
-   * list for display cannot starve progressive headlines at the bottom. */
-  const AUTO_SUGGEST_CAP = 80;
-  const AUTO_SUGGEST_WAVES = 4;
+   * is cheap per item but hundreds of Discovery ranks still freeze the
+   * tab — keep waves small and yield between them. The queue is
+   * unmatched-first (not strength-sorted) so ranking the list for
+   * display cannot starve progressive headlines at the bottom. */
+  const AUTO_SUGGEST_CAP = 24;
+  const AUTO_SUGGEST_WAVES = 6;
+  const LIST_RENDER_CAP = 160;
+
+  let globalsWired = false;
+  let autoSuggestTimer = null;
 
   View.subtitle = function () {
     const n = filtered().length;
@@ -89,10 +94,13 @@
 
     const unmatched = [];
     const weak = [];
+    const refreshWeak = opts.refreshWeak !== false;
     for (const a of list) {
       if (!Syndicate.matchOf(a.id)) unmatched.push(a);
-      else if (Syndicate.hasStrongDestination && !Syndicate.hasStrongDestination(a.id)) weak.push(a);
-      else if (!Syndicate.hasStrongDestination && !(Syndicate.suggestionsOf(a.id, 1) || []).length) weak.push(a);
+      else if (refreshWeak) {
+        if (Syndicate.hasStrongDestination && !Syndicate.hasStrongDestination(a.id)) weak.push(a);
+        else if (!Syndicate.hasStrongDestination && !(Syndicate.suggestionsOf(a.id, 1) || []).length) weak.push(a);
+      }
     }
     return unmatched.concat(weak);
   }
@@ -189,8 +197,12 @@
         meta.textContent = `${Util.fmtNum(total)} articles · ${Util.fmtNum(matched)} with strong destinations · strongest first`;
       }
     }
+    if (meta && list.length > LIST_RENDER_CAP) {
+      const base = meta.textContent || `${Util.fmtNum(list.length)} articles`;
+      meta.textContent = `${base} · showing top ${Util.fmtNum(LIST_RENDER_CAP)}`;
+    }
 
-    host.innerHTML = list.map((a) => {
+    host.innerHTML = list.slice(0, LIST_RENDER_CAP).map((a) => {
       const active = a.id === selectedId ? " is-active" : "";
       const when = whenBits(a);
       const keys = Syndicate.keywords(a, 4);
@@ -455,19 +467,25 @@
     }
   }
 
-  /* Auto-match the selected headline; upgrade a batch offline hit with
-   * archive uniqueness when the user actually opens it. */
+  /* Auto-match the selected headline offline first so opening Syndicate
+   * does not stall on live About lookups. Upgrade with archive when the
+   * user actually opens the card (or Open in Plan). */
   function ensureSelectedMatched() {
     const article = Syndicate.articles().find((a) => a.id === selectedId);
     if (!article) return;
     const cached = Syndicate.matchOf(article.id);
     if (!cached) {
-      runMatch(article, { live: true, skipArchive: false });
+      runMatch(article, { live: false, skipArchive: true });
       return;
     }
-    if (!cached.archiveChecked) {
+    if (!cached.archiveChecked && Router.current() === "syndicate") {
+      /* Quiet upgrade only while on the desk — not during Plan carousel paint. */
       runMatch(article, { force: true, live: true, skipArchive: false, silent: true });
     }
+  }
+
+  function yieldToUi() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   async function suggestVisible(opts) {
@@ -476,7 +494,7 @@
     const waves = opts.waves == null ? AUTO_SUGGEST_WAVES : opts.waves;
     const queue = articlesForSuggest(opts);
     if (!queue.length && !Syndicate.articles().length) {
-      Util.toast("Pull headlines first, then suggest destinations.");
+      if (opts.toast !== false) Util.toast("Pull headlines first, then suggest destinations.");
       return;
     }
     if (!queue.length) {
@@ -492,6 +510,7 @@
     try {
       for (let wave = 0; wave < waves; wave++) {
         if (token !== suggestToken) return;
+        if (wave > 0) await yieldToUi();
         const batch = articlesForSuggest(opts)
           .filter((a) => opts.force || !attempted.has(a.id))
           .slice(0, cap);
@@ -505,7 +524,7 @@
         lastRes = await Syndicate.suggestMany(batch, {
           live: false,
           skipArchive: true,
-          concurrency: 2,
+          concurrency: 1,
           limit: 8,
           force: !!opts.force,
           refreshWeak: opts.refreshWeak !== false,
@@ -527,6 +546,8 @@
         if (lastRes && lastRes.busy) break;
         totalDone += (lastRes && lastRes.done) || 0;
         if (!((lastRes && lastRes.done) > 0)) break;
+        /* Let the browser paint between waves so Plan / rail stay responsive. */
+        await yieldToUi();
       }
       if (token !== suggestToken) return;
       if (status) {
@@ -549,14 +570,47 @@
           ? `Suggested destinations for ${totalDone} headline${totalDone === 1 ? "" : "s"}`
           : "Destinations already suggested");
       }
-      View.render();
+      if (Router.current() === "syndicate") View.render();
+      else View.paintPlanCarousel();
       ensureSelectedMatched();
     } catch (err) {
       if (status) status.textContent = (err && err.message) || String(err);
-      Util.toast("Could not suggest destinations", "error");
+      if (opts.toast !== false) Util.toast("Could not suggest destinations", "error");
     } finally {
       paintSuggestButton();
     }
+  }
+
+  /* Soft background ranking after auto-pull or cache restore — never blocks
+   * navigation. Continues in small waves while unmatched headlines remain. */
+  function scheduleAutoSuggest(opts) {
+    opts = opts || {};
+    if (autoSuggestTimer) clearTimeout(autoSuggestTimer);
+    autoSuggestTimer = setTimeout(() => {
+      autoSuggestTimer = null;
+      if (window.Demo && Demo.isActive() && !Syndicate.articles().length) return;
+      if (!articlesForSuggest({}).length) {
+        View.paintPlanCarousel();
+        return;
+      }
+      suggestVisible({
+        toast: false,
+        announce: opts.announce === true,
+        force: false,
+        refreshWeak: false,
+        cap: opts.cap || AUTO_SUGGEST_CAP,
+        waves: opts.waves == null ? AUTO_SUGGEST_WAVES : opts.waves,
+      }).then(() => {
+        if (Syndicate.pulling && Syndicate.pulling()) return;
+        const unmatched = articlesForSuggest({ refreshWeak: false })
+          .filter((a) => !Syndicate.matchOf(a.id));
+        if (unmatched.length) {
+          scheduleAutoSuggest({ announce: false, waves: 3 });
+        } else {
+          View.paintPlanCarousel();
+        }
+      }).catch(() => {});
+    }, opts.delay == null ? 80 : opts.delay);
   }
 
   async function openInPlan(article) {
@@ -610,7 +664,7 @@
     if (!picks.length) {
       host.innerHTML = `<div class="empty plan-syn-empty">
         <strong>No ranked headlines yet</strong>
-        <p>Pull feeds on Syndicate and suggest destinations — the strongest ones land here.</p>
+        <p>Syndicate articles load in the background when enabled in Settings — or open Syndicate and tap Pull latest.</p>
       </div>`;
       return;
     }
@@ -675,7 +729,7 @@
       if (status) status.textContent = "Demo headlines loaded — suggesting destinations offline.";
       if (!selectedId && Syndicate.articles()[0]) selectedId = Syndicate.articles()[0].id;
       View.render();
-      suggestVisible({ toast: false, announce: false });
+      scheduleAutoSuggest({ announce: false, delay: 40 });
       return;
     }
 
@@ -712,7 +766,7 @@
       );
       View.render();
       if (res.articles.length) {
-        suggestVisible({ toast: false, announce: true });
+        scheduleAutoSuggest({ announce: true, delay: 40 });
       }
     } catch (err) {
       if (status) status.textContent = (err && err.message) || String(err);
@@ -724,6 +778,8 @@
   }
 
   View.mount = function () {
+    View.wireGlobals();
+
     Dom.delegate(document, "click", "[data-syn-cat]", (e, btn) => {
       const cat = btn.dataset.synCat;
       Syndicate.setCategory(cat, !Syndicate.isCategoryOn(cat));
@@ -794,14 +850,6 @@
       openInPlan(article);
     });
 
-    Dom.delegate(document, "click", '[data-action="plan-syn-prev"]', () => planSynStep(-1));
-    Dom.delegate(document, "click", '[data-action="plan-syn-next"]', () => planSynStep(1));
-    Dom.delegate(document, "click", '[data-action="plan-syn-open"]', () => {
-      const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
-      const a = picks[planSynIndex];
-      if (a) openInPlan(a);
-    });
-
     Dom.delegate(document, "click", '[data-action="syn-add-sub"]', (e, btn) => {
       const sub = btn.dataset.sub;
       if (!sub || !window.AppState || !AppState.addSubs) return;
@@ -814,7 +862,7 @@
     if (window.Demo && Demo.isActive() && !Syndicate.articles().length) {
       Syndicate.loadDemo();
       selectedId = filtered()[0] && filtered()[0].id;
-      queueMicrotask(() => suggestVisible({ toast: false, announce: false }));
+      scheduleAutoSuggest({ announce: false, delay: 60 });
     } else if (Syndicate.articles().length) {
       /* Restored from the 24h cache (or still in memory): pick the
        * strongest card and only re-suggest headlines that never matched. */
@@ -826,16 +874,33 @@
           : "";
         status.textContent = `${Util.fmtNum(Syndicate.articles().length)} headlines from cache${when ? ` · saved ${when}` : ""} · kept 24h`;
       }
-      queueMicrotask(() => {
-        /* Use the unmatched-first queue, not the strength-sorted list —
-         * otherwise the already-ranked cards fill the cap and the rest
-         * of the pull never gets a destination. */
-        if (articlesForSuggest({}).length) {
-          suggestVisible({ toast: false, announce: false });
-        }
-      });
+      scheduleAutoSuggest({ announce: false, delay: 120 });
     }
     paintSuggestButton();
+  };
+
+  /* Plan carousel + auto-pull listeners — wired once from boot so Plan
+   * works before the user has opened the Syndicate desk. */
+  View.wireGlobals = function () {
+    if (globalsWired) return;
+    globalsWired = true;
+
+    Dom.delegate(document, "click", '[data-action="plan-syn-prev"]', () => planSynStep(-1));
+    Dom.delegate(document, "click", '[data-action="plan-syn-next"]', () => planSynStep(1));
+    Dom.delegate(document, "click", '[data-action="plan-syn-open"]', () => {
+      const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
+      const a = picks[planSynIndex];
+      if (a) openInPlan(a);
+    });
+
+    document.addEventListener("syndicate:pulled", () => {
+      if (Router.current() === "syndicate") {
+        try { View.render(); } catch (_) {}
+      } else {
+        try { View.paintPlanCarousel(); } catch (_) {}
+      }
+      scheduleAutoSuggest({ announce: false, delay: 100 });
+    });
   };
 
   Router.register("syndicate", {

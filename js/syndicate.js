@@ -784,15 +784,24 @@
   };
 
   Syndicate.keywords = function (article, limit) {
-    const text = [article.title, article.summary, article.body].filter(Boolean).join("\n");
-    if (!window.Discovery || !Discovery.textVector) {
-      return simpleKeywords(text, limit || 8);
+    const lim = limit || 8;
+    if (article && article._kw && article._kw.n >= lim && Array.isArray(article._kw.terms)) {
+      return article._kw.terms.slice(0, lim);
     }
-    const vector = Discovery.textVector(text);
-    const terms = Discovery.topTerms
-      ? Discovery.topTerms(vector, limit || 8)
-      : Object.keys(vector).sort((a, b) => vector[b] - vector[a]).slice(0, limit || 8);
-    return terms.map((t) => (typeof t === "string" ? t : (t.term || String(t))));
+    const text = [article && article.title, article && article.summary, article && article.body]
+      .filter(Boolean).join("\n");
+    let terms;
+    if (!window.Discovery || !Discovery.textVector) {
+      terms = simpleKeywords(text, lim);
+    } else {
+      const vector = Discovery.textVector(text);
+      const raw = Discovery.topTerms
+        ? Discovery.topTerms(vector, lim)
+        : Object.keys(vector).sort((a, b) => vector[b] - vector[a]).slice(0, lim);
+      terms = raw.map((t) => (typeof t === "string" ? t : (t.term || String(t))));
+    }
+    if (article) article._kw = { n: lim, terms: terms };
+    return terms;
   };
 
   function simpleKeywords(text, limit) {
@@ -1068,6 +1077,88 @@
     matchCache = {};
     delete store.headlineCache;
     persist();
+  };
+
+  /* ------------------------------------------------------------------
+   * AUTO PULL — Settings “Syndicate articles”
+   * Periodic feed refresh while the tab is open, parallel to live score
+   * watching. Default on; headlines still land in the 24h cache.
+   * ------------------------------------------------------------------ */
+
+  const AUTO_INTERVAL_MS = 20 * 60 * 1000;
+  /* Skip a boot pull when the cache was written this recently — a reload
+   * seconds after the last pull should not re-hit every feed. */
+  const AUTO_BOOT_FRESH_MS = 15 * 60 * 1000;
+  let autoTimer = null;
+  let autoVisibilityBound = false;
+
+  Syndicate.autoEnabled = function () {
+    return store.autoFetch !== false;
+  };
+
+  Syndicate.setAutoEnabled = function (on) {
+    store.autoFetch = !!on;
+    persist();
+    if (on) Syndicate.startAuto();
+    else Syndicate.stopAuto();
+  };
+
+  Syndicate.autoWatching = function () {
+    return !!autoTimer;
+  };
+
+  function emitPulled(detail) {
+    try {
+      document.dispatchEvent(new CustomEvent("syndicate:pulled", { detail: detail || {} }));
+    } catch (_) {}
+  }
+
+  Syndicate.autoTick = async function (opts) {
+    opts = opts || {};
+    if (!Syndicate.autoEnabled()) return null;
+    if (demoActive()) return null;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return null;
+    if (pulling) return null;
+
+    const savedAt = Syndicate.cacheSavedAt() || 0;
+    const age = savedAt ? (Date.now() - savedAt) : Infinity;
+    if (!opts.force && articles.length && age < AUTO_BOOT_FRESH_MS) {
+      emitPulled({ skipped: true, reason: "fresh", articles: articles });
+      return { articles: articles, errors: [], skipped: true, keptCache: true };
+    }
+
+    try {
+      const res = await Syndicate.pull({
+        onProgress: typeof opts.onProgress === "function" ? opts.onProgress : undefined,
+      });
+      emitPulled(Object.assign({ auto: true }, res || {}));
+      return res;
+    } catch (err) {
+      console.warn("[syndicate] auto pull failed:", err && err.message);
+      return null;
+    }
+  };
+
+  Syndicate.startAuto = function () {
+    if (!Syndicate.autoEnabled()) return;
+    if (autoTimer) return;
+    Syndicate.autoTick({ force: false }).catch(() => {});
+    autoTimer = setInterval(() => {
+      Syndicate.autoTick({ force: true }).catch(() => {});
+    }, AUTO_INTERVAL_MS);
+    if (!autoVisibilityBound && typeof document !== "undefined") {
+      autoVisibilityBound = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "visible") return;
+        if (!Syndicate.autoEnabled() || !autoTimer) return;
+        Syndicate.autoTick({ force: false }).catch(() => {});
+      });
+    }
+  };
+
+  Syndicate.stopAuto = function () {
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = null;
   };
 
   window.Syndicate = Syndicate;

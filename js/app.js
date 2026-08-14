@@ -1835,6 +1835,7 @@
     document.getElementById("limit-select").value = String(state.limit);
 
     wireLiveSettings();
+    wireSyndicateAutoSettings();
 
     /* Wired here rather than in the Communities view because that view
      * mounts lazily, and this button lives in the always-visible scope
@@ -4028,6 +4029,17 @@
     safeRun("checkStorageAvailability", checkStorageAvailability);
     safeRun("demoMode", () => { if (window.Demo) Demo.maybeActivate(); });
     safeRun("liveWatch", () => { if (window.Live && Live.available()) Refresh.startWatching(); });
+    safeRun("syndicateGlobals", () => {
+      if (window.SyndicateView && SyndicateView.wireGlobals) SyndicateView.wireGlobals();
+    });
+    safeRun("syndicateAuto", () => {
+      if (window.Syndicate && Syndicate.autoEnabled && Syndicate.autoEnabled()) {
+        /* After MatchLex so offline ranks use the latest lexicons. */
+        const start = () => { try { Syndicate.startAuto(); } catch (_) {} };
+        if (window.MatchLex && MatchLex.load) MatchLex.load().then(start).catch(start);
+        else start();
+      }
+    });
   }
 
   /* ------------------------------------------------------------------
@@ -4083,6 +4095,42 @@
       if (w.at) bits.push(`last checked ${Util.relTime(w.at / 1000)}`);
     } else {
       bits.push("On. Nothing new enough to need it right now — the archive already has real numbers for everything loaded");
+    }
+    host.textContent = bits.join(" · ") + ".";
+  }
+
+  function wireSyndicateAutoSettings() {
+    const toggle = Dom.byId("syndicate-auto-toggle");
+    if (!toggle || !window.Syndicate || !Syndicate.autoEnabled) return;
+
+    toggle.checked = Syndicate.autoEnabled();
+    toggle.addEventListener("change", () => {
+      Syndicate.setAutoEnabled(toggle.checked);
+      renderSyndicateAutoStatus();
+      if (toggle.checked) {
+        Util.toast("Syndicate articles on — pulling feeds in the background");
+      } else {
+        Util.toast("Syndicate articles off — use Pull latest on Syndicate");
+      }
+    });
+    renderSyndicateAutoStatus();
+  }
+
+  function renderSyndicateAutoStatus() {
+    const host = Dom.byId("syndicate-auto-status");
+    if (!host || !window.Syndicate || !Syndicate.autoEnabled) return;
+    if (!Syndicate.autoEnabled()) {
+      host.textContent = "Off — open Syndicate and tap Pull latest when you want fresh headlines.";
+      return;
+    }
+    const n = Syndicate.articles ? Syndicate.articles().length : 0;
+    const when = Syndicate.cacheSavedAt && Syndicate.cacheSavedAt();
+    const bits = ["On — pulls on load and about every 20 minutes while this tab is open"];
+    if (n) {
+      bits.push(`${Util.fmtNum(n)} headlines cached`);
+      if (when) bits.push(`last saved ${Util.relTime(Math.floor(when / 1000))}`);
+    } else {
+      bits.push("no headlines cached yet");
     }
     host.textContent = bits.join(" · ") + ".";
   }

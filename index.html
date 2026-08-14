@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081412" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081412" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081412" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081412" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081412" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081413" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081413" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081413" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081413" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081413" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081412"></script>
+  <script src="./js/theme.js?v=2026081413"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -198,14 +198,14 @@
                   <div class="card-actions">
                     <button class="btn small ghost" type="button" data-action="plan-syn-prev" aria-label="Previous headline">‹</button>
                     <button class="btn small ghost" type="button" data-action="plan-syn-next" aria-label="Next headline">›</button>
-                    <button class="btn small" type="button" data-nav="syndicate"
+                    <button class="btn small" type="button" data-view="syndicate"
                             title="Open the full Syndicate desk">Syndicate ↗</button>
                   </div>
                 </header>
                 <div id="plan-syndicate-body" class="plan-syn-body">
                   <div class="empty plan-syn-empty">
                     <strong>No ranked headlines yet</strong>
-                    <p>Pull feeds on Syndicate and suggest destinations — the strongest ones land here.</p>
+                    <p>Syndicate articles load in the background when enabled in Settings — or open Syndicate and tap Pull latest.</p>
                   </div>
                 </div>
               </div>
@@ -915,6 +915,15 @@
         </span>
       </label>
       <p class="hint" id="live-status"></p>
+
+      <label class="field field-check">
+        <input type="checkbox" id="syndicate-auto-toggle" checked />
+        <span>
+          <span class="field-label">Syndicate articles</span>
+          <span class="hint">While this tab is open, pulls Politics/News feeds on load and about every 20 minutes, then ranks destinations in the background — same idea as live scores for recent posts. Turn off to only pull when you tap Fetch on Syndicate.</span>
+        </span>
+      </label>
+      <p class="hint" id="syndicate-auto-status"></p>
       <details class="settings-details">
         <summary>What this signs in as</summary>
         <p class="hint">Nothing, and there is nothing to set up. Reddit hands out an anonymous, read-only application token that lasts a day — no account, no password, no app to register — and its API sends the header that lets a browser read it directly, so there is still no server, proxy or worker anywhere in this. Reddit closed public app registration in 2025, so the identifier used is the public one belonging to Reddit's own mobile app. If they ever retire it, live scores stop and everything quietly falls back to the archive.</p>
@@ -1198,43 +1207,43 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081412"></script>
+<script src="./vendor/marked.min.js?v=2026081413"></script>
 
-<script src="./js/dom.js?v=2026081412"></script>
-<script src="./js/util.js?v=2026081412"></script>
-<script src="./js/state.js?v=2026081412"></script>
-<script src="./js/router.js?v=2026081412"></script>
-<script src="./js/sync.js?v=2026081412"></script>
-<script src="./js/archive.js?v=2026081412"></script>
-<script src="./js/reddit.js?v=2026081412"></script>
-<script src="./js/postcache.js?v=2026081412"></script>
-<script src="./js/live.js?v=2026081412"></script>
-<script src="./js/refresh.js?v=2026081412"></script>
-<script src="./js/subindex.js?v=2026081412"></script>
-<script src="./js/seeds.js?v=2026081412"></script>
-<script src="./js/matchlex.js?v=2026081412"></script>
-<script src="./js/rules.js?v=2026081412"></script>
-<script src="./js/timing.js?v=2026081412"></script>
-<script src="./js/analysis.js?v=2026081412"></script>
-<script src="./js/discovery.js?v=2026081412"></script>
-<script src="./js/charts.js?v=2026081412"></script>
-<script src="./js/campaigns.js?v=2026081412"></script>
-<script src="./js/reset.js?v=2026081412"></script>
-<script src="./js/analyze.js?v=2026081412"></script>
-<script src="./js/crosspost.js?v=2026081412"></script>
-<script src="./js/nextmove.js?v=2026081412"></script>
-<script src="./js/syndicate.js?v=2026081412"></script>
-<script src="./js/sidebar.js?v=2026081412"></script>
-<script src="./js/composer.js?v=2026081412"></script>
-<script src="./js/ui.js?v=2026081412"></script>
-<script src="./js/views/focus.js?v=2026081412"></script>
-<script src="./js/views/dashboard.js?v=2026081412"></script>
-<script src="./js/views/campaign.js?v=2026081412"></script>
-<script src="./js/views/communities.js?v=2026081412"></script>
-<script src="./js/views/posts.js?v=2026081412"></script>
-<script src="./js/views/syndicate.js?v=2026081412"></script>
-<script src="./js/demo.js?v=2026081412"></script>
-<script src="./js/app.js?v=2026081412"></script>
+<script src="./js/dom.js?v=2026081413"></script>
+<script src="./js/util.js?v=2026081413"></script>
+<script src="./js/state.js?v=2026081413"></script>
+<script src="./js/router.js?v=2026081413"></script>
+<script src="./js/sync.js?v=2026081413"></script>
+<script src="./js/archive.js?v=2026081413"></script>
+<script src="./js/reddit.js?v=2026081413"></script>
+<script src="./js/postcache.js?v=2026081413"></script>
+<script src="./js/live.js?v=2026081413"></script>
+<script src="./js/refresh.js?v=2026081413"></script>
+<script src="./js/subindex.js?v=2026081413"></script>
+<script src="./js/seeds.js?v=2026081413"></script>
+<script src="./js/matchlex.js?v=2026081413"></script>
+<script src="./js/rules.js?v=2026081413"></script>
+<script src="./js/timing.js?v=2026081413"></script>
+<script src="./js/analysis.js?v=2026081413"></script>
+<script src="./js/discovery.js?v=2026081413"></script>
+<script src="./js/charts.js?v=2026081413"></script>
+<script src="./js/campaigns.js?v=2026081413"></script>
+<script src="./js/reset.js?v=2026081413"></script>
+<script src="./js/analyze.js?v=2026081413"></script>
+<script src="./js/crosspost.js?v=2026081413"></script>
+<script src="./js/nextmove.js?v=2026081413"></script>
+<script src="./js/syndicate.js?v=2026081413"></script>
+<script src="./js/sidebar.js?v=2026081413"></script>
+<script src="./js/composer.js?v=2026081413"></script>
+<script src="./js/ui.js?v=2026081413"></script>
+<script src="./js/views/focus.js?v=2026081413"></script>
+<script src="./js/views/dashboard.js?v=2026081413"></script>
+<script src="./js/views/campaign.js?v=2026081413"></script>
+<script src="./js/views/communities.js?v=2026081413"></script>
+<script src="./js/views/posts.js?v=2026081413"></script>
+<script src="./js/views/syndicate.js?v=2026081413"></script>
+<script src="./js/demo.js?v=2026081413"></script>
+<script src="./js/app.js?v=2026081413"></script>
 
 <script>
   (function () {
