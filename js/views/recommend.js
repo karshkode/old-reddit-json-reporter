@@ -221,6 +221,8 @@
           ${destHtml(tips, post.subreddit)}
           <div class="plan-syn-actions">
             <button type="button" class="btn primary small" data-action="plan-rec-open" data-post="${esc(post.id)}">Open in Plan</button>
+            <button type="button" class="btn small" data-action="plan-rec-view" data-post="${esc(post.id)}"
+                    title="Read this post in the in-app feed">View</button>
             ${camp}
             ${post.permalink ? `<a class="btn ghost small" href="${esc(post.permalink)}" target="_blank" rel="noopener">Reddit ↗</a>` : ""}
           </div>
@@ -350,6 +352,8 @@
     }
   };
 
+  View.candidatePosts = candidatePosts;
+
   View.openInPlan = function (postId) {
     const post = ((window.AppState && AppState.posts) || []).find((p) => p && p.id === postId);
     if (!post || !window.FocusView) return;
@@ -376,6 +380,16 @@
   View.bind = function () {
     Dom.delegate(document, "click", '[data-action="plan-rec-open"]', (e, el) => {
       if (el.dataset.post) View.openInPlan(el.dataset.post);
+    });
+    Dom.delegate(document, "click", '[data-action="plan-rec-view"]', (e, el) => {
+      const id = el.dataset.post;
+      const post = ((window.AppState && AppState.posts) || []).find((p) => p && p.id === id);
+      if (!post || !window.FeedView) return;
+      FeedView.openPost(post, {
+        posts: candidatePosts(24),
+        title: "Recommended posts",
+        subtitle: trunc(post.title || "", 60),
+      });
     });
     Dom.delegate(document, "click", '[data-action="plan-rec-make-campaign"]', (e, el) => {
       if (el.dataset.post) View.makeCampaign(el.dataset.post);

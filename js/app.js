@@ -4156,6 +4156,7 @@
     refreshCampaignSummaries: refreshAllCampaignSummaries,
     openComposer: function (id) { return openComposer(id); },
     openPostDetail: openPostDetail,
+    openMediaPreview: openMediaPreview,
     renderRelatedForDetail: renderRelatedForDetail,
     runDiscovery: function () { return _runDiscover && _runDiscover(); },
     runSync: runSync,

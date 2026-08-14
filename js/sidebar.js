@@ -138,9 +138,9 @@
     document.body.classList.remove("sidebar-open");
 
     /* Wipe generic sidebars on close so the next open starts
-     * fresh. The composer-sidebar is excluded — its DOM holds
-     * state we want to preserve across opens. */
-    if (el && activeId !== "composer-sidebar") {
+     * fresh. The composer and feed viewer keep their DOM — both
+     * own persistent structure that open/paint reuses. */
+    if (el && activeId !== "composer-sidebar" && activeId !== "feed-viewer") {
       const bodyEl = el.querySelector("[data-sidebar-body]");
       if (bodyEl) bodyEl.innerHTML = "";
     }

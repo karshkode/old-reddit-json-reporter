@@ -528,14 +528,10 @@
           title="Preview media without leaving the dashboard"><img src="${Util.escapeHtml(mediaUrl)}" alt="" loading="lazy" /></button>`;
       }
 
-      /* Title cell: the title text is a real <a> linking to the
-       * post on Reddit so the user can open the source post in
-       * one tap from the table. Click on the title -> opens
-       * Reddit in a new tab. Click ANYWHERE ELSE in the row ->
-       * opens the in-dashboard detail pane (charts / sentiment
-       * / comments analysis), preserving the prior row-click
-       * affordance. The exclusion list in the row's click
-       * handler below keeps the two from firing simultaneously. */
+      /* Title cell: primary click opens the in-app feed so you can
+       * read without leaving for Reddit. A secondary Reddit link stays
+       * available. Click elsewhere in the row still opens the detail
+       * pane (charts / sentiment / comments). */
       /* "When" cell shows BOTH the relative age ("2h ago") and the
        * actual local clock time ("14:23"). Helps the user spot
        * whether a sub's apparent "best post hour" is actually
@@ -545,6 +541,10 @@
        * legible. Hover for the full date. */
       const whenAge = Util.escapeHtml(Util.relTime(p.created_utc));
       const whenClock = Util.escapeHtml(Util.fmtClockTime(p.created_utc));
+      const redditLink = p.permalink
+        ? `<a class="title-reddit" href="${Util.escapeHtml(p.permalink)}" target="_blank" rel="noopener"
+              title="Open on Reddit \u2197" aria-label="Open on Reddit">\u2197</a>`
+        : "";
       tr.innerHTML = `
         <td data-label="When" title="${Util.escapeHtml(Util.fmtDateShort(p.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}">
           <div class="when-age">${whenAge}</div>
@@ -553,12 +553,11 @@
         <td data-label="Sub"><span class="tag">r/${Util.escapeHtml(p.subreddit)}</span></td>
         <td data-label="Title" class="title">
           ${thumbHtml}
-          <a class="title-text"
-             href="${Util.escapeHtml(p.permalink || "")}"
-             target="_blank"
-             rel="noopener"
-             title="Open in Reddit \u2197 (click row body to expand details)"
-             data-post-link="${Util.escapeHtml(p.id)}">${Util.escapeHtml(p.title || "")}<span class="title-link-icon" aria-hidden="true">\u2197</span></a>
+          <button type="button" class="title-text title-feed"
+             title="Read in the in-app feed"
+             data-action="open-post-feed"
+             data-post-id="${Util.escapeHtml(p.id)}">${Util.escapeHtml(p.title || "")}</button>
+          ${redditLink}
           ${p.flair ? `<span class="tag flair">${Util.escapeHtml(p.flair)}</span>` : ""}${flagsHtml}
         </td>
         <td data-label="Author">${Util.escapeHtml(p.author || "")}</td>
@@ -585,15 +584,11 @@
       tr.addEventListener("click", (ev) => {
         /* Skip the row-click → detail-pane behavior when the
          * click was actually on:
-         *   - a.title-text         (opens Reddit permalink)
-         *   - .post-thumb          (opens media-preview modal)
+         *   - .title-feed / .title-reddit  (feed viewer / Reddit)
+         *   - .post-thumb                  (media-preview modal)
          *   - the row's action pair + the campaign form it opens
-         *
-         * Without these exclusions the title-link's new-tab open
-         * would also expand the detail pane underneath, which is
-         * confusing — the user sees their click open Reddit AND
-         * the detail card scroll into focus simultaneously. */
-        if (ev.target.closest && ev.target.closest('.row-actions, .post-make-form, .post-make-form-row, a.title-text, .post-thumb')) return;
+         */
+        if (ev.target.closest && ev.target.closest('.row-actions, .post-make-form, .post-make-form-row, .title-feed, .title-reddit, a.title-text, .post-thumb')) return;
         onRowClick(p);
       });
       tr.addEventListener("keydown", (e) => {

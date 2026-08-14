@@ -10,11 +10,11 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081418" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081418" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081418" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081418" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081418" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081419" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081419" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081419" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081419" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081419" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
   <script src="./js/theme.js?v=2026081418"></script>
@@ -196,11 +196,14 @@
                     <h2>Recommended posts</h2>
                     <span class="hint">Loaded posts ranked by keyword match — where each should go next</span>
                   </div>
-                  <div class="card-actions">
-                    <button class="btn small ghost" type="button" data-action="plan-rec-refresh"
-                            title="Re-rank destinations for loaded posts">↻ Re-rank</button>
-                    <button class="card-help" type="button" aria-label="How this card is built" data-help="Each row is one post from your loaded inventory (cross-post copies are collapsed to a single representative). Keywords come from the title and body; destinations are scored with the same Discovery match path Syndicate uses for headlines — theme, sphere, reach and activity — with a floor so weak fits stay off the list. Open in Plan hands the post to the Plan tab for a timed next move. When the same content already exists in two or more communities, Make campaign turns those copies into a tracked campaign.">?</button>
-                  </div>
+                <div class="card-actions">
+                  <button class="btn small ghost" type="button" data-action="open-feed"
+                          data-feed-scope="recommend" data-feed-title="Recommended posts"
+                          title="Browse recommended posts as an in-app feed">☰ Feed</button>
+                  <button class="btn small ghost" type="button" data-action="plan-rec-refresh"
+                          title="Re-rank destinations for loaded posts">↻ Re-rank</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each row is one post from your loaded inventory (cross-post copies are collapsed to a single representative). Keywords come from the title and body; destinations are scored with the same Discovery match path Syndicate uses for headlines — theme, sphere, reach and activity — with a floor so weak fits stay off the list. Open in Plan hands the post to the Plan tab for a timed next move. View opens the in-app feed. When the same content already exists in two or more communities, Make campaign turns those copies into a tracked campaign.">?</button>
+                </div>
                 </header>
                 <div id="plan-recommend-body" class="plan-rec-body">
                   <div class="empty plan-syn-empty">
@@ -689,12 +692,15 @@
               <!-- Checks exactly the rows on screen, which is also the
                    only way to re-read a post whose subreddit has long
                    since dropped it off the listing. -->
+              <button class="btn small ghost" type="button" data-action="open-feed"
+                      data-feed-scope="filtered" data-feed-title="Posts"
+                      title="Browse the filtered posts as an in-app feed">☰ Feed</button>
               <button class="btn small" type="button" data-sync="visible"
                       title="Re-read only the posts currently listed below">↻ Sync these</button>
               <button class="btn small" type="button" data-sync="new"
                       title="Re-read every community in Showing and fold in new posts">↻ Sync communities</button>
               <button class="card-help" type="button" aria-label="What you can do from a post"
-                      data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first.">?</button>
+                      data-help="Opening a post also matches it against the issue-sphere catalog and lists the communities those spheres reach, each with a score and the reason it matched. From there you can load the ones you want — which is what gives each community its own posting-time panel on the Dashboard — or turn the post into a campaign, which does both and then runs the wider discovery pass against Reddit's own search. The + Campaign button on any row is the same flow without opening the post first. Feed opens the same list as a Reddit-like scrollable viewer inside the app.">?</button>
             </div>
           </header>
 
@@ -1200,6 +1206,23 @@
 </aside>
 <div id="composer-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
+<!-- In-app Reddit-like feed viewer -->
+<aside id="feed-viewer" class="sidebar sidebar-wide feed-viewer" hidden role="dialog" aria-modal="true" aria-labelledby="feed-viewer-title">
+  <header class="sidebar-header">
+    <div>
+      <h2 class="sidebar-title" id="feed-viewer-title" data-sidebar-title>Feed</h2>
+      <div class="sidebar-subtitle" id="feed-viewer-meta" data-sidebar-subtitle hidden></div>
+    </div>
+    <div class="sidebar-actions">
+      <button type="button" class="sidebar-close" data-sidebar-close aria-label="Close feed">×</button>
+    </div>
+  </header>
+  <div class="sidebar-body feed-viewer-body" data-sidebar-body>
+    <div id="feed-viewer-list" class="feed-list"></div>
+  </div>
+</aside>
+<div id="feed-viewer-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
+
 <!-- Generic sidebar used for drill-downs that would otherwise bury the
      page in a long scroll. -->
 <div id="section-sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="section-sidebar-title" hidden>
@@ -1242,18 +1265,19 @@
 <script src="./js/crosspost.js?v=2026081418"></script>
 <script src="./js/nextmove.js?v=2026081418"></script>
 <script src="./js/syndicate.js?v=2026081418"></script>
-<script src="./js/sidebar.js?v=2026081418"></script>
+<script src="./js/sidebar.js?v=2026081419"></script>
 <script src="./js/composer.js?v=2026081418"></script>
-<script src="./js/ui.js?v=2026081418"></script>
-<script src="./js/views/focus.js?v=2026081418"></script>
-<script src="./js/views/recommend.js?v=2026081418"></script>
-<script src="./js/views/dashboard.js?v=2026081418"></script>
+<script src="./js/ui.js?v=2026081419"></script>
+<script src="./js/views/focus.js?v=2026081419"></script>
+<script src="./js/views/recommend.js?v=2026081419"></script>
+<script src="./js/views/feed.js?v=2026081419"></script>
+<script src="./js/views/dashboard.js?v=2026081419"></script>
 <script src="./js/views/campaign.js?v=2026081418"></script>
 <script src="./js/views/communities.js?v=2026081418"></script>
 <script src="./js/views/posts.js?v=2026081418"></script>
 <script src="./js/views/syndicate.js?v=2026081418"></script>
 <script src="./js/demo.js?v=2026081418"></script>
-<script src="./js/app.js?v=2026081418"></script>
+<script src="./js/app.js?v=2026081419"></script>
 
 <script>
   (function () {
