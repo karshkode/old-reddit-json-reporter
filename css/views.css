@@ -1851,6 +1851,11 @@ body.sheet-open {
 .plan-syn-dest.is-top {
   border: 1px solid var(--accent-soft, var(--border-strong));
 }
+.plan-syn-dest.is-posted {
+  opacity: 0.48;
+  border: 1px dashed color-mix(in srgb, var(--bad, #c44) 40%, var(--border));
+  background: color-mix(in srgb, var(--bad, #c44) 6%, var(--bg));
+}
 .plan-syn-dest-name {
   font-weight: var(--fw-bold);
   color: var(--text);
@@ -1956,6 +1961,24 @@ body.sheet-open {
   font-weight: var(--fw-bold);
   line-height: 1.35;
   margin-bottom: var(--s-1);
+  color: var(--text);
+  display: block;
+  text-decoration: none;
+}
+a.syn-title:hover,
+a.syn-title:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.syn-thumb-link {
+  display: block;
+  border-radius: var(--radius-xs);
+  line-height: 0;
+}
+.syn-thumb-link:hover .syn-thumb,
+.syn-thumb-link:focus-visible .syn-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .syn-sum {
   font-size: var(--fs-sm);
@@ -2000,6 +2023,19 @@ body.sheet-open {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   background: color-mix(in srgb, var(--accent) 14%, var(--bg));
   color: var(--text);
+}
+.syn-suggest.is-posted {
+  opacity: 0.45;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--bad, #c44) 45%, var(--border));
+  color: var(--text-mute);
+}
+.syn-posted-tag {
+  font-style: normal;
+  font-size: 0.85em;
+  opacity: 0.9;
+  margin-left: 2px;
+  color: var(--bad, #c44);
 }
 .syn-suggest em {
   font-style: normal;
@@ -2094,6 +2130,18 @@ body.sheet-open {
   gap: var(--s-2);
 }
 .syn-blocked { margin-top: var(--s-4); }
+.syn-cand.is-posted {
+  opacity: 0.55;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--bad, #c44) 40%, var(--border));
+  background: color-mix(in srgb, var(--bad, #c44) 5%, var(--bg));
+}
+.syn-cand-posted-note {
+  margin: var(--s-2) 0 0;
+  font-size: var(--fs-2xs);
+  color: var(--text-mute);
+  line-height: 1.4;
+}
 .syn-already {
   margin: 0 0 var(--s-4);
   padding: var(--s-3);

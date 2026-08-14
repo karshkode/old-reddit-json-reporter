@@ -26,7 +26,7 @@
   const ARTICLE_TTL_MS = 24 * 60 * 60 * 1000;
   /* Bump when match-cache shape or suggest semantics change so stale
    * destination tips from an older build are discarded (articles stay). */
-  const MATCH_CACHE_REV = 3;
+  const MATCH_CACHE_REV = 4;
 
   /* Curated from data/subscriptions.opml. Politics + News on by
    * default; Tech available; sports / podcasts / pop folders skipped. */
@@ -105,7 +105,32 @@
     {"title":"Bolts","xmlUrl":"https://boltsmag.org/feed/","htmlUrl":"https://boltsmag.org/","category":"Politics","defaultOn":true,"altUrl":"https://boltsmag.org/feed/","id":"bolts"},
     {"title":"Labor Notes","xmlUrl":"https://labornotes.org/feed","htmlUrl":"https://labornotes.org/","category":"Politics","defaultOn":true,"altUrl":"https://labornotes.org/feed","id":"labornotes"},
     {"title":"NYT Politics","xmlUrl":"https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml","htmlUrl":"https://www.nytimes.com/section/politics","category":"Politics","defaultOn":true,"altUrl":"https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml","id":"nyt-pol"},
-    {"title":"BBC US & Canada","xmlUrl":"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml","htmlUrl":"https://www.bbc.com/news/world/us_and_canada","category":"News","defaultOn":true,"altUrl":"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml","id":"bbc-us"}
+    {"title":"BBC US & Canada","xmlUrl":"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml","htmlUrl":"https://www.bbc.com/news/world/us_and_canada","category":"News","defaultOn":true,"altUrl":"https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml","id":"bbc-us"},
+    /* Progressive-sphere desks — investigative, labor, democracy, local
+     * progressive outlets that match civic destination ranking. */
+    {"title":"The Lever","xmlUrl":"https://www.levernews.com/rss/","htmlUrl":"https://www.levernews.com/","category":"Politics","defaultOn":true,"altUrl":"https://www.levernews.com/rss/","id":"the-lever"},
+    {"title":"The New Republic","xmlUrl":"https://newrepublic.com/rss.xml","htmlUrl":"https://newrepublic.com/","category":"Politics","defaultOn":true,"altUrl":"https://newrepublic.com/rss.xml","id":"new-republic"},
+    {"title":"The American Prospect","xmlUrl":"https://americanprospect.org/feed/","htmlUrl":"https://prospect.org/","category":"Politics","defaultOn":true,"altUrl":"https://americanprospect.org/feed/","id":"am-prospect"},
+    {"title":"Capital B","xmlUrl":"https://capitalbnews.org/feed/","htmlUrl":"https://capitalbnews.org/","category":"Politics","defaultOn":true,"altUrl":"https://capitalbnews.org/feed/","id":"capital-b"},
+    {"title":"Texas Tribune","xmlUrl":"https://www.texastribune.org/feeds/latest/","htmlUrl":"https://www.texastribune.org/","category":"News","defaultOn":true,"altUrl":"https://www.texastribune.org/feeds/latest/","id":"texas-trib"},
+    {"title":"Wisconsin Examiner","xmlUrl":"https://wisconsinexaminer.com/feed/","htmlUrl":"https://wisconsinexaminer.com/","category":"Politics","defaultOn":true,"altUrl":"https://wisconsinexaminer.com/feed/","id":"wisc-exam"},
+    {"title":"Michigan Advance","xmlUrl":"https://michiganadvance.com/feed/","htmlUrl":"https://michiganadvance.com/","category":"Politics","defaultOn":true,"altUrl":"https://michiganadvance.com/feed/","id":"mich-adv"},
+    {"title":"The Appeal","xmlUrl":"https://www.theappeal.org/feed/","htmlUrl":"https://www.theappeal.org/","category":"Politics","defaultOn":true,"altUrl":"https://www.theappeal.org/feed/","id":"the-appeal"},
+    {"title":"Prism","xmlUrl":"https://prismreports.org/feed/","htmlUrl":"https://prismreports.org/","category":"Politics","defaultOn":true,"altUrl":"https://prismreports.org/feed/","id":"prism-rpt"},
+    {"title":"Reveal","xmlUrl":"https://revealnews.org/feed/","htmlUrl":"https://revealnews.org/","category":"Politics","defaultOn":true,"altUrl":"https://revealnews.org/feed/","id":"reveal-news"},
+    {"title":"Jewish Currents","xmlUrl":"https://jewishcurrents.org/feed/","htmlUrl":"https://jewishcurrents.org/","category":"Politics","defaultOn":true,"altUrl":"https://jewishcurrents.org/feed/","id":"jewish-curr"},
+    {"title":"Washington Monthly","xmlUrl":"https://washingtonmonthly.com/feed/","htmlUrl":"https://washingtonmonthly.com/","category":"Politics","defaultOn":true,"altUrl":"https://washingtonmonthly.com/feed/","id":"wash-month"},
+    {"title":"Rewire News Group","xmlUrl":"https://rewirenewsgroup.com/feed/","htmlUrl":"https://rewirenewsgroup.com/","category":"Politics","defaultOn":true,"altUrl":"https://rewirenewsgroup.com/feed/","id":"rewire-ng"},
+    {"title":"Documented","xmlUrl":"https://documentedny.com/feed/","htmlUrl":"https://documentedny.com/","category":"Politics","defaultOn":true,"altUrl":"https://documentedny.com/feed/","id":"documented"},
+    {"title":"STAT","xmlUrl":"https://www.statnews.com/feed/","htmlUrl":"https://www.statnews.com/","category":"News","defaultOn":true,"altUrl":"https://www.statnews.com/feed/","id":"stat-news"},
+    {"title":"The Markup","xmlUrl":"https://themarkup.org/feeds/rss.xml","htmlUrl":"https://themarkup.org/","category":"News","defaultOn":true,"altUrl":"https://themarkup.org/feeds/rss.xml","id":"the-markup"},
+    {"title":"Center for Public Integrity","xmlUrl":"https://publicintegrity.org/feed/","htmlUrl":"https://publicintegrity.org/","category":"Politics","defaultOn":true,"altUrl":"https://publicintegrity.org/feed/","id":"pub-integ"},
+    {"title":"Drop Site News","xmlUrl":"https://www.dropsitenews.com/feed","htmlUrl":"https://www.dropsitenews.com/","category":"Politics","defaultOn":true,"altUrl":"https://www.dropsitenews.com/feed","id":"drop-site"},
+    {"title":"Zeteo","xmlUrl":"https://zeteo.com/feed","htmlUrl":"https://zeteo.com/","category":"Politics","defaultOn":true,"altUrl":"https://zeteo.com/feed","id":"zeteo"},
+    {"title":"More Perfect Union","xmlUrl":"https://www.moreperfectunion.org/feed","htmlUrl":"https://www.moreperfectunion.org/","category":"Politics","defaultOn":true,"altUrl":"https://www.moreperfectunion.org/feed","id":"more-perf"},
+    {"title":"Heated","xmlUrl":"https://heated.world/feed","htmlUrl":"https://heated.world/","category":"Politics","defaultOn":true,"altUrl":"https://heated.world/feed","id":"heated"},
+    {"title":"Salon","xmlUrl":"https://www.salon.com/feed/","htmlUrl":"https://www.salon.com/","category":"Politics","defaultOn":true,"altUrl":"https://www.salon.com/feed/","id":"salon"},
+    {"title":"Raw Story","xmlUrl":"https://www.rawstory.com/feeds/feed.rss","htmlUrl":"https://www.rawstory.com/","category":"Politics","defaultOn":true,"altUrl":"https://www.rawstory.com/feeds/feed.rss","id":"raw-story"}
   ];
 
   /* Folders the OPML carried that we refuse to load even on re-import.
@@ -156,21 +181,34 @@
    * without re-running Discovery for every headline immediately. */
   function serializeMatch(m) {
     if (!m) return null;
+    function packPosted(ap) {
+      if (!ap) return null;
+      const post = ap.post || null;
+      return {
+        source: ap.source || "archive",
+        post: post ? {
+          id: post.id || "",
+          permalink: post.permalink || "",
+          score: post.score,
+          created_utc: post.created_utc,
+          title: post.title || "",
+        } : null,
+      };
+    }
     return {
       candidates: (m.candidates || []).slice(0, 8).map((c) => ({
         name: c.name || c.key,
         key: c.key || c.name,
         score: c.score,
         blocked: !!c.blocked,
+        alreadyPosted: packPosted(c.alreadyPosted),
       })),
       blocked: (m.blocked || []).slice(0, 6).map((c) => ({
         name: c.name || c.key,
         key: c.key || c.name,
         score: c.score,
         blocked: true,
-        alreadyPosted: c.alreadyPosted
-          ? { source: c.alreadyPosted.source || "archive" }
-          : null,
+        alreadyPosted: packPosted(c.alreadyPosted),
       })),
       spheres: (m.spheres || []).slice(0, 4).map((s) => ({
         key: s.key,
@@ -304,16 +342,19 @@
   Syndicate.pulling = function () { return pulling; };
   Syndicate.matchOf = function (id) { return matchCache[id] || null; };
 
-  /* Highest-rated headlines for the Plan carousel. Strong destinations
-   * only; score desc then published. */
+  /* Highest-rated headlines for the Plan carousel. Prefer destinations
+   * that are still clear to post; already-on-sub tips stay visible but
+   * rank lower so fresh rooms surface first. */
   Syndicate.destinationScore = function (id) {
-    const tips = Syndicate.suggestionsOf(id, 1);
-    if (tips.length) {
-      const s = tips[0].score;
-      return s == null ? 0 : Number(s);
+    const tips = Syndicate.suggestionsOf(id, 4);
+    if (!tips.length) {
+      if (matchCache[id]) return -1;
+      return -2;
     }
-    if (matchCache[id]) return -1;
-    return -2;
+    const clear = tips.find((c) => !c.alreadyPosted) || tips[0];
+    let s = clear.score == null ? 0 : Number(clear.score);
+    if (clear.alreadyPosted) s -= 80;
+    return s;
   };
 
   Syndicate.topPicks = function (limit) {
@@ -342,26 +383,53 @@
       .map(([name, count]) => ({ name: name, count: count }));
   };
 
-  /* Top cleared communities for a matched article (empty until suggest
-   * or match has run). Used by the headline list to show destinations
-   * without opening each card. Weak scores stay hidden — one strong
-   * pick beats three mediocre civic catch-alls. */
+  /* Top communities for a matched article. Already-posted rooms stay in
+   * the list (faded in the UI) so you can see the link exists on that
+   * specific sub — they sort after clear destinations. */
   Syndicate.MIN_SUGGEST_SCORE = 35;
 
   Syndicate.suggestionsOf = function (id, limit) {
     const m = matchCache[id];
-    if (!m || !m.candidates || !m.candidates.length) return [];
+    if (!m) return [];
     const floor = (window.Discovery && Discovery.MIN_SUGGEST_SCORE != null)
       ? Discovery.MIN_SUGGEST_SCORE
       : Syndicate.MIN_SUGGEST_SCORE;
-    const strong = m.candidates.filter((c) => (c.score == null ? 0 : c.score) >= floor);
+    const byName = new Map();
+    function consider(c) {
+      if (!c) return;
+      const score = c.score == null ? 0 : Number(c.score);
+      if (score < floor && !c.alreadyPosted) return;
+      /* Already-posted tips keep a slightly softer floor so a known hit
+       * on r/politics still surfaces even if the offline score was thin. */
+      if (c.alreadyPosted && score < Math.min(floor, 20)) return;
+      const name = String(c.name || c.key || "").toLowerCase();
+      if (!name) return;
+      const prev = byName.get(name);
+      if (!prev || score > (prev.score || 0) || (c.alreadyPosted && !prev.alreadyPosted)) {
+        byName.set(name, c);
+      }
+    }
+    for (const c of m.candidates || []) consider(c);
+    /* Legacy caches parked dupes under blocked — still surface them. */
+    for (const c of m.blocked || []) {
+      if (c && c.alreadyPosted) consider(c);
+    }
+    const strong = Array.from(byName.values()).sort((a, b) => {
+      const ap = a.alreadyPosted ? 1 : 0;
+      const bp = b.alreadyPosted ? 1 : 0;
+      if (ap !== bp) return ap - bp;
+      return (b.score || 0) - (a.score || 0);
+    });
     if (!strong.length) return [];
     const cap = limit == null ? 3 : limit;
-    /* Prefer a single clear leader when runners-up are far behind. */
-    if (strong.length >= 2 && cap > 1) {
-      const top = strong[0].score || 0;
-      const second = strong[1].score || 0;
-      if (top - second >= 12) return strong.slice(0, 1);
+    const clear = strong.filter((c) => !c.alreadyPosted);
+    if (clear.length >= 2 && cap > 1) {
+      const top = clear[0].score || 0;
+      const second = clear[1].score || 0;
+      if (top - second >= 12) {
+        const posted = strong.filter((c) => c.alreadyPosted).slice(0, Math.max(0, cap - 1));
+        return [clear[0]].concat(posted).slice(0, cap);
+      }
     }
     return strong.slice(0, cap);
   };
@@ -840,11 +908,15 @@
             posts: (window.AppState && AppState.posts) || [],
           });
         }
+        const isDupe = !!(rules && rules.duplicate);
+        /* Format/rule rejects stay hard-blocked. Already-posted links stay
+         * in the candidate list so the desk can show them faded. */
+        const formatBlock = !!(rules && rules.hard && !rules.ok && !isDupe);
         return Object.assign({}, c, {
           rules: rules,
-          blocked: !!(rules && rules.hard && !rules.ok),
+          blocked: formatBlock,
           ruleReasons: (rules && rules.reasons) || [],
-          alreadyPosted: rules && rules.duplicate
+          alreadyPosted: isDupe
             ? { post: rules.duplicate, source: "local" }
             : null,
         });
@@ -898,9 +970,8 @@
   };
 
   /* Rank many headlines without making the user press Match on each.
-   * Offline by default (catalog + loaded subs) so a pull of 100+ feeds
-   * can paint suggestions quickly; archive uniqueness waits until a
-   * headline is opened. */
+   * Offline rank first; archive uniqueness for unique_link rooms is on
+   * by default so already-posted destinations can be faded in the UI. */
   let suggesting = false;
   Syndicate.suggesting = function () { return suggesting; };
 
@@ -913,10 +984,13 @@
   Syndicate.suggestMany = async function (list, opts) {
     opts = opts || {};
     const refreshWeak = opts.refreshWeak !== false;
+    const skipArchive = opts.skipArchive === true;
     const want = (list || []).filter((a) => {
       if (!a || !a.id) return false;
       if (opts.force) return true;
-      if (!matchCache[a.id]) return true;
+      const cached = matchCache[a.id];
+      if (!cached) return true;
+      if (!skipArchive && !cached.archiveChecked) return true;
       if (refreshWeak && !Syndicate.hasStrongDestination(a.id)) return true;
       return false;
     });
@@ -932,17 +1006,34 @@
     try {
       await Util.pmap(want, opts.concurrency || 2, async (article) => {
         try {
-          await Syndicate.match(article, {
-            live: opts.live === true,
-            skipArchive: opts.skipArchive !== false,
-            limit: opts.limit || 8,
-            /* Re-rank weak / empty tips; force also refreshes strong ones. */
-            force: !!opts.force || !!matchCache[article.id],
-            aboutBudget: opts.aboutBudget == null ? 20 : opts.aboutBudget,
-            liveTimeout: opts.liveTimeout == null ? 6000 : opts.liveTimeout,
-            linkPriors: false,
-            onPartial: opts.onPartial,
-          });
+          const cached = matchCache[article.id];
+          const onlyArchive = cached
+            && !opts.force
+            && Syndicate.hasStrongDestination(article.id)
+            && !cached.archiveChecked
+            && !skipArchive;
+          if (onlyArchive) {
+            await annotateArchiveDupes(cached, Syndicate.asPost(article), {
+              archiveCap: opts.archiveCap == null ? 4 : opts.archiveCap,
+              signal: opts.signal,
+              onPartial: opts.onPartial,
+            });
+            matchCache[article.id] = cached;
+            persistHeadlinesSoon();
+          } else {
+            await Syndicate.match(article, {
+              live: opts.live === true,
+              skipArchive: skipArchive,
+              archiveCap: opts.archiveCap == null ? 4 : opts.archiveCap,
+              limit: opts.limit || 8,
+              /* Re-rank weak / empty tips; force also refreshes strong ones. */
+              force: !!opts.force || !!(cached && refreshWeak && !Syndicate.hasStrongDestination(article.id)),
+              aboutBudget: opts.aboutBudget == null ? 20 : opts.aboutBudget,
+              liveTimeout: opts.liveTimeout == null ? 6000 : opts.liveTimeout,
+              linkPriors: false,
+              onPartial: opts.onPartial,
+            });
+          }
         } catch (err) {
           errors.push({ id: article.id, message: (err && err.message) || String(err) });
         } finally {
@@ -959,12 +1050,18 @@
   };
 
   async function annotateArchiveDupes(result, post, opts) {
+    opts = opts || {};
     const pool = [].concat(result.candidates || [], result.blocked || []);
-    const need = pool.filter((c) => {
+    let need = pool.filter((c) => {
       if (c.alreadyPosted) return false;
       const reqs = c.rules && c.rules.rule && c.rules.rule.requires;
       return reqs && reqs.indexOf("unique_link") !== -1;
     });
+    /* Prefer higher-scoring rooms so we learn about the destinations
+     * the user is most likely to open first. */
+    need = need.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+    const cap = opts.archiveCap == null ? 6 : opts.archiveCap;
+    if (cap >= 0) need = need.slice(0, cap);
     if (!need.length) {
       result.archiveChecked = true;
       return result;
@@ -985,14 +1082,15 @@
           });
           if (!hit) continue;
           c.alreadyPosted = hit;
-          c.blocked = true;
+          /* Keep in candidates — UI fades these rather than hiding them. */
+          c.blocked = false;
           c.rules = Object.assign({}, c.rules || {}, {
             ok: false,
-            hard: true,
+            hard: false,
             duplicate: hit.post,
-            reasons: ["this link is already on the sub"],
+            reasons: ["already posted on this subreddit"],
           });
-          c.ruleReasons = ["this link is already on the sub"];
+          c.ruleReasons = ["already posted on this subreddit"];
         } catch (err) {
           console.warn(`[syndicate] archive dupe r/${name}:`, err && err.message);
         }
