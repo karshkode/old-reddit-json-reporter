@@ -281,9 +281,9 @@
     if (section === "settings") return renderSettings(campaign, agg);
   }
 
-  /* Plan's cascade, predict and volunteer cards are static markup wired
-     once by app.js; what this fills is the half that came from the old
-     Subreddits tab — when to post, and who has not been reached. */
+  /* Plan's cascade card is static markup wired once by app.js; what
+     this fills is timing plus who has not been reached. Inventory
+     recommendations and Make-campaign live on the dashboard Plan tab. */
   function renderPlan(campaign, agg) {
     renderCampaignTiming(campaign, agg);
     const discoverFor = Dom.byId("discover-campaign");

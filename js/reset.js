@@ -423,7 +423,7 @@
       const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `reddit-campaign-reporter-backup-${stamp}.json`;
+      a.download = `reddit-campaign-syndicator-backup-${stamp}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
