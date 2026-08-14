@@ -26,7 +26,7 @@
   const ARTICLE_TTL_MS = 24 * 60 * 60 * 1000;
   /* Bump when match-cache shape or suggest semantics change so stale
    * destination tips from an older build are discarded (articles stay). */
-  const MATCH_CACHE_REV = 2;
+  const MATCH_CACHE_REV = 3;
 
   /* Curated from data/subscriptions.opml. Politics + News on by
    * default; Tech available; sports / podcasts / pop folders skipped. */
@@ -140,7 +140,6 @@
       enabledCategories: { Politics: true, News: true, Tech: false },
       customFeeds: [], /* from OPML import, same shape as CATALOG */
       disabledFeedIds: [],
-      playbook: "default",
     };
   }
 
@@ -305,25 +304,8 @@
   Syndicate.pulling = function () { return pulling; };
   Syndicate.matchOf = function (id) { return matchCache[id] || null; };
 
-  Syndicate.playbook = function () {
-    const id = store.playbook || "default";
-    if (window.MatchLex && MatchLex.playbook) return MatchLex.playbook(id).id;
-    return id;
-  };
-
-  Syndicate.setPlaybook = function (id) {
-    const next = String(id || "default");
-    if (store.playbook === next) return;
-    store.playbook = next;
-    persist();
-    /* Seed maps change with the playbook — old ranks are misleading. */
-    matchCache = {};
-    persistHeadlinesNow();
-  };
-
-  /* Best strong-destination score for list sorting. Strong matches are
-   * ≥ floor; matched-but-weak return -1; not yet ranked return -2 so
-   * "No strong destination" rows sink under real picks. */
+  /* Highest-rated headlines for the Plan carousel. Strong destinations
+   * only; score desc then published. */
   Syndicate.destinationScore = function (id) {
     const tips = Syndicate.suggestionsOf(id, 1);
     if (tips.length) {
@@ -332,6 +314,32 @@
     }
     if (matchCache[id]) return -1;
     return -2;
+  };
+
+  Syndicate.topPicks = function (limit) {
+    const cap = limit == null ? 12 : limit;
+    return articles
+      .filter((a) => Syndicate.hasStrongDestination && Syndicate.hasStrongDestination(a.id))
+      .slice()
+      .sort((a, b) => {
+        const db = Syndicate.destinationScore(b.id);
+        const da = Syndicate.destinationScore(a.id);
+        if (db !== da) return db - da;
+        return (b.published || 0) - (a.published || 0);
+      })
+      .slice(0, cap);
+  };
+
+  Syndicate.sources = function () {
+    const counts = new Map();
+    for (const a of articles) {
+      const src = String(a.source || "").trim();
+      if (!src) continue;
+      counts.set(src, (counts.get(src) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name: name, count: count }));
   };
 
   /* Top cleared communities for a matched article (empty until suggest
@@ -850,8 +858,10 @@
       related = await Discovery.forPost(post, {
         limit: opts.limit || 12,
         include: include,
-        playbook: opts.playbook || Syndicate.playbook(),
         live: opts.live !== false && !(window.Demo && Demo.isActive()),
+        aboutBudget: opts.aboutBudget,
+        liveTimeout: opts.liveTimeout == null ? 8000 : opts.liveTimeout,
+        linkPriors: opts.linkPriors,
         onPartial: (partial) => {
           matchCache[article.id] = pack(partial);
           if (typeof opts.onPartial === "function") {
@@ -919,7 +929,9 @@
             limit: opts.limit || 8,
             /* Re-rank weak / empty tips; force also refreshes strong ones. */
             force: !!opts.force || !!matchCache[article.id],
-            playbook: opts.playbook || Syndicate.playbook(),
+            aboutBudget: opts.aboutBudget == null ? 20 : opts.aboutBudget,
+            liveTimeout: opts.liveTimeout == null ? 6000 : opts.liveTimeout,
+            linkPriors: false,
             onPartial: opts.onPartial,
           });
         } catch (err) {

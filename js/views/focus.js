@@ -351,7 +351,9 @@
       ${chosenHtml(post)}
       ${result ? answerHtml(result) : pendingHtml()}
     `;
-    if (result) paintRun(result);
+    if (window.SyndicateView && SyndicateView.paintPlanCarousel) {
+      SyndicateView.paintPlanCarousel();
+    }
   }
 
   /* ------------------------------------------------------------------
@@ -368,45 +370,58 @@
    * handed a plan that never mentioned it. Same list now: whatever
    * ranked above is what gets scheduled. */
   function runHtml(result) {
-    const subs = runSubs(result);
-    if (subs.length < 2) return "";
-    return `
-      <div class="focus-block focus-run">
-        <div class="focus-block-label">The run
-          <span class="focus-run-note">— the same communities, in the order to post them</span>
-        </div>
-        <div id="focus-cascade"></div>
-      </div>`;
+    /* Folded into the Next move / Then list — cascade times attach to
+     * each row so Plan answers once instead of twice. */
+    return "";
   }
 
   function runSubs(result) {
-    /* Only communities with posts behind them can be given a time, and a
-       schedule of untimed stops is just the list again with numbers. */
     return (result.moves || []).filter((m) => m.measured).map((m) => m.name);
   }
 
-  function paintRun(result) {
-    const el = document.getElementById("focus-cascade");
-    if (!el || !window.Analysis || !Analysis.cascadeSchedule) return;
-    const subs = runSubs(result);
-    if (subs.length < 2) return;
-    const post = result.post;
+  function attachSchedule(result) {
+    const moves = (result.moves || []).slice();
+    if (moves.length < 2 || !window.Analysis || !Analysis.cascadeSchedule) {
+      return moves.map((m) => Object.assign({}, m, { runAt: null }));
+    }
     let schedule;
     try {
-      schedule = Analysis.cascadeSchedule(subs, {
+      schedule = Analysis.cascadeSchedule(runSubs(result), {
         posts: (window.AppState && AppState.posts) || [],
         subProfiles: (window.AppState && AppState.subProfiles) || {},
         limit: 0,
       });
     } catch (err) {
       console.warn("[focus] cascade:", err && err.message);
-      return;
+      return moves.map((m) => Object.assign({}, m, { runAt: null }));
     }
-    UI.renderCascadeSchedule(el, schedule, {
-      post: post,
-      done: Crosspost.subsWithCopies ? Crosspost.subsWithCopies(post) : new Set(),
-      pending: Crosspost.pendingFor ? Crosspost.pendingFor(post) : [],
-    });
+    const stops = Array.isArray(schedule) ? schedule : ((schedule && schedule.stops) || []);
+    const byName = new Map();
+    for (const stop of stops) {
+      if (!stop || !stop.sub) continue;
+      const when = stop.openNow
+        ? `now · ${fmtRunTime(stop.targetTime)}`
+        : fmtRunTime(stop.targetTime);
+      byName.set(String(stop.sub).toLowerCase(), Object.assign({}, stop, { label: when }));
+    }
+    return moves.map((m) => Object.assign({}, m, {
+      runAt: byName.get(String(m.name).toLowerCase()) || null,
+    }));
+  }
+
+  function fmtRunTime(d) {
+    if (!d) return "";
+    try {
+      return new Date(d).toLocaleString(undefined, {
+        weekday: "short", hour: "numeric", minute: "2-digit",
+      });
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function paintRun() {
+    /* no-op — schedule lives on move rows now */
   }
 
   function pickerHtml() {
@@ -599,12 +614,23 @@
               Try loading a sphere that covers its subject from Communities.</p>`;
     }
 
-    const rest = result.moves.filter((m) => m !== result.lead);
+    const scheduled = attachSchedule(result);
+    const lead = result.lead
+      ? (scheduled.find((m) => m.key === result.lead.key) || result.lead)
+      : null;
+    const rest = scheduled
+      .filter((m) => !lead || m.key !== lead.key)
+      .sort((a, b) => {
+        const wa = NextMove.waitOf ? NextMove.waitOf(a) : 0;
+        const wb = NextMove.waitOf ? NextMove.waitOf(b) : 0;
+        if (wa !== wb) return wa - wb;
+        return (b.score || 0) - (a.score || 0);
+      });
     return `
-      ${result.lead ? leadHtml(result.lead, result) : noneMeasuredHtml(result)}
+      ${lead ? leadHtml(lead, result) : noneMeasuredHtml(result)}
       ${rest.length ? `
         <div class="focus-block">
-          <div class="focus-block-label">Then</div>
+          <div class="focus-block-label">Then · in posting order</div>
           <ol class="focus-moves">${rest.map((m) => moveHtml(m, result.post)).join("")}</ol>
         </div>` : ""}
       ${result.unmeasured.length ? `
@@ -618,7 +644,6 @@
           </ul>
         </details>` : ""}
       ${blockedHtml(result)}
-      ${runHtml(result)}
       ${footnoteHtml(result)}
     `;
   }
@@ -676,16 +701,20 @@
         ? `<strong>Post now</strong>`
         : `<strong>${esc((m.when && m.when.label) || m.slotLabel)}</strong>`;
     const tail = !m.graded
-      ? "no hour there beats any other"
+      ? "no hour there beats any other — good anytime room"
       : m.when
         ? (m.when.open ? `window open until ${esc(m.when.closesAt)}` : esc(m.when.inLabel))
         : "";
+    const runBit = m.runAt && m.runAt.label
+      ? `<div class="focus-lead-run">On the run · ${esc(m.runAt.label)}</div>`
+      : "";
 
     return `
       <div class="focus-lead" data-verdict="${esc(m.verdict)}">
         <div class="focus-lead-label">Next move</div>
         <div class="focus-lead-headline">${when} in <span class="focus-lead-sub">r/${esc(m.name)}</span></div>
         <div class="focus-lead-sub-line">${tail}${verdictBadge(m)}</div>
+        ${runBit}
         ${signalsHtml(m)}
         <p class="focus-lead-why">${esc(explain(m, result))}</p>
         <div class="focus-lead-actions">
@@ -832,13 +861,18 @@
      role="button" is both an accessibility error and an easy way to
      drill when you meant to post. Two named actions instead. */
   function moveHtml(m, post) {
+    const whenLabel = !m.graded
+      ? "any time"
+      : m.when
+        ? (m.when.open ? "open now" : m.when.label)
+        : m.slotLabel;
+    const runLabel = m.runAt && m.runAt.label ? m.runAt.label : "";
     return `
       <li class="focus-move" data-verdict="${esc(m.verdict)}">
         <div class="focus-move-head">
           <span class="focus-move-sub">r/${esc(m.name)}</span>
           ${verdictBadge(m)}
-          ${m.graded ? `<span class="focus-move-when">${esc(
-            m.when ? (m.when.open ? "open now" : m.when.label) : m.slotLabel)}</span>` : ""}
+          <span class="focus-move-when">${esc(runLabel || whenLabel)}</span>
         </div>
         ${signalsHtml(m)}
         <div class="focus-move-actions">
@@ -929,6 +963,9 @@
       cache.clear();
     }
     render();
+    if (window.SyndicateView && SyndicateView.paintPlanCarousel) {
+      SyndicateView.paintPlanCarousel();
+    }
     if (focusId && focused() && !resultFor(focused())) rank();
   };
 

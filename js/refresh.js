@@ -669,6 +669,7 @@
 
   let watchTimer = null;
   let watching = false;
+  let watchBusy = false;
   let lastWatch = { at: 0, count: 0, moved: 0 };
 
   Refresh.watchState = function () {
@@ -677,6 +678,7 @@
       count: Refresh.watchSet().length,
       at: lastWatch.at,
       moved: lastWatch.moved,
+      busy: watchBusy,
     };
   };
 
@@ -711,27 +713,40 @@
   async function tick() {
     if (document.visibilityState === "hidden") return;
     if (Refresh.busy()) return;
+    if (watchBusy) return;
     const set = Refresh.watchSet();
-    if (!set.length) return;
+    if (!set.length) {
+      Refresh.repaintWatch();
+      return;
+    }
 
-    const fresh = await Live.lookup(set.map((p) => p.id));
-    if (!fresh || !fresh.length) return;
+    watchBusy = true;
+    Refresh.repaintWatch();
+    try {
+      const fresh = await Live.lookup(set.map((p) => p.id));
+      if (!fresh || !fresh.length) {
+        lastWatch = { at: Date.now(), count: set.length, moved: 0 };
+        return;
+      }
 
-    /* Silent by design. This did not happen because anybody asked, so
-     * it must not take over the banner, raise a toast, or move the page
-     * under someone mid-read. It patches, notes what changed, and lets
-     * the next render pick it up. */
-    const patch = apply(fresh, { render: false, toast: false, adopt: "existing" });
-    lastWatch = { at: Date.now(), count: set.length, moved: patch.updated };
-    if (patch.updated) {
-      App.rerenderAll();
-      for (const c of (window.Campaigns ? Campaigns.list() : [])) {
-        if (state().campaignSummaries && state().campaignSummaries[c.id]) {
-          App.publishCampaign(c, fresh).catch(() => {});
+      /* Silent by design. This did not happen because anybody asked, so
+       * it must not take over the banner, raise a toast, or move the page
+       * under someone mid-read. It patches, notes what changed, and lets
+       * the next render pick it up. */
+      const patch = apply(fresh, { render: false, toast: false, adopt: "existing" });
+      lastWatch = { at: Date.now(), count: set.length, moved: patch.updated };
+      if (patch.updated) {
+        App.rerenderAll();
+        for (const c of (window.Campaigns ? Campaigns.list() : [])) {
+          if (state().campaignSummaries && state().campaignSummaries[c.id]) {
+            App.publishCampaign(c, fresh).catch(() => {});
+          }
         }
       }
+    } finally {
+      watchBusy = false;
+      Refresh.repaintWatch();
     }
-    Refresh.repaintWatch();
   }
 
   Refresh.repaintWatch = function () {

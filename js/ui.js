@@ -16,9 +16,8 @@
   const CHIP_LIMIT = 10;
 
   /* Automatic score top-up for young posts — not a campaign watch and
-   * not a stream. Shown only when Live lookups are on and something in
-   * the inventory is still inside the archive's blind window (~36h),
-   * where scores otherwise sit at 1. */
+   * not a stream. The green live treatment only appears while a check
+   * is in flight; idle text names the last real update. */
   UI.renderWatchBadge = function (watch) {
     const host = document.getElementById("watch-badge");
     if (!host) return;
@@ -26,14 +25,25 @@
       host.hidden = true;
       host.textContent = "";
       host.removeAttribute("title");
+      host.classList.remove("is-live", "is-idle");
       return;
     }
-    const when = watch.at ? Util.relTime(watch.at / 1000) : "just now";
     const n = watch.count;
+    const active = !!watch.busy;
     host.hidden = false;
-    host.className = "watch-badge";
-    host.innerHTML = `<span class="live-dot"></span><span>Updating scores · ${n} post${n === 1 ? "" : "s"} under 36h · checked ${Util.escapeHtml(when)}</span>`;
-    host.title = "Not a campaign live view. Posts newer than about 36 hours still read as 1 upvote in the archive, so this tab quietly re-reads their current score and comment count from Reddit every couple of minutes while it is open. Turn live scores off in Settings to stop.";
+    host.className = "watch-badge " + (active ? "is-live" : "is-idle");
+    if (active) {
+      host.innerHTML = `<span class="live-dot"></span><span>Updating scores · ${n} post${n === 1 ? "" : "s"} under 36h…</span>`;
+    } else if (watch.at) {
+      const when = Util.relTime(watch.at / 1000);
+      const moved = watch.moved
+        ? ` · ${watch.moved} changed`
+        : " · no change";
+      host.innerHTML = `<span>Scores checked ${Util.escapeHtml(when)}${moved} · ${n} under 36h</span>`;
+    } else {
+      host.innerHTML = `<span>Score top-up armed · ${n} post${n === 1 ? "" : "s"} under 36h</span>`;
+    }
+    host.title = "Not a campaign live view. Posts newer than about 36 hours still read as 1 upvote in the archive, so this tab re-reads their current score from Reddit every couple of minutes while it is open. The green pulse only shows while a check is running.";
   };
 
   UI.renderSubChips = function (subs, active, onToggle, onRemove, opts) {

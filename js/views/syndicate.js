@@ -21,8 +21,10 @@
   let selectedId = null;
   let matchBusy = null;
   let searchQuery = "";
+  let sourceQuery = "";
   let suggestToken = 0;
   let listPaintTimer = null;
+  let planSynIndex = 0;
   /* Article ids whose offline suggestion has already been upgraded with
    * live descriptions + archive uniqueness for this session. */
   const upgraded = new Set();
@@ -39,7 +41,7 @@
     const total = Syndicate.articles().length;
     const feeds = Syndicate.enabledFeeds().length;
     if (!total) return `${feeds} feed${feeds === 1 ? "" : "s"} ready`;
-    if (searchQuery && n !== total) {
+    if ((searchQuery || sourceQuery) && n !== total) {
       return `${Util.fmtNum(n)} of ${Util.fmtNum(total)} · ${feeds} feeds`;
     }
     return `${Util.fmtNum(total)} headline${total === 1 ? "" : "s"} · ${feeds} feeds`;
@@ -47,8 +49,14 @@
 
   function applySearch(list) {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return list;
+    const src = sourceQuery.trim().toLowerCase();
+    if (!q && !src) return list;
     return list.filter((a) => {
+      if (src) {
+        const haySrc = String(a.source || "").toLowerCase();
+        if (haySrc.indexOf(src) === -1) return false;
+      }
+      if (!q) return true;
       const hay = [a.title, a.summary, a.source, a.category, (Syndicate.keywords(a, 8) || []).join(" ")]
         .join(" ").toLowerCase();
       return hay.indexOf(q) !== -1;
@@ -94,7 +102,8 @@
     renderList();
     renderDetail();
     paintSuggestButton();
-    paintPlaybook();
+    paintSourceList();
+    View.paintPlanCarousel();
     const sub = Dom.byId("topbar-title-sub");
     if (sub && Router.current() === "syndicate") {
       sub.hidden = false;
@@ -102,12 +111,22 @@
     }
     const search = Dom.byId("syndicate-search");
     if (search && search.value !== searchQuery) search.value = searchQuery;
+    const source = Dom.byId("syndicate-source");
+    if (source && source.value !== sourceQuery) source.value = sourceQuery;
     /* Selecting a headline (or opening the view with one already
      * picked) should show destinations without a second click. */
     if (selectedId) {
       queueMicrotask(() => ensureSelectedMatched());
     }
   };
+
+  function paintSourceList() {
+    const list = Dom.byId("syndicate-source-list");
+    if (!list || !Syndicate.sources) return;
+    list.innerHTML = Syndicate.sources().slice(0, 40).map((s) =>
+      `<option value="${esc(s.name)}"></option>`
+    ).join("");
+  }
 
   function renderFolders() {
     const host = Dom.byId("syndicate-folders");
@@ -379,29 +398,6 @@
     btn.textContent = busy ? "Suggesting…" : "Suggest destinations";
   }
 
-  function paintPlaybook() {
-    const sel = Dom.byId("syndicate-playbook");
-    if (!sel || !Syndicate.playbook) return;
-    const books = (window.MatchLex && MatchLex.playbooks)
-      ? MatchLex.playbooks()
-      : null;
-    if (books && books.length) {
-      const cur = sel.value;
-      const html = books.map((b) =>
-        `<option value="${esc(b.id)}" title="${esc(b.hint || "")}">${esc(b.label || b.id)}</option>`
-      ).join("");
-      if (sel.dataset.painted !== String(books.length)) {
-        sel.innerHTML = html;
-        sel.dataset.painted = String(books.length);
-      }
-      if (cur && !books.some((b) => b.id === cur)) {
-        /* keep going */
-      }
-    }
-    const want = Syndicate.playbook();
-    if (sel.value !== want) sel.value = want;
-  }
-
   /* Rank one article. Offline suggestions can already be on the card;
    * opening the detail upgrades with live descriptions + archive
    * uniqueness for unique_link rooms. */
@@ -566,11 +562,20 @@
   async function openInPlan(article) {
     if (!article || !window.FocusView) return;
     let match = Syndicate.matchOf(article.id);
+    /* Prefer the cached offline rank — re-matching live was freezing the
+     * Plan tab when opening from Syndicate. Upgrade quietly in the
+     * background after Focus paints. */
     if (!match) {
       matchBusy = article.id;
       View.render();
-      try { match = await Syndicate.match(article); }
-      catch (err) {
+      try {
+        match = await Syndicate.match(article, {
+          live: false,
+          skipArchive: true,
+          aboutBudget: 0,
+          linkPriors: false,
+        });
+      } catch (err) {
         Util.toast((err && err.message) || String(err), "error");
         matchBusy = null;
         View.render();
@@ -578,15 +583,86 @@
       }
       matchBusy = null;
     }
-    /* Keep subreddit empty — this is not a Reddit post until someone
-     * submits it. Match may still supply suggested_sub for Plan copy. */
     const draft = Syndicate.asPost(article);
     const related = match.related || {
       communities: [].concat(match.candidates || [], match.blocked || []),
       spheres: match.spheres || [],
-      terms: match.keywords || [],
+      terms: match.keywords || Syndicate.keywords(article, 8),
     };
     FocusView.focusPost(draft, { related: related });
+    /* Optional background upgrade — does not block Plan. */
+    if (match.fromCache || !match.archiveChecked) {
+      Syndicate.match(article, {
+        force: true,
+        live: true,
+        skipArchive: false,
+        aboutBudget: 16,
+        liveTimeout: 5000,
+      }).catch(() => {});
+    }
+  }
+
+  /* Plan-tab carousel: strongest Syndicate picks beside Next move. */
+  View.paintPlanCarousel = function () {
+    const host = Dom.byId("plan-syndicate-body");
+    if (!host) return;
+    const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
+    if (!picks.length) {
+      host.innerHTML = `<div class="empty plan-syn-empty">
+        <strong>No ranked headlines yet</strong>
+        <p>Pull feeds on Syndicate and suggest destinations — the strongest ones land here.</p>
+      </div>`;
+      return;
+    }
+    if (planSynIndex >= picks.length) planSynIndex = 0;
+    if (planSynIndex < 0) planSynIndex = picks.length - 1;
+    const a = picks[planSynIndex];
+    const tips = Syndicate.suggestionsOf(a.id, 4);
+    const keys = Syndicate.keywords(a, 8);
+    const when = a.published ? Util.relTime(a.published) : "";
+    const thumb = a.image
+      ? `<img class="plan-syn-media" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+      : `<div class="plan-syn-media plan-syn-media-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
+    const tipHtml = tips.length
+      ? `<div class="plan-syn-dests">${tips.map((c, i) => {
+          const name = c.name || c.key;
+          const score = c.score != null ? Math.round(c.score) : "";
+          const terms = (c.overlapTerms || []).slice(0, 3).map((t) =>
+            typeof t === "string" ? t : (t.term || "")
+          ).filter(Boolean);
+          return `<div class="plan-syn-dest${i === 0 ? " is-top" : ""}">
+            <span class="plan-syn-dest-name">r/${esc(name)}</span>
+            ${score !== "" ? `<span class="badge accent">${esc(String(score))}</span>` : ""}
+            ${terms.length ? `<span class="plan-syn-dest-terms">${terms.map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>` : ""}
+          </div>`;
+        }).join("")}</div>`
+      : "";
+    host.innerHTML = `
+      <article class="plan-syn-slide" data-plan-syn-id="${esc(a.id)}">
+        ${thumb}
+        <div class="plan-syn-copy">
+          <div class="plan-syn-kicker">
+            <span class="syn-source-box">${esc(a.source || "")}</span>
+            ${when ? `<span class="syn-time-box">${esc(when)}</span>` : ""}
+            <span class="meta">${planSynIndex + 1}/${picks.length}</span>
+          </div>
+          <h3 class="plan-syn-title">${esc(a.title)}</h3>
+          ${a.summary ? `<p class="plan-syn-brief">${esc(a.summary.slice(0, 220))}${a.summary.length > 220 ? "…" : ""}</p>` : ""}
+          ${keys.length ? `<div class="plan-syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>` : ""}
+          ${tipHtml}
+          <div class="plan-syn-actions">
+            <button type="button" class="btn primary small" data-action="plan-syn-open">Open in Plan</button>
+            ${a.link ? `<a class="btn ghost small" href="${esc(a.link)}" target="_blank" rel="noopener">Read ↗</a>` : ""}
+          </div>
+        </div>
+      </article>`;
+  };
+
+  function planSynStep(delta) {
+    const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
+    if (!picks.length) return;
+    planSynIndex = (planSynIndex + delta + picks.length) % picks.length;
+    View.paintPlanCarousel();
   }
 
   async function pullFeeds() {
@@ -667,23 +743,6 @@
       suggestBtn.addEventListener("click", () => suggestVisible({ toast: true, force: false }));
     }
 
-    const playbook = Dom.byId("syndicate-playbook");
-    if (playbook) {
-      playbook.addEventListener("change", () => {
-        Syndicate.setPlaybook(playbook.value || "default");
-        const pb = window.MatchLex && MatchLex.playbook
-          ? MatchLex.playbook(Syndicate.playbook())
-          : null;
-        Util.toast(pb
-          ? `Playbook · ${pb.label}`
-          : "Playbook updated");
-        View.render();
-        if (filtered().length) {
-          suggestVisible({ toast: false, announce: true, force: true });
-        }
-      });
-    }
-
     const search = Dom.byId("syndicate-search");
     if (search) {
       const debounced = Util.debounce(() => {
@@ -691,6 +750,19 @@
         View.render();
       }, 160);
       search.addEventListener("input", debounced);
+    }
+
+    const source = Dom.byId("syndicate-source");
+    if (source) {
+      const debounced = Util.debounce(() => {
+        sourceQuery = source.value || "";
+        View.render();
+      }, 160);
+      source.addEventListener("input", debounced);
+      source.addEventListener("change", () => {
+        sourceQuery = source.value || "";
+        View.render();
+      });
     }
 
     const file = Dom.byId("syndicate-opml");
@@ -720,6 +792,14 @@
     Dom.delegate(document, "click", '[data-action="syn-focus"]', () => {
       const article = Syndicate.articles().find((a) => a.id === selectedId);
       openInPlan(article);
+    });
+
+    Dom.delegate(document, "click", '[data-action="plan-syn-prev"]', () => planSynStep(-1));
+    Dom.delegate(document, "click", '[data-action="plan-syn-next"]', () => planSynStep(1));
+    Dom.delegate(document, "click", '[data-action="plan-syn-open"]', () => {
+      const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
+      const a = picks[planSynIndex];
+      if (a) openInPlan(a);
     });
 
     Dom.delegate(document, "click", '[data-action="syn-add-sub"]', (e, btn) => {

@@ -1258,9 +1258,6 @@
       throw new Error("This post has no readable text to match communities against.");
     }
 
-    const playbook = (window.MatchLex && MatchLex.playbook)
-      ? MatchLex.playbook(opts.playbook)
-      : null;
     const linkPriors = Object.assign({}, opts.linkPriors || {});
 
     const home = String(post.subreddit || "").toLowerCase();
@@ -1287,8 +1284,8 @@
     const entities = Discovery.extractEntities(entityBlob);
 
     /* Candidate names come from offline sources: the spheres the post
-     * text matches, home-sub siblings, topic/playbook seeds, entity
-     * hits in the local index, and nearest cached descriptions. */
+     * text matches, home-sub siblings, topic seeds, entity hits in the
+     * local index, and nearest cached descriptions. */
     function gatherNames(spheres) {
       const names = new Map(); /* lowercase key -> display name */
       const via = new Map();   /* lowercase key -> sphere label */
@@ -1310,12 +1307,12 @@
         }
       }
       /* Syndicated articles: seed only the spheres the text actually
-       * ranked (via MatchLex.topicSeeds / playbook), falling back to
-       * media_news. Dumping progressive/democracy/voting into every
-       * headline is how a Tesla crash competed inside NeutralPolitics. */
+       * ranked (via MatchLex.topicSeeds), falling back to media_news.
+       * Dumping progressive/democracy/voting into every headline is how
+       * a Tesla crash competed inside NeutralPolitics. */
       if (window.Seeds && (post.syndicated || !post.subreddit)) {
         const seedKeys = (window.MatchLex && MatchLex.seedKeysFor)
-          ? MatchLex.seedKeysFor(spheres, opts.playbook)
+          ? MatchLex.seedKeysFor(spheres)
           : ((spheres && spheres.length) ? spheres.map((s) => s.key) : ["media_news"]);
         for (const key of seedKeys) {
           if (!Seeds.ISSUE_SPHERES[key] && !Seeds.DEMOGRAPHIC_SPHERES[key]) continue;
@@ -1375,9 +1372,6 @@
         const host = post.domain || "";
         sourceBoost = MatchLex.sourceBoost(host);
       }
-      if (playbook && playbook.sourceBoostScale != null && sourceBoost) {
-        sourceBoost *= Number(playbook.sourceBoostScale) || 1;
-      }
       const ctx = {
         vector: vector,
         idf: idf,
@@ -1386,9 +1380,7 @@
         subject: "post",
         sourceBoost: sourceBoost,
         linkPriors: linkPriors,
-        linkPriorWeight: playbook && playbook.linkPriorWeight != null
-          ? playbook.linkPriorWeight
-          : 1,
+        linkPriorWeight: 1,
       };
 
       const scored = records.map((r) => {
@@ -1419,7 +1411,6 @@
         terms: Discovery.topTerms(vector, 8, idf),
         spheres: spheres,
         entities: entities,
-        playbook: playbook ? playbook.id : "default",
         home: SubIndex.get(home) || null,
         communities: communities,
         scored: scored,
@@ -1431,12 +1422,8 @@
     }
 
     const defaultAbs = (window.MatchLex && MatchLex.topicSeeds && MatchLex.topicSeeds.minAbsolute) || MIN_SPHERE_SIGNAL;
-    const minAbsolute = opts.minAbsolute != null
-      ? opts.minAbsolute
-      : (playbook && playbook.minAbsolute != null ? playbook.minAbsolute : defaultAbs);
-    const minConfidence = opts.minConfidence != null
-      ? opts.minConfidence
-      : (playbook && playbook.minConfidence != null ? playbook.minConfidence : 45);
+    const minAbsolute = opts.minAbsolute != null ? opts.minAbsolute : defaultAbs;
+    const minConfidence = opts.minConfidence != null ? opts.minConfidence : 45;
 
     let spheres = Discovery.rankSpheres(vector, {
       limit: opts.sphereLimit || 4,

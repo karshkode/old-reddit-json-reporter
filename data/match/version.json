@@ -1,5 +1,5 @@
 {
-  "version": "2026.08.11.2",
-  "updated": "2026-08-11",
-  "notes": "Phase 2–3: link engagement prior, entity candidate expansion, playbooks (PSA / rapid response / investigation), fixture agent loop. No AI stub."
+  "version": "2026.08.14",
+  "updated": "2026-08-14",
+  "notes": "Thicker issue triggers (progressive/AOC/DSA phrases); playbooks removed for performance; Plan carousel + consolidated next-move."
 }

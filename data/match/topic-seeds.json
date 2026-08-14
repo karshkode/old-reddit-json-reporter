@@ -25,5 +25,6 @@
     "progressive": ["progressive", "media_news"],
     "movement": ["movement", "progressive", "labor"]
   },
-  "fallback": ["media_news"]
+  "fallback": ["media_news"],
+  "_comment_removed_playbooks": "Campaign playbooks were removed — they blocked the UI. Topic seeds alone drive syndicated seeding."
 }

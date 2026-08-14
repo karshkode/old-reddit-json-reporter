@@ -430,19 +430,26 @@
       /* Among measured moves, the lead is the one to act on soonest
          rather than the highest scoring — a marginally better room
          eighteen hours out is worse advice than a good one that is
-         open now. Only credible moves with an hour to their name get
-         to compete on immediacy, so this cannot promote a long shot
-         and cannot promote a community with no clock. */
-      const strong = measured.filter((m) => m.graded && m.verdict === "strong");
-      const pool = strong.length
-        ? strong
-        : measured.filter((m) => m.graded && m.verdict === "fair");
+         open now. Anytime rooms (no peak hour) count as available
+         now. Only credible moves compete on immediacy. */
+      const strong = measured.filter((m) => m.verdict === "strong");
+      const fair = measured.filter((m) => m.verdict === "fair");
+      const pool = strong.length ? strong : (fair.length ? fair : measured);
       let lead = measured[0] || null;
       if (pool.length) {
         lead = pool[0];
-        const soon = pool.slice(0, 4).sort((a, b) => waitOf(a) - waitOf(b));
+        const soon = pool.slice().sort((a, b) => {
+          const wa = waitOf(a);
+          const wb = waitOf(b);
+          if (wa !== wb) return wa - wb;
+          /* Prefer anytime / open rooms when waits tie. */
+          const pa = (!a.graded || (a.when && a.when.open)) ? 0 : 1;
+          const pb = (!b.graded || (b.when && b.when.open)) ? 0 : 1;
+          if (pa !== pb) return pa - pb;
+          return b.score - a.score;
+        });
         /* Only if it is genuinely close on merit. */
-        if (soon[0] && soon[0].score >= pool[0].score * 0.85) lead = soon[0];
+        if (soon[0] && soon[0].score >= pool[0].score * 0.82) lead = soon[0];
       }
 
       return {
@@ -496,6 +503,8 @@
   };
 
   function waitOf(move) {
+    /* Flat clocks are the best "upcoming" move — post whenever. */
+    if (!move.graded) return 0;
     if (!move.when) return Infinity;
     return move.when.open ? 0 : (move.when.inMinutes || 0);
   }

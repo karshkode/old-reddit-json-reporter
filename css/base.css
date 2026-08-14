@@ -962,7 +962,19 @@ table.data .num {
   white-space: nowrap;
 }
 .watch-badge .live-dot { margin-left: 0; }
+.watch-badge.is-live { color: var(--text-dim); }
+.watch-badge.is-live .live-dot {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #4ade80) 60%, transparent);
+  animation: watch-pulse 1.4s ease-out infinite;
+}
+.watch-badge.is-idle { color: var(--text-mute); }
 .watch-badge.is-off .live-dot { background: var(--text-mute); }
+
+@keyframes watch-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #4ade80) 55%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
 
 @keyframes sheet-in-right {
   from {
