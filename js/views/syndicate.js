@@ -93,16 +93,20 @@
     if (opts.force) return list;
 
     const unmatched = [];
+    const needArchive = [];
     const weak = [];
     const refreshWeak = opts.refreshWeak !== false;
+    const wantArchive = opts.skipArchive !== true;
     for (const a of list) {
-      if (!Syndicate.matchOf(a.id)) unmatched.push(a);
+      const m = Syndicate.matchOf(a.id);
+      if (!m) unmatched.push(a);
+      else if (wantArchive && !m.archiveChecked) needArchive.push(a);
       else if (refreshWeak) {
         if (Syndicate.hasStrongDestination && !Syndicate.hasStrongDestination(a.id)) weak.push(a);
         else if (!Syndicate.hasStrongDestination && !(Syndicate.suggestionsOf(a.id, 1) || []).length) weak.push(a);
       }
     }
-    return unmatched.concat(weak);
+    return unmatched.concat(needArchive).concat(weak);
   }
 
   View.render = function () {
@@ -216,8 +220,12 @@
         tipHtml = `<div class="syn-suggests" title="Where this article should go">
              ${tips.map((c, i) => {
                const name = c.name || c.key;
-               const score = c.score != null ? Math.round(c.score) : "";
-               return `<span class="syn-suggest${i === 0 ? " is-top" : ""}">r/${esc(name)}${score !== "" ? `<em>${score}</em>` : ""}</span>`;
+               const posted = !!c.alreadyPosted;
+               const score = !posted && c.score != null ? Math.round(c.score) : "";
+               const title = posted
+                 ? `Already posted on r/${name} — still listed so you can open the existing thread`
+                 : (score !== "" ? `Fit ${score}` : "");
+               return `<span class="syn-suggest${i === 0 && !posted ? " is-top" : ""}${posted ? " is-posted" : ""}"${title ? ` title="${esc(title)}"` : ""}>r/${esc(name)}${posted ? `<em class="syn-posted-tag">posted</em>` : (score !== "" ? `<em>${score}</em>` : "")}</span>`;
              }).join("")}
            </div>`;
       } else if (matchBusy === a.id) {
@@ -301,9 +309,20 @@
     const floor = (window.Discovery && Discovery.MIN_SUGGEST_SCORE != null)
       ? Discovery.MIN_SUGGEST_SCORE
       : (Syndicate.MIN_SUGGEST_SCORE || 35);
-    const allCands = result.candidates || [];
-    const cands = allCands.filter((c) => (c.score == null ? 0 : c.score) >= floor);
-    const blocked = result.blocked || [];
+    const allCands = (result.candidates || []).slice();
+    /* Legacy caches parked already-posted under blocked — fold them in. */
+    for (const c of result.blocked || []) {
+      if (c && c.alreadyPosted) allCands.push(c);
+    }
+    const cands = allCands
+      .filter((c) => c.alreadyPosted || (c.score == null ? 0 : c.score) >= floor)
+      .sort((a, b) => {
+        const ap = a.alreadyPosted ? 1 : 0;
+        const bp = b.alreadyPosted ? 1 : 0;
+        if (ap !== bp) return ap - bp;
+        return (b.score || 0) - (a.score || 0);
+      });
+    const blocked = (result.blocked || []).filter((c) => !(c && c.alreadyPosted));
     const spheres = (result.spheres || []).slice(0, 4);
     const sphereBit = spheres.length
       ? `<div class="syn-spheres">${spheres.map((s) =>
@@ -315,64 +334,56 @@
       return `${sphereBit}<p class="focus-status">No strong destination for this headline (need fit ≥ ${floor}). Try a related sphere from Communities, or Refresh match after Sync.</p>`;
     }
 
-    const rows = cands.slice(0, 8).map((c) => {
+    const rows = cands.slice(0, 10).map((c) => {
       const name = c.name || c.key;
+      const posted = !!c.alreadyPosted;
       const score = c.score != null ? Math.round(c.score) : (c.fit != null ? Math.round(c.fit) : "—");
       const reasons = (c.overlapTerms || []).slice(0, 4).map((t) =>
         typeof t === "string" ? t : (t.term || "")
       ).filter(Boolean);
-      const ruleOk = c.rules && c.rules.rule && c.rules.ok;
-      const ruleWarn = c.rules && c.rules.rule && !c.rules.ok && !c.rules.hard;
-      const submit = (window.Crosspost && Crosspost.submitUrl)
+      const ruleOk = !posted && c.rules && c.rules.rule && c.rules.ok;
+      const ruleWarn = !posted && c.rules && c.rules.rule && !c.rules.ok && !c.rules.hard;
+      const submit = (!posted && window.Crosspost && Crosspost.submitUrl)
         ? Crosspost.submitUrl(name, post)
-        : Util.buildSubmitUrl ? Util.buildSubmitUrl(name, post) : null;
+        : (!posted && Util.buildSubmitUrl ? Util.buildSubmitUrl(name, post) : null);
       const loaded = window.AppState && AppState.hasSub && AppState.hasSub(name);
+      const dup = posted && c.alreadyPosted.post;
+      const dupSrc = posted
+        ? (c.alreadyPosted.source === "archive" ? "on the subreddit already" : "in your loaded posts")
+        : "";
+      const dupLink = dup && (dup.permalink
+        || (dup.id ? `https://www.reddit.com/r/${encodeURIComponent(name)}/comments/${encodeURIComponent(String(dup.id).replace(/^t3_/, ""))}/` : ""));
+      const dupMeta = dup
+        ? [dup.score != null ? `${Util.fmtNum(dup.score)} pts` : "", dup.created_utc ? Util.relTime(dup.created_utc) : "", dupSrc]
+            .filter(Boolean).join(" · ")
+        : dupSrc;
       return `
-        <li class="syn-cand">
+        <li class="syn-cand${posted ? " is-posted" : ""}">
           <div class="syn-cand-main">
             <a class="syn-cand-name" href="https://www.reddit.com/r/${encodeURIComponent(name)}/" target="_blank" rel="noopener">r/${esc(name)}</a>
-            <span class="badge accent">${esc(String(score))}</span>
+            ${posted
+              ? `<span class="badge bad" title="${esc(dupMeta || "Already posted on this subreddit")}">already on r/${esc(name)}</span>`
+              : `<span class="badge accent">${esc(String(score))}</span>`}
             ${ruleOk ? `<span class="focus-sig focus-sig-rules is-ok" title="${esc((c.rules.rule && c.rules.rule.note) || "")}"><b>rules</b> ok</span>` : ""}
             ${ruleWarn ? `<span class="focus-sig focus-sig-rules is-warn" title="${esc((c.ruleReasons && c.ruleReasons[0]) || "")}"><b>rules</b> check</span>` : ""}
             ${loaded ? `<span class="badge info">loaded</span>` : ""}
           </div>
-          ${reasons.length ? `<div class="syn-cand-terms">${reasons.map((t) => `<code>${esc(t)}</code>`).join(" ")}</div>` : ""}
+          ${posted
+            ? `<p class="syn-cand-posted-note">This article is already posted to r/${esc(name)}${dupMeta ? ` · ${esc(dupMeta)}` : ""}. It stays listed so you can open the existing thread instead of re-submitting.</p>`
+            : (reasons.length ? `<div class="syn-cand-terms">${reasons.map((t) => `<code>${esc(t)}</code>`).join(" ")}</div>` : "")}
           <div class="syn-cand-actions">
+            ${dupLink ? `<a class="btn tiny ghost" href="${esc(dupLink)}" target="_blank" rel="noopener">Open existing</a>` : ""}
             ${submit ? `<a class="btn tiny primary" href="${esc(submit)}" target="_blank" rel="noopener">Submit link</a>` : ""}
-            ${loaded ? "" : `<button type="button" class="btn tiny ghost" data-action="syn-add-sub" data-sub="${esc(name)}">＋ Add</button>`}
+            ${loaded || posted ? "" : `<button type="button" class="btn tiny ghost" data-action="syn-add-sub" data-sub="${esc(name)}">＋ Add</button>`}
           </div>
         </li>`;
     }).join("");
 
-    const already = blocked.filter((c) => c.alreadyPosted && c.alreadyPosted.post);
-    const otherBlocked = blocked.filter((c) => !(c.alreadyPosted && c.alreadyPosted.post));
-    const alreadyBit = already.length ? `
-      <div class="syn-already">
-        <p class="group-label">Already on the sub</p>
-        <ul class="focus-blocked-list">
-          ${already.slice(0, 8).map((c) => {
-            const dup = c.alreadyPosted.post;
-            const src = c.alreadyPosted.source === "archive" ? "full archive" : "your loaded posts";
-            const link = dup.permalink
-              || (dup.id ? `https://www.reddit.com/r/${encodeURIComponent(c.name || c.key)}/comments/${encodeURIComponent(String(dup.id).replace(/^t3_/, ""))}/` : "");
-            const when = dup.created_utc ? Util.relTime(dup.created_utc) : "";
-            const score = dup.score != null ? `${Util.fmtNum(dup.score)} pts` : "";
-            return `
-              <li class="focus-blocked-row syn-already-row">
-                <span class="focus-move-sub">r/${esc(c.name || c.key)}</span>
-                <span class="badge bad">already posted</span>
-                <span class="meta">${esc([score, when, src].filter(Boolean).join(" · "))}</span>
-                ${link ? `<a class="btn tiny ghost" href="${esc(link)}" target="_blank" rel="noopener">Open existing</a>` : ""}
-              </li>`;
-          }).join("")}
-        </ul>
-      </div>` : "";
-
-    const blockedBit = otherBlocked.length ? `
+    const blockedBit = blocked.length ? `
       <details class="focus-blocked syn-blocked">
-        <summary>${otherBlocked.length} would reject this link format</summary>
+        <summary>${blocked.length} would reject this link format</summary>
         <ul class="focus-blocked-list">
-          ${otherBlocked.slice(0, 8).map((c) => `
+          ${blocked.slice(0, 8).map((c) => `
             <li class="focus-blocked-row">
               <span class="focus-move-sub">r/${esc(c.name || c.key)}</span>
               <span class="badge bad">${esc((c.ruleReasons && c.ruleReasons[0]) || "against the rules")}</span>
@@ -381,12 +392,11 @@
       </details>` : "";
 
     const archiveNote = result.archiveChecked
-      ? `<p class="hint syn-archive-note">Checked the archive for rooms that forbid re-posting the same article URL (e.g. r/politics).</p>`
-      : "";
+      ? `<p class="hint syn-archive-note">Checked the archive for rooms that forbid re-posting the same article URL (e.g. r/politics). Already-posted destinations stay listed, faded, so you can open the existing thread.</p>`
+      : `<p class="hint syn-archive-note">Checking whether this URL is already on unique-link rooms…</p>`;
 
     return `
       ${sphereBit}
-      ${alreadyBit}
       <ol class="syn-cands">${rows}</ol>
       ${blockedBit}
       ${archiveNote}`;
@@ -523,7 +533,8 @@
         }
         lastRes = await Syndicate.suggestMany(batch, {
           live: false,
-          skipArchive: true,
+          skipArchive: opts.skipArchive === true,
+          archiveCap: opts.archiveCap == null ? 4 : opts.archiveCap,
           concurrency: 1,
           limit: 8,
           force: !!opts.force,
@@ -540,6 +551,9 @@
           onPartial: () => {
             if (token !== suggestToken) return;
             scheduleListPaint();
+            if (Router.current() !== "syndicate") {
+              try { View.paintPlanCarousel(); } catch (_) {}
+            }
           },
         });
         if (token !== suggestToken) return;
@@ -603,7 +617,10 @@
       }).then(() => {
         if (Syndicate.pulling && Syndicate.pulling()) return;
         const unmatched = articlesForSuggest({ refreshWeak: false })
-          .filter((a) => !Syndicate.matchOf(a.id));
+          .filter((a) => {
+            const m = Syndicate.matchOf(a.id);
+            return !m || !m.archiveChecked;
+          });
         if (unmatched.length) {
           scheduleAutoSuggest({ announce: false, waves: 3 });
         } else {
@@ -680,13 +697,16 @@
     const tipHtml = tips.length
       ? `<div class="plan-syn-dests">${tips.map((c, i) => {
           const name = c.name || c.key;
-          const score = c.score != null ? Math.round(c.score) : "";
-          const terms = (c.overlapTerms || []).slice(0, 3).map((t) =>
+          const posted = !!c.alreadyPosted;
+          const score = !posted && c.score != null ? Math.round(c.score) : "";
+          const terms = (!posted && (c.overlapTerms || [])).slice(0, 3).map((t) =>
             typeof t === "string" ? t : (t.term || "")
           ).filter(Boolean);
-          return `<div class="plan-syn-dest${i === 0 ? " is-top" : ""}">
+          return `<div class="plan-syn-dest${i === 0 && !posted ? " is-top" : ""}${posted ? " is-posted" : ""}"${posted ? ` title="Already posted on r/${esc(name)}"` : ""}>
             <span class="plan-syn-dest-name">r/${esc(name)}</span>
-            ${score !== "" ? `<span class="badge accent">${esc(String(score))}</span>` : ""}
+            ${posted
+              ? `<span class="badge bad">already on r/${esc(name)}</span>`
+              : (score !== "" ? `<span class="badge accent">${esc(String(score))}</span>` : "")}
             ${terms.length ? `<span class="plan-syn-dest-terms">${terms.map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>` : ""}
           </div>`;
         }).join("")}</div>`
