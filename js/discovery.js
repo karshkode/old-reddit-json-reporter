@@ -72,7 +72,7 @@
     "activism activist organize organizing organiser organizer advocacy advocate",
     "protest march rally demonstration strike union labor labour worker workers",
     "vote voter voting ballot election elections campaign candidate democracy democratic",
-    "progressive socialist leftist liberal conservative reform reformist",
+    "progressive socialist leftist liberal conservative centrist libertarian moderate reform reformist civic",
     "rights justice equality equity injustice oppression liberation solidarity",
     "community mutual aid volunteer grassroots coalition movement",
     "healthcare medicare medicaid insurance housing tenant eviction rent",
@@ -586,14 +586,9 @@
      * chip floor instead of looking like destinations. */
     if (ctx.sourceBoost) raw += ctx.sourceBoost;
 
-    /* When theme is close, prefer rooms curated under progressive /
-     * democracy / labor spheres — the product's audience. */
-    if (catalogSpheres.length && theme >= 0.2) {
-      const progressiveHit = catalogSpheres.some((k) =>
-        /^(progressive|labor|voting|democracy|movement|election_law)$/.test(String(k).replace(/^(state|demo):/, ""))
-      );
-      if (progressiveHit) raw += 0.025;
-    }
+    /* Catalog membership already carries a small boost above. Do not
+       add a second progressive-desk preference — that is how every
+       vaguely civic post ranked DemocraticSocialism above NeutralPolitics. */
 
     const composite = clamp01(raw);
     const overlap = SubIndex.overlapTerms(ctx.vector, vec, 6, ctx.idf);

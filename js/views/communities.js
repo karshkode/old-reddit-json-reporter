@@ -6,7 +6,8 @@
  *   Search    a real subreddit search — typeahead over cached names plus
  *             live autocomplete and full search — where every result can
  *             expand to show the communities most similar to it.
- *   Catalog   the curated progressive-sphere catalog, browsable, with
+ *   Catalog   the curated civic / issue catalog, browsable, with
+ *             starter bundles that no longer default to progressive-only,
  *             one-tap bulk loading. Previously the catalog only nudged
  *             discovery scores; nothing surfaced it to the user and the
  *             starter drawer appeared exactly once, on an empty install.
