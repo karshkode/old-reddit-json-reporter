@@ -1,5 +1,5 @@
 {
-  "version": "2026.08.14b",
+  "version": "2026.08.14c",
   "updated": "2026-08-14",
-  "notes": "Already-posted destinations stay visible (faded); more progressive-sphere syndicate feeds; source-tier hosts expanded."
+  "notes": "Broader civic catalog: civic_discussion + economy/science/energy/rural/faith spheres; stop auto-seeding progressive into every issue."
 }

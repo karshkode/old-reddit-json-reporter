@@ -2134,7 +2134,7 @@
     if (v1 !== trimmed) variants.push({
       style: "activist",
       title: v1,
-      hint: "Activist vocabulary — works well in r/Political_Revolution, r/DemocraticSocialism, r/WorkReform",
+      hint: "Activist vocabulary — works in movement rooms; also try civic discussion and issue desks when the ask is broader",
     });
 
     /* 2. Civic / institutional vocabulary swap */

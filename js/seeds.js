@@ -1,9 +1,9 @@
-/* Curated subreddit catalog organised by political/civic sphere.
+/* Curated subreddit catalog organised by civic / issue sphere.
  *
- * Used by the discovery engine as seed-list of *known-good* candidates so
- * a campaign about healthcare, voting, climate, etc. always has the
- * relevant progressive-sphere subs in its candidate pool — even when
- * Reddit's /subreddits/search query doesn't surface them naturally.
+ * Used by the discovery engine as a seed-list of known-good candidates
+ * so a campaign about healthcare, voting, climate, local news, etc.
+ * always has relevant rooms in its pool — even when Reddit search
+ * doesn't surface them.
  *
  * Each sphere maps to an array of canonical subreddit display names.
  * Names are lowercased internally for matching but stored title-case
@@ -17,9 +17,9 @@
  *                        in a future PR.
  *   DEMOGRAPHIC_SPHERES — identity-aligned audiences.
  *
- * The catalog is intentionally curated and bounded — the goal is the
- * "60% case" of progressive-political campaign audiences, not an
- * exhaustive directory.
+ * The catalog is intentionally curated and bounded: broad civic and
+ * issue coverage first, with progressive organising as one desk among
+ * several — not the only place Discovery is allowed to land.
  *
  * MEMBERSHIP RULES
  *
@@ -44,25 +44,36 @@
  *               anything in it
  *
  * Two judgement calls sit on top of those. Communities organised
- * *against* a sphere's aims are left out even when they are the biggest
- * result for its vocabulary — r/Firearms is where gun policy is argued,
- * not an audience for gun-violence-prevention organising. And
- * professional-practice subs that ban advocacy are left out even when
- * the topic matches, because a recommendation to post a campaign in
- * r/pharmacy is a recommendation to get removed.
+ * *against* a sphere's aims are left out of advocacy spheres even when
+ * they are the biggest result for its vocabulary — r/Firearms is where
+ * gun policy is argued, not an audience for gun-violence-prevention
+ * organising. And professional-practice subs that ban advocacy are
+ * left out even when the topic matches, because a recommendation to
+ * post a campaign in r/pharmacy is a recommendation to get removed.
+ * General discussion rooms (NeutralPolitics, Ask_Politics, …) live in
+ * civic_discussion so they are not scored as progressive by default.
  */
 (function () {
   const Seeds = {};
 
   /* ---------- Issue spheres ---------- */
   Seeds.ISSUE_SPHERES = {
+    /* Advocacy / left organising desk — not general politics discussion.
+       General debate rooms live in civic_discussion so Discovery does
+       not treat every civic post as a DSA destination. */
     progressive: [
       "Political_Revolution", "DemocraticSocialism", "SandersForPresident",
       "OurPresident", "WayOfTheBern", "socialism", "Socialism_101",
       "SocialDemocracy", "dsa", "democrats", "Liberal", "AskALiberal",
       "leftist", "LeftWithoutEdge", "GreenParty", "Anarchism", "Anarchy101",
-      "LateStageCapitalism", "ABoringDystopia", "politics",
-      "PoliticalDiscussion", "Ask_Politics",
+      "LateStageCapitalism", "ABoringDystopia",
+    ],
+    /* Cross-spectrum debate and mainstream news-adjacent politics. */
+    civic_discussion: [
+      "politics", "PoliticalDiscussion", "Ask_Politics", "NeutralPolitics",
+      "ModeratePolitics", "centrist", "Conservative", "AskConservatives",
+      "Libertarian", "geopolitics", "NeutralNews", "TrueReddit",
+      "PoliticalHumor", "news", "worldnews", "USnews",
     ],
     movement: [
       "50501", "50501ContentCorner", "MayDayStrike", "protest",
@@ -75,65 +86,75 @@
       "MedicareForAll", "healthcare", "HealthInsurance", "medicare",
       "Medicaid", "MedicalBill", "publichealth", "medicine", "AskDocs",
       "nursing", "Health", "diabetes", "cancer", "healthIT",
+      "HealthAnxiety", "medical", "FamilyMedicine",
     ],
     labor: [
       "WorkReform", "antiwork", "union", "Unions", "unionsolidarity",
       "labor", "workingclass", "WorkersRights", "WorkersStrikeBack",
       "Workers_Revolt", "IWW", "EmploymentLaw", "LaborLaw", "WorkersComp",
       "AmazonFC", "starbucksbaristas", "Unionize", "gigwork", "UPSERS",
+      "jobs", "careers", "humanresources",
     ],
     voting: [
       "VoteDEM", "VoteBlue", "Keep_Track", "EndFPTP", "democracy",
       "electionreform", "RankedChoiceVoting", "YAPms", "fivethirtyeight",
+      "Voting", "elections", "ElectionPolling",
     ],
     climate: [
       "climate", "climatechange", "ClimateActionPlan", "ClimateOffensive",
       "ClimateMemes", "GreenNewDeal", "environment", "environmental_science",
       "sustainability", "ZeroWaste", "Anticonsumption", "RenewableEnergy",
-      "solarpunk", "energy", "Green",
+      "solarpunk", "energy", "Green", "collapse", "NatureIsFuckingLit",
     ],
     reproductive: [
       "TwoXChromosomes", "Feminism", "prochoice", "abortion", "auntienetwork",
       "PlannedParenthood", "StrikeForRoe", "birthcontrol", "WomensHealth",
+      "TryingForABaby", "BabyBumps",
     ],
     immigration: [
       "immigration", "USCIS", "DACA", "immigrationreform", "AbolishICE",
       "Undocumented", "asylum", "ImmigrationLaw", "Refugees", "Dreamers",
+      "IWantOut", "expats",
     ],
     /* Product recalls, FDA/FTC enforcement and consumer lawsuits — kept
        separate from safety_net so "food recall" does not crown BasicIncome. */
     consumer_protection: [
       "ConsumerProtection", "personalfinance", "Scams", "fraudnet",
       "foodsafety", "publichealth", "legaladvice", "AskLegal",
-      "povertyfinance", "CustomerService",
+      "povertyfinance", "CustomerService", "AssholeDesign", "RipoffReport",
     ],
     /* Election administration and voting-rights litigation, distinct from
        GOTV rooms under voting. */
     election_law: [
       "electionreform", "Keep_Track", "law", "democracy", "VoteBlue",
       "EndFPTP", "Ask_Lawyers", "Constitution", "supremecourt", "scotus",
-      "Voting", "RankedChoiceVoting",
+      "Voting", "RankedChoiceVoting", "LawSchool",
     ],
     education: [
       "StudentLoans", "Teachers", "TeachersInTransition", "education",
       "Professors", "academia", "AskAcademia", "CollegeRant",
-      "StudentLoanForgiveness",
+      "StudentLoanForgiveness", "teaching", "HigherEducation",
+      "ApplyingToCollege", "GradSchool", "Parents",
     ],
     housing: [
       "Renters", "Tenant", "TenantHelp", "LandlordLove", "homeless", "yimby",
-      "housing", "affordablehousing", "TenantUnion",
+      "housing", "affordablehousing", "TenantUnion", "FirstTimeHomeBuyer",
+      "RealEstate", "HomeImprovement", " apologAdvice",
     ],
     palestine_gaza: [
       "Palestine", "palestinenews", "Gaza", "IsraelPalestine", "jewishleft",
+      "Israel", "Jewish",
     ],
     racial_justice: [
       "BlackLivesMatter", "BlackPeopleTwitter", "blackladies", "racism",
       "policebrutality", "Bad_Cop_No_Donut", "CivilRights",
+      "AsianAmerican", "LatinoPeopleTwitter",
     ],
     media_news: [
       "Journalism", "media_criticism", "MediaCriticism", "FreePress",
       "qualitynews", "neutralnews", "TrueReddit", "inthenews",
-      "indepthstories", "Foodforthought",
+      "indepthstories", "Foodforthought", "news", "worldnews",
+      "USnews", "nottheonion",
     ],
     /* Courts, oversight and the machinery of self-government. Split out
        from voting because "how a ballot is counted" and "whether a
@@ -141,35 +162,59 @@
     democracy: [
       "Keep_Track", "Defeat_Project_2025", "law", "scotus", "supremecourt",
       "Ask_Lawyers", "NeutralPolitics", "democracy", "Constitution",
+      "PoliticalScience", "Ask_Law",
     ],
     criminal_justice: [
       "Bad_Cop_No_Donut", "policebrutality", "ACAB", "Prison", "prisonreform",
-      "publicdefenders",
+      "publicdefenders", "ProtectAndServe", "AskLEO", "legaladvice",
     ],
-    /* r/Firearms and r/gunpolitics are bigger and match the vocabulary
-       better than anything here. They are also where this campaign
-       would be argued with rather than heard, so the sphere is limited
-       to prevention communities and to the two explicitly left-leaning
-       gun-owner subs, which are a real constituency for safe-storage
-       and red-flag arguments. */
+    /* Prevention / safe-storage desk — not the general gun debate. */
     gun_violence: [
       "guncontrol", "GunsAreCool", "liberalgunowners", "2ALiberals",
+      "GunSafety",
     ],
     disability: [
       "disability", "disabled", "SSDI", "ChronicIllness", "AutisticAdults",
-      "Blind", "deaf",
+      "Blind", "deaf", "ADHD", "ChronicPain",
     ],
     safety_net: [
       "SocialSecurity", "foodstamps", "Food_Pantry", "BasicIncome",
-      "poverty", "povertyfinance", "Assistance",
+      "poverty", "povertyfinance", "Assistance", "almosthomeless",
+      "Unemployment",
     ],
     tech_privacy: [
       "privacy", "technology", "netneutrality", "degoogle",
-      "StallmanWasRight", "BigTech",
+      "StallmanWasRight", "BigTech", "cybersecurity", "hacking",
+      "DataHoarder", "selfhosted", "opensource",
     ],
     urbanism: [
       "urbanplanning", "urbanism", "transit", "fuckcars", "StrongTowns",
-      "yimby",
+      "yimby", "Cities", "InfrastructurePorn", "civilengineering",
+      "bikecommuting",
+    ],
+    /* Macro + small business — distinct from consumer_protection recalls. */
+    economy_business: [
+      "Economics", "AskEconomics", "economy", "business", "Entrepreneur",
+      "smallbusiness", "startups", "investing", "stocks", "finance",
+      "Accounting", "Sales", "marketing", "ecommerce",
+    ],
+    science_policy: [
+      "science", "askscience", "EverythingScience", "space", "Physics",
+      "biology", "chemistry", "dataisbeautiful", "Futurology", "medicine",
+      "epidemiology", "COVID19",
+    ],
+    energy_infrastructure: [
+      "energy", "nuclear", "NuclearPower", "fusion", "solar", "RenewableEnergy",
+      "electricvehicles", "cars", "trucks", "aviation", "trains",
+      "InfrastructurePorn", "civilengineering",
+    ],
+    rural_america: [
+      "farming", "Homesteading", "Agriculture", "ranching", "gardening",
+      "preppers", "BackYardChickens", "Beekeeping", "forestry",
+    ],
+    faith_community: [
+      "Christianity", "Catholicism", "OpenChristian", "Judaism", "Islam",
+      "Buddhism", "religion", "Atheism", "exchristian", "interfaith",
     ],
   };
 
@@ -270,6 +315,11 @@
       "redistribution", "populist", "establishment", "primary challenge", "town hall", "constituent",
       "representative", "senator", "congressman", "statehouse", "state house", "endorsement", "platform plank",
       "working class politics", "political revolution", "medicare for all", "green new deal"],
+    civic_discussion: ["political discussion", "both sides", "centrist", "moderate", "bipartisan", "across the aisle",
+      "devil's advocate", "steelman", "viewpoint diversity", "civil discourse", "policy debate", "ideology",
+      "left vs right", "right wing", "left wing", "conservative", "libertarian", "independent voter",
+      "swing voter", "undecided", "political compass", "horse race", "cable news", "talk radio",
+      "whataboutism", "false equivalence", "nuance", "good faith", "debate me", "change my view"],
     movement: ["movement", "march", "protest", "protester", "rally", "organize", "organizing", "organizer",
       "occupy", "boycott", "sitin", "sit in", "directaction", "direct action", "solidarity", "coalition",
       "mutualaid", "mutual aid", "volunteer", "demonstration", "civildisobedience", "civil disobedience",
@@ -406,6 +456,24 @@
       "car free", "parking minimum", "sprawl", "walkable", "walkability", "transit oriented",
       "land use", "highway expansion", "road widening", "ridership", "headway",
       "bus rapid transit", "streetcar", "amtrak", "high speed rail", "ebike", "farebox", "busway"],
+    economy_business: ["economy", "economics", "gdp", "inflation", "recession", "interest rate", "federal reserve",
+      "small business", "entrepreneur", "startup", "venture capital", "investor", "stock market", "bond market",
+      "supply chain", "tariff", "trade war", "unemployment rate", "payroll", "revenue", "profit margin",
+      "llc", "sole proprietor", "franchise", "b2b", "saas", "cash flow", "balance sheet", "ipo", "earnings"],
+    science_policy: ["peer review", "scientific consensus", "clinical trial", "randomized", "meta analysis",
+      "research funding", "nih grant", "lab leak", "public science", "evidence based", "replicability",
+      "preprint", "journal", "scientist", "researcher", "hypothesis", "data set", "statistics", "p value",
+      "space telescope", "particle physics", "genome", "mrna", "vaccine efficacy"],
+    energy_infrastructure: ["power grid", "baseload", "nuclear power", "reactor", "uranium", "fusion energy",
+      "natural gas", "lng terminal", "transmission", "substation", "blackout", "brownout", "capacity market",
+      "permitting", "infrastructure bill", "ev charger", "battery storage", "pumped hydro", "oil refining",
+      "pipeline safety", "rail freight", "port congestion", "airport capacity"],
+    rural_america: ["farm", "farmer", "farming", "ranch", "rancher", "crop", "harvest", "livestock", "homestead",
+      "rural", "small town", "county fair", "farm bill", "usda", "co-op", "grain", "soybean", "cattle",
+      "tractor", "irrigation", "drought", "4-h", "main street", "rural broadband"],
+    faith_community: ["congregation", "parish", "sermon", "pastor", "rabbi", "imam", "ministry", "worship",
+      "interfaith", "theology", "scripture", "gospel", "torah", "quran", "prayer", "faith community",
+      "religious liberty", "church", "synagogue", "mosque", "temple", "denomination", "pastoral"],
   };
 
   Seeds.DEMOGRAPHIC_TRIGGERS = {
@@ -444,6 +512,7 @@
   /* Human-readable labels for the picker dropdowns + chips. */
   Seeds.ISSUE_LABELS = {
     progressive:      "Progressive politics",
+    civic_discussion: "Civic discussion",
     movement:         "Activism / movement",
     healthcare:       "Healthcare",
     labor:            "Labor / unions",
@@ -465,6 +534,11 @@
     safety_net:       "Social safety net",
     tech_privacy:     "Tech & digital rights",
     urbanism:         "Transit & land use",
+    economy_business: "Economy & business",
+    science_policy:   "Science & research",
+    energy_infrastructure: "Energy & infrastructure",
+    rural_america:    "Rural & agriculture",
+    faith_community:  "Faith communities",
   };
 
   Seeds.DEMOGRAPHIC_LABELS = {
@@ -565,17 +639,39 @@
    * instead of picking the ones that happened to be spelled right. */
 
   /* ---------- Starter bundles ----------
-   * Cross-sphere combinations that make a sensible first load. The old
-   * build only offered these once, on the very first run, through a
-   * drawer that disappeared as soon as a single sub existed. They are
-   * now permanent fixtures of the Communities view, because "load me a
-   * sensible set of progressive subs" is a recurring need, not a
-   * one-time onboarding step. */
+   * Cross-sphere combinations that make a sensible first load. Broad
+   * civic / issue desks come first so a new session is not funnelled
+   * straight into DemocraticSocialism-adjacent rooms. Progressive
+   * organising remains available as its own bundle. */
   Seeds.BUNDLES = [
+    {
+      key: "civic-news",
+      label: "Civic discussion & news",
+      description: "Cross-spectrum debate rooms and news desks — a wider starting set than progressive organising alone.",
+      spheres: ["civic_discussion", "media_news", "democracy"],
+    },
+    {
+      key: "issue-desks",
+      label: "Issue desks",
+      description: "Healthcare, labor, housing, climate and education — topic communities first, ideology second.",
+      spheres: ["healthcare", "labor", "housing", "climate", "education"],
+    },
+    {
+      key: "economy-science",
+      label: "Economy, science & energy",
+      description: "Markets, research and infrastructure rooms beyond the progressive desk.",
+      spheres: ["economy_business", "science_policy", "energy_infrastructure", "tech_privacy"],
+    },
+    {
+      key: "local-rural",
+      label: "Local & rural",
+      description: "Agriculture, small-town and place-based communities alongside urbanism.",
+      spheres: ["rural_america", "urbanism", "housing"],
+    },
     {
       key: "progressive-core",
       label: "Progressive core",
-      description: "The backbone of the progressive sphere on Reddit — party-adjacent politics, democratic socialism and left commentary.",
+      description: "Party-adjacent progressive politics, democratic socialism and left commentary.",
       spheres: ["progressive", "voting"],
     },
     {
@@ -585,28 +681,16 @@
       spheres: ["movement", "labor"],
     },
     {
-      key: "economic-justice",
-      label: "Economic justice",
-      description: "Work, wages, housing and healthcare — where material-conditions organising happens.",
-      spheres: ["labor", "housing", "healthcare"],
-    },
-    {
       key: "civil-rights",
       label: "Civil rights",
       description: "Racial justice, reproductive rights, immigration and LGBTQ organising.",
       spheres: ["racial_justice", "reproductive", "immigration", "lgbtq"],
     },
     {
-      key: "climate",
-      label: "Climate",
-      description: "Climate policy, Green New Deal advocacy and the sustainability communities around them.",
-      spheres: ["climate", "urbanism"],
-    },
-    {
       key: "rule-of-law",
       label: "Democracy & courts",
-      description: "Courts, oversight and anti-authoritarian organising, plus the communities tracking who is doing what.",
-      spheres: ["democracy", "voting", "media_news"],
+      description: "Courts, oversight and the communities tracking who is doing what.",
+      spheres: ["democracy", "voting", "civic_discussion", "media_news"],
     },
     {
       key: "safety-and-dignity",
