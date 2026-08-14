@@ -262,12 +262,14 @@
    * one issue it most identifies. */
   Seeds.SPHERE_TRIGGERS = {
     progressive: ["progressive", "socialist", "socialism", "democrat", "democratic", "leftist", "leftwing", "liberal",
+      "democratic socialism", "democratic socialist", "dsa", "ocasio-cortez", "aoc", "bernie sanders",
       "abolitionist", "antifascist", "primary election", "incumbent", "caucus", "party platform", "grassroots",
       "canvass", "canvassing", "doorknock", "door knock", "fundraising", "smalldollar", "small dollar",
       "downballot", "down ballot", "councilmember", "council member", "legislature",
       "oligarchy", "billionaire", "billionaires", "wealth tax", "tax the rich", "corporate greed", "class war",
       "redistribution", "populist", "establishment", "primary challenge", "town hall", "constituent",
-      "representative", "senator", "congressman", "statehouse", "state house", "endorsement", "platform plank"],
+      "representative", "senator", "congressman", "statehouse", "state house", "endorsement", "platform plank",
+      "working class politics", "political revolution", "medicare for all", "green new deal"],
     movement: ["movement", "march", "protest", "protester", "rally", "organize", "organizing", "organizer",
       "occupy", "boycott", "sitin", "sit in", "directaction", "direct action", "solidarity", "coalition",
       "mutualaid", "mutual aid", "volunteer", "demonstration", "civildisobedience", "civil disobedience",

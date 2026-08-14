@@ -48,7 +48,19 @@
       "statehouse",
       "state house",
       "endorsement",
-      "platform plank"
+      "platform plank",
+      "democratic socialism",
+      "democratic socialist",
+      "dsa",
+      "ocasio-cortez",
+      "aoc",
+      "bernie sanders",
+      "working class politics",
+      "left wing",
+      "social democracy",
+      "medicare for all",
+      "green new deal",
+      "political revolution"
     ],
     "movement": [
       "movement",
@@ -145,7 +157,11 @@
       "rural hospital",
       "nursing shortage",
       "ambulance",
-      "telehealth"
+      "telehealth",
+      "health insurance",
+      "hospital monopoly",
+      "drug pricing",
+      "medicaid cuts"
     ],
     "labor": [
       "labor",
@@ -208,7 +224,14 @@
       "uaw",
       "seiu",
       "iww",
-      "shop floor"
+      "shop floor",
+      "union drive",
+      "union election",
+      "strike authorization",
+      "contract fight",
+      "warehouse workers",
+      "barista union",
+      "gig worker"
     ],
     "voting": [
       "vote",
@@ -259,7 +282,9 @@
       "referendum",
       "ballot initiative",
       "proposition",
-      "recall"
+      "recall",
+      "mail ballot",
+      "ballot access"
     ],
     "climate": [
       "climate",
@@ -319,7 +344,12 @@
       "battery",
       "geothermal",
       "offshore wind",
-      "consumption"
+      "consumption",
+      "epa rule",
+      "methane emissions",
+      "fossil fuel",
+      "climate bill",
+      "clean energy jobs"
     ],
     "reproductive": [
       "abortion",
@@ -357,7 +387,11 @@
       "shield law",
       "waiting period",
       "parental consent",
-      "crisis pregnancy"
+      "crisis pregnancy",
+      "reproductive rights",
+      "abortion access",
+      "egg freezing",
+      "ivf access"
     ],
     "immigration": [
       "immigration",
@@ -412,7 +446,10 @@
       "border wall",
       "remain in mexico",
       "title 42",
-      "catch and release"
+      "catch and release",
+      "deportation flight",
+      "asylum seeker",
+      "border policy"
     ],
     "education": [
       "education",
@@ -539,7 +576,12 @@
       "jerusalem",
       "jenin",
       "arms embargo",
-      "aipac"
+      "aipac",
+      "gaza ceasefire",
+      "west bank",
+      "occupied territories",
+      "humanitarian aid gaza",
+      "israel palestine"
     ],
     "racial_justice": [
       "racial",
@@ -611,7 +653,14 @@
       "retraction",
       "investigative",
       "leaked documents",
-      "reporter"
+      "reporter",
+      "investigative reporting",
+      "news analysis",
+      "op-ed",
+      "opinion piece",
+      "breaking news",
+      "media bias",
+      "cable news"
     ],
     "democracy": [
       "democracy",
@@ -656,7 +705,9 @@
       "insurrection",
       "coup",
       "legitimacy",
-      "norms"
+      "norms",
+      "democratic norms",
+      "january 6"
     ],
     "criminal_justice": [
       "prison",
@@ -922,7 +973,9 @@
       "foodborne",
       "food poisoning",
       "adulterated",
-      "misbranded"
+      "misbranded",
+      "class action lawsuit",
+      "ftc action"
     ],
     "election_law": [
       "election lawsuit",
@@ -955,7 +1008,8 @@
       "doj lawsuit",
       "voting rights lawsuit",
       "injunction election",
-      "preliminary injunction vote"
+      "preliminary injunction vote",
+      "redistricting map"
     ]
   },
   "demographic": {

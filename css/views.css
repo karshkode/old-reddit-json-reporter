@@ -1744,35 +1744,10 @@ body.sheet-open {
   gap: var(--s-2);
   align-items: center;
 }
-.syn-playbook {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  min-width: 9.5rem;
-}
-.syn-playbook .group-label { margin: 0; font-size: 0.7rem; }
-/* Match other selects (--bg-elev-2 / --text). The old rule used a
- * non-existent --surface token that fell back to #fff, so Safari kept
- * light text on a white field. Use background-color so base.css's
- * chevron background-image still shows. */
-.syn-playbook select {
-  font: inherit;
-  font-size: var(--fs-sm);
-  padding: 0.35rem var(--s-6) 0.35rem 0.5rem;
-  min-height: 34px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background-color: var(--bg-elev-2);
-  color: var(--text);
-  max-width: 14rem;
-  color-scheme: dark;
-}
-html[data-theme="light"] .syn-playbook select,
-html.theme-light .syn-playbook select {
-  color-scheme: light;
-}
 .syn-opml-label { cursor: pointer; margin: 0; }
+.syn-playbook {
+  display: none;
+}
 .syn-search-row {
   display: flex;
   flex-wrap: wrap;
@@ -1782,8 +1757,117 @@ html.theme-light .syn-playbook select {
 }
 .syn-search-row .group-label { margin: 0; }
 .syn-search-row input {
-  flex: 1 1 200px;
+  flex: 1 1 160px;
   min-width: 0;
+}
+#syndicate-source {
+  flex: 0 1 12rem;
+  max-width: 16rem;
+}
+
+/* ---- Plan split: Syndicate carousel | Next move ---- */
+.plan-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .plan-split { grid-template-columns: 1fr; }
+}
+.plan-syn-card { margin-bottom: 0; }
+.plan-syn-body { min-height: 280px; }
+.plan-syn-empty { padding: var(--s-5); }
+.plan-syn-slide {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .plan-syn-slide { grid-template-columns: 1fr; }
+}
+.plan-syn-media {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+}
+.plan-syn-media-empty {
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  font-weight: var(--fw-bold);
+  color: var(--text-mute);
+}
+.plan-syn-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: center;
+  margin-bottom: var(--s-2);
+}
+.plan-syn-title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-lg);
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+.plan-syn-brief {
+  margin: 0 0 var(--s-3);
+  color: var(--text-dim);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+.plan-syn-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: var(--s-3);
+}
+.plan-syn-keys code {
+  font-size: var(--fs-2xs);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-elev-2);
+  color: var(--text-mute);
+}
+.plan-syn-dests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.plan-syn-dest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding: var(--s-2);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elev-2);
+}
+.plan-syn-dest.is-top {
+  border: 1px solid var(--accent-soft, var(--border-strong));
+}
+.plan-syn-dest-name {
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+.plan-syn-dest-terms code {
+  font-size: var(--fs-2xs);
+  color: var(--text-mute);
+}
+.plan-syn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.focus-lead-run {
+  margin: 4px 0 var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
 }
 
 .syn-layout {

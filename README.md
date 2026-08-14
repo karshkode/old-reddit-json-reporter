@@ -248,24 +248,28 @@ is available but off until you turn it on.
 a proxy fallback), keeps a handful of recent items with source/time chips
 and thumbnails when the feed provides them, and extracts keywords from
 the title and summary. Headlines (and their destination tips) are cached
-in the browser for 24 hours so a refresh does not wipe the list. A search
-box filters the list; cards sort with the strongest destinations first and
-“No strong destination” rows at the bottom. After pull (or **Suggest
-destinations**), headlines are ranked offline and cards show strong
-destination chips only (fit ≥ 35). Matching uses the same path as
-Where-next on a synthetic link post — format rules and archive uniqueness
-apply — and **Open in Plan** carries that match into the dashboard Plan
-tab (Briefing stays on its own tab). Extra civic desks (ProPublica,
-Democracy Now, The Nation, NPR Politics, …) ship alongside the default
-Politics/News folders.
+in the browser for 24 hours so a refresh does not wipe the list. Filter
+by title/keywords or by **source** (e.g. Vox, ProPublica). Cards sort with
+the strongest destinations first. After pull (or **Suggest destinations**),
+headlines are ranked offline and cards show strong destination chips only
+(fit ≥ 35). Matching uses the same path as Where-next on a synthetic link
+post — format rules and archive uniqueness apply — and **Open in Plan**
+carries that match into the dashboard Plan tab without re-blocking on a
+live Discovery pass. Extra civic desks (ProPublica, Democracy Now, The
+Nation, NPR Politics, …) ship alongside the default Politics/News folders.
+
+The Plan tab shows a **Top Syndicate picks** carousel beside **Where
+should a post go next?** — image, brief, keywords, and destination chips
+for the strongest ranked headlines. Next move folds the old separate
+“run” schedule into one list (anytime / open-now rooms preferred).
 
 Destination quality is driven by versioned lexicons in
 [`data/match/`](data/match/) (triggers, offtopic terms, source tiers,
-topic→sphere seeds, campaign playbooks). Matching also uses a link
-engagement prior from loaded posts (and a light archive sample on live
-match) plus entity search to widen the candidate pool. See
+topic→sphere seeds). Matching also uses a link engagement prior from
+loaded posts (and a light archive sample on live match) plus entity
+search to widen the candidate pool. See
 [`data/match/README.md`](data/match/README.md) for the daily agent loop
-(`node scripts/propose-lexicon-update.mjs`) and playbook notes.
+(`node scripts/propose-lexicon-update.mjs`).
 
 Sync can **Drop posts older than window** to prune inventory to the
 Settings time window, and every sync unions a page of `new` so posts
@@ -394,11 +398,11 @@ joins the campaign on the next sync.
 
 ## How the cascade picks its times
 
-The Plan tab lays out a staggered posting order: one community per
-slot, at least an hour apart, each as close as possible to its own best
-time. Every stop carries a button that opens that community's submit
-page with the post already written, so the plan is something you carry
-out rather than something you re-enter into Reddit by hand.
+Plan’s **Next move / Then** list uses the same staggered posting order
+(one community per slot, at least an hour apart, each as close as
+possible to its own best time). Anytime rooms and open windows are
+preferred for the lead. Every stop still carries a button that opens
+that community’s submit page with the post already written.
 
 Two posts cannot occupy the same slot, so somebody has to move, and
 what the scheduler does about that is the whole design.
