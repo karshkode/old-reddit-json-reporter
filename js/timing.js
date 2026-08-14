@@ -1089,5 +1089,241 @@
     return `${Timing.formatSlot(row.window.start)}–${Timing.formatSlot(row.window.end)}`;
   };
 
+  /* ---------- posting availability (user schedule window) ----------
+     The fitted peak is the community's best time of day. When the
+     user can only post inside a slice of the clock, the useful answer
+     is the best average *inside that slice* — not "wait until the
+     absolute peak" and not "give up". Constraining re-picks the slot
+     and the tied window on the already-fitted curve; it does not
+     refit, so moving the dual-ended slider stays cheap. */
+
+  Timing.DAY_MINUTES = DAY_MIN;
+
+  Timing.isAllDay = function (avail) {
+    if (!avail) return true;
+    const start = Number(avail.start);
+    const end = Number(avail.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return true;
+    if (end - start >= DAY_MIN - SLOT_MIN / 2) return true;
+    if (start <= 0 && end >= DAY_MIN) return true;
+    return false;
+  };
+
+  Timing.normalizeAvailability = function (startMin, endMin) {
+    let start = Math.round(Number(startMin) / SLOT_MIN) * SLOT_MIN;
+    let end = Math.round(Number(endMin) / SLOT_MIN) * SLOT_MIN;
+    start = ((start % DAY_MIN) + DAY_MIN) % DAY_MIN;
+    if (end >= DAY_MIN) end = DAY_MIN;
+    else end = ((end % DAY_MIN) + DAY_MIN) % DAY_MIN;
+    if (end <= start) {
+      /* Dual-thumb same-day control: keep a minimum one-slot span. */
+      end = Math.min(DAY_MIN, start + SLOT_MIN);
+      if (end <= start) { start = 0; end = DAY_MIN; }
+    }
+    if (start <= 0 && end >= DAY_MIN) return null;
+    return { start: start, end: end };
+  };
+
+  Timing.availabilityLabel = function (avail) {
+    if (Timing.isAllDay(avail)) return "all day";
+    const endLabel = avail.end >= DAY_MIN ? "24:00" : Timing.formatSlot(avail.end);
+    return `${Timing.formatSlot(avail.start)}–${endLabel}`;
+  };
+
+  Timing.minuteInAvailability = function (minute, avail) {
+    if (Timing.isAllDay(avail)) return true;
+    const m = ((Math.round(minute) % DAY_MIN) + DAY_MIN) % DAY_MIN;
+    if (avail.start < avail.end) return m >= avail.start && m < avail.end;
+    /* Overnight wrap (future-proof; same-day slider never emits this). */
+    return m >= avail.start || m < avail.end;
+  };
+
+  Timing.slotInAvailability = function (slotIdx, avail) {
+    return Timing.minuteInAvailability(slotIdx * SLOT_MIN, avail);
+  };
+
+  function cloneWindow(win) {
+    if (!win) return null;
+    return {
+      start: win.start,
+      end: win.end,
+      slots: win.slots,
+      minutes: win.minutes,
+    };
+  }
+
+  /* Best contiguous tied run around `peakIdx`, clipped to availability. */
+  function expandInAvailability(mu, peakIdx, tieFloor, avail) {
+    let startK = peakIdx, endK = peakIdx;
+    for (let step = 1; step < SLOTS; step++) {
+      const k = (peakIdx - step + SLOTS) % SLOTS;
+      if (!Timing.slotInAvailability(k, avail)) break;
+      if (mu[k] < tieFloor) break;
+      startK = k;
+    }
+    for (let step = 1; step < SLOTS; step++) {
+      const k = (peakIdx + step) % SLOTS;
+      if (!Timing.slotInAvailability(k, avail)) break;
+      if (mu[k] < tieFloor) break;
+      endK = k;
+    }
+    const runLength = ((endK - startK + SLOTS) % SLOTS) + 1;
+    return {
+      startK: startK,
+      endK: endK,
+      runLength: runLength,
+      window: {
+        start: startK * SLOT_MIN,
+        end: ((endK + 1) % SLOTS) * SLOT_MIN,
+        slots: runLength,
+        minutes: runLength * SLOT_MIN,
+      },
+    };
+  }
+
+  /* Intersect a statistical window with the availability band. */
+  function intersectWindow(win, avail) {
+    if (!win || Timing.isAllDay(avail)) return cloneWindow(win);
+    const slots = [];
+    for (let step = 0; step < win.slots; step++) {
+      const m = (win.start + step * SLOT_MIN) % DAY_MIN;
+      const k = Math.round(m / SLOT_MIN) % SLOTS;
+      if (Timing.slotInAvailability(k, avail)) slots.push(k);
+    }
+    if (!slots.length) return null;
+    let best = [slots[0]], cur = [slots[0]];
+    for (let i = 1; i < slots.length; i++) {
+      const prev = slots[i - 1];
+      const k = slots[i];
+      if ((prev + 1) % SLOTS === k) cur.push(k);
+      else {
+        if (cur.length > best.length) best = cur;
+        cur = [k];
+      }
+    }
+    if (cur.length > best.length) best = cur;
+    const startK = best[0];
+    const endK = best[best.length - 1];
+    return {
+      start: startK * SLOT_MIN,
+      end: ((endK + 1) % SLOTS) * SLOT_MIN,
+      slots: best.length,
+      minutes: best.length * SLOT_MIN,
+    };
+  }
+
+  /* Re-pick peak + window for one community inside `avail`.
+     `row` must be the unconstrained Timing.row (or equivalent). */
+  Timing.constrainRow = function (row, avail) {
+    if (!row) return row;
+    if (Timing.isAllDay(avail) || !row.fit || !row.fit.curve) return row;
+
+    const fit = row.fit;
+    const mu = fit.curve;
+    const grand = fit.grandLog;
+    const ratioCurve = fit.ratioCurve;
+
+    let bestIdx = -1;
+    let bestVal = -Infinity;
+    for (let k = 0; k < SLOTS; k++) {
+      if (!Timing.slotInAvailability(k, avail)) continue;
+      if (mu[k] > bestVal) { bestVal = mu[k]; bestIdx = k; }
+    }
+    if (bestIdx < 0) {
+      return Object.assign({}, row, {
+        availabilityConstrained: true,
+        availability: avail,
+        availabilityEmpty: true,
+        unconstrainedSlot: row.slot,
+        unconstrainedSlotLabel: row.slotLabel,
+        unconstrainedWindow: cloneWindow(row.window),
+        unconstrainedLift: row.lift,
+      });
+    }
+
+    const naturalPeakOutside = row.slot != null
+      && !Timing.minuteInAvailability(row.slot, avail);
+
+    let windowObj = null;
+    let pickIdx = bestIdx;
+    let ratioDecided = false;
+
+    if (!naturalPeakOutside && row.window && row.window.slots < SLOTS) {
+      windowObj = intersectWindow(row.window, avail);
+    }
+    if (!windowObj) {
+      const peakMu = mu[bestIdx];
+      const span = Math.max(1e-6, peakMu - grand);
+      const tieFloor = peakMu - Math.max(0.15 * span, 0.02);
+      windowObj = expandInAvailability(mu, bestIdx, tieFloor, avail).window;
+    }
+
+    if (ratioCurve && windowObj && windowObj.slots > 1 && windowObj.slots < SLOTS) {
+      let bestRatio = -Infinity, pick = pickIdx;
+      for (let step = 0; step < windowObj.slots; step++) {
+        const k = Math.round(((windowObj.start + step * SLOT_MIN) % DAY_MIN) / SLOT_MIN) % SLOTS;
+        if (ratioCurve[k] > bestRatio) { bestRatio = ratioCurve[k]; pick = k; }
+      }
+      if (pick !== pickIdx && bestRatio - ratioCurve[pickIdx] >= 0.005) {
+        pickIdx = pick;
+        ratioDecided = true;
+      }
+    } else if (windowObj) {
+      let bestInWin = -Infinity;
+      for (let step = 0; step < windowObj.slots; step++) {
+        const k = Math.round(((windowObj.start + step * SLOT_MIN) % DAY_MIN) / SLOT_MIN) % SLOTS;
+        if (mu[k] > bestInWin) { bestInWin = mu[k]; pickIdx = k; }
+      }
+    }
+
+    const delta = mu[pickIdx] - grand;
+    const liftPct = (Math.exp(delta) - 1) * 100;
+    let liftLow = row.liftLow;
+    let liftHigh = row.liftHigh;
+    if (row.lift != null && Math.abs(row.lift) > 1e-6 && row.liftLow != null && row.liftHigh != null) {
+      const half = (row.liftHigh - row.liftLow) / 2;
+      liftLow = liftPct - half;
+      liftHigh = liftPct + half;
+    }
+
+    const out = Object.assign({}, row, {
+      slot: pickIdx * SLOT_MIN,
+      slotLabel: Timing.formatSlot(pickIdx * SLOT_MIN),
+      bestHour: Math.round(pickIdx * SLOT_MIN / 60) % 24,
+      window: windowObj,
+      lift: liftPct,
+      liftLow: liftLow,
+      liftHigh: liftHigh,
+      typicalScore: Math.expm1(mu[pickIdx]),
+      ratioAt: ratioCurve ? ratioCurve[pickIdx] : row.ratioAt,
+      ratioDecided: ratioDecided || false,
+      availabilityConstrained: true,
+      availability: avail,
+      peakOutsideAvail: naturalPeakOutside,
+      unconstrainedSlot: row.slot,
+      unconstrainedSlotLabel: row.slotLabel,
+      unconstrainedWindow: cloneWindow(row.window),
+      unconstrainedLift: row.lift,
+    });
+    out.next = Timing.nextOccurrence(out);
+    return out;
+  };
+
+  /* Apply availability to every row and rebuild the cross-sub summary.
+     Pass the unconstrained model from Timing.model / Analysis.postingTimes. */
+  Timing.constrainModel = function (model, avail) {
+    if (!model) return model;
+    const clean = Timing.isAllDay(avail)
+      ? null
+      : Timing.normalizeAvailability(avail.start, avail.end);
+    if (!clean) {
+      return Object.assign({}, model, { availability: null });
+    }
+    const rows = (model.rows || []).map((r) => Timing.constrainRow(r, clean));
+    const summarized = Timing.summarize(rows, { minSample: model.minSample });
+    summarized.availability = clean;
+    return summarized;
+  };
+
   window.Timing = Timing;
 })();
