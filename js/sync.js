@@ -28,6 +28,17 @@
  */
 (function () {
   const Sync = {};
+  /* Product id on session payloads. Older shares used the pre-rename
+   * repo slug; accept both so existing links and JSON exports still
+   * import after the rebrand. */
+  const APP_ID = "reddit-campaign-syndicator";
+  const APP_IDS = {
+    "reddit-campaign-syndicator": true,
+    "old-reddit-json-reporter": true,
+  };
+  function isAppPayload(p) {
+    return !!(p && APP_IDS[p.app]);
+  }
 
   /* Compact format version. Bump when the schema changes
    * incompatibly so older clients can decline gracefully. */
@@ -72,7 +83,7 @@
     return {
       v: Sync.VERSION,
       ts: Date.now(),
-      app: "old-reddit-json-reporter",
+      app: APP_ID,
       campaigns: Array.isArray(campaigns) ? campaigns : [],
       subs: {
         known: Array.isArray(knownSubs) ? knownSubs : [],
@@ -185,7 +196,7 @@
     return {
       v: 2,
       ts: ts || Date.now(),
-      app: "old-reddit-json-reporter",
+      app: APP_ID,
       campaigns,
       subs: { known, active },
       activeSpheres: spheres,
@@ -303,7 +314,7 @@
     catch (_) { return null; }
     try {
       const parsed = JSON.parse(json);
-      if (parsed && parsed.app === "old-reddit-json-reporter") return parsed;
+      if (isAppPayload(parsed)) return parsed;
     } catch (_) {}
     return null;
   };
@@ -368,7 +379,7 @@
     }
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.app === "old-reddit-json-reporter") {
+      if (isAppPayload(parsed)) {
         return { payload: parsed, format: "json" };
       }
     } catch (_) {}
@@ -388,8 +399,8 @@
   Sync.applyPayload = function (payload, options) {
     options = options || {};
     const mode = options.mode === "merge" ? "merge" : "replace";
-    if (!payload || payload.app !== "old-reddit-json-reporter") {
-      throw new Error("Not a Reddit Campaign Reporter session payload");
+    if (!isAppPayload(payload)) {
+      throw new Error("Not a Reddit Campaign Syndicator session payload");
     }
 
     let campaignsAdded = 0, campaignsKept = 0, campaignsReplaced = 0;

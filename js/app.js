@@ -1603,7 +1603,7 @@
         const payload = Sync.collectPayload();
         const text = JSON.stringify(payload, null, 2);
         const stamp = new Date().toISOString().slice(0, 10);
-        downloadBlob(`reddit-campaign-reporter-session-${stamp}.json`, text);
+        downloadBlob(`reddit-campaign-syndicator-session-${stamp}.json`, text);
         setSyncStatus(`Downloaded session (${payload.campaigns.length} campaign${payload.campaigns.length === 1 ? "" : "s"}, ${(payload.subs && payload.subs.active || []).length} active subs).`, "ok");
       } catch (err) {
         setSyncStatus("Couldn't export: " + ((err && err.message) || err), "err");

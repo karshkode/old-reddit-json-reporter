@@ -96,7 +96,7 @@
     }
     if (document.title !== undefined) {
       const t = typeof view.title === "function" ? view.title(params) : view.title;
-      document.title = t ? `${t} · Reddit Campaign Reporter` : "Reddit Campaign Reporter";
+      document.title = t ? `${t} · Reddit Campaign Syndicator` : "Reddit Campaign Syndicator";
     }
   }
 

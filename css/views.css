@@ -1869,6 +1869,34 @@ body.sheet-open {
   flex-wrap: wrap;
   gap: var(--s-2);
 }
+
+/* ---- Plan: Recommended posts (inventory ↔ destinations) ---- */
+.plan-rec-card { margin-top: var(--s-4); }
+.plan-rec-body { min-height: 120px; }
+.plan-rec-meta {
+  margin: 0 0 var(--s-3);
+  padding: 0 var(--s-1);
+}
+.plan-rec-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.plan-rec-row {
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-1);
+}
+.plan-rec-title {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-md);
+  line-height: var(--lh-tight);
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+}
+.plan-rec-nodest { margin: 0 0 var(--s-2); }
+
 .focus-lead-run {
   margin: 4px 0 var(--s-2);
   font-size: var(--fs-sm);

@@ -1,12 +1,11 @@
-# Reddit Campaign Reporter
+# Reddit Campaign Syndicator
 
-> A zero-backend dashboard for measuring how a message lands when you
-> deliberately post it across several subreddits at once — trend analysis
-> and posting times per community, campaign tracking across them, and a
-> discovery engine that turns any single post into the list of
-> communities it belongs in.
+> A zero-backend dashboard for placing a message across several
+> subreddits — keyword match destinations for loaded posts and RSS
+> headlines, posting times per community, and campaign tracking across
+> the copies you already have.
 
-[![Live demo](https://img.shields.io/badge/live%20demo-karshkode.github.io-ff5722?style=flat-square)](https://karshkode.github.io/old-reddit-json-reporter/?demo=1)
+[![Live demo](https://img.shields.io/badge/live%20demo-karshkode.github.io-ff5722?style=flat-square)](https://karshkode.github.io/reddit-campaign-syndicator/?demo=1)
 [![No backend](https://img.shields.io/badge/backend-none-blue?style=flat-square)](#how-it-works)
 [![GitHub Pages](https://img.shields.io/badge/host-GitHub%20Pages-181717?style=flat-square&logo=github)](https://pages.github.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](#license)
@@ -147,9 +146,10 @@ snapping row rather than stacking.
 
 | Tab | What is in it |
 |---|---|
-| **Plan** | Pick a post, get the communities to put it in and the order to do it in — see [The Plan hub](#the-plan-hub). Below it, what the data is telling you: see [the briefing](#the-summary-is-a-briefing-not-a-recap) |
+| **Plan** | The singular planning desk: **Top Syndicate picks** (RSS), **Where should a post go next?** (timed Next move), **Recommended posts** (loaded inventory ranked with the same keyword match engine, plus Make campaign when copies already span communities), and **Existing cross-posts**. Briefing findings sit on their own tab |
+| **Briefing** | What the loaded data is telling you about where and when to post — see [the briefing](#the-summary-is-a-briefing-not-a-recap) |
 | **Trends** | **When posts go up** — a full-width timeline, switchable between *Per sub*, *Stacked*, *Density* (each sub normalised to its own peak, so cadence shapes overlay without volume bias) and *Total*, across windows from 1 day to all time. Then **best hours to post per subreddit**, one small chart per community on its own clock ([below](#posting-times-are-per-subreddit)); **busiest days**, **score vs comments**, **side-by-side subreddit totals**, a **score histogram**, a **sentiment doughnut** and **recent-post velocity**; and **words coming up most** with **topics that keep coming up** |
-| **Communities** | **What each subreddit looks like** — an audience fingerprint per sub: engagement style, reception, best hour, top themes. Then **the same post in multiple subreddits**, detected across your loaded data and ranked by spread first and score second, so a post seeded into five subs outranks a single viral hit |
+| **Communities** | **What each subreddit looks like** — an audience fingerprint per sub: engagement style, reception, best hour, top themes |
 
 Only the selected tab is in the document flow, which is what keeps the
 view to two or three screenfuls on a phone instead of eleven. It also
@@ -163,7 +163,7 @@ drew the hours, Charts drew everything else, Themes drew the words the
 recommendation was already matching on. What is left is a verb, a place
 to look things up, and the communities themselves. Links to the retired
 tabs still resolve — `timing`, `charts` and `themes` land on Trends,
-`crossposts` on Communities.
+`crossposts` on Plan.
 
 ### Campaigns
 
@@ -176,7 +176,7 @@ you a KPI row and goal bars above four tabs:
 
 | Section | What is in it |
 |---|---|
-| **Plan** | When to post community by community; the communities this campaign has **not** reached (discovery, see below); the [cross-post cascade](#how-the-cascade-picks-its-times); title prediction and rewriting; and volunteer coverage |
+| **Plan** | When to post community by community; the communities this campaign has **not** reached (discovery, see below); and the [cross-post cascade](#how-the-cascade-picks-its-times) for this campaign's posts. Inventory recommendations and Make-campaign live on the dashboard Plan tab |
 | **Posts** | Every tracked post, with paste-to-add, per-row removal, and **Where next** on each one |
 | **Trends** | How the campaign is doing in plain English, what separates its best posts from its worst, and the fingerprint it presents to a new community — then campaign-scoped charts (activity over time by subreddit, score vs comments, title tone, score spread) and a trend card per community the campaign reached, each with its own cadence and posting-hour charts plus a cross-sub comparison and table. When a sub has too few campaign posts to chart honestly, the card shows that sub's own posting rhythm instead and says how the campaign's timing compares |
 | **Settings** | Goals, digest export, delete |
@@ -260,8 +260,13 @@ Nation, NPR Politics, …) ship alongside the default Politics/News folders.
 
 The Plan tab shows a **Top Syndicate picks** carousel beside **Where
 should a post go next?** — image, brief, keywords, and destination chips
-for the strongest ranked headlines. Next move folds the old separate
-“run” schedule into one list (anytime / open-now rooms preferred).
+for the strongest ranked headlines. Below that, **Recommended posts**
+runs the same Discovery keyword match over the loaded inventory
+(offline first, strongest destinations first) with **Open in Plan** and
+**Make campaign** when copies already span two or more communities.
+**Existing cross-posts** lists multi-sub groups for the same CTA.
+Next move folds the old separate “run” schedule into one list (anytime /
+open-now rooms preferred).
 
 Destination quality is driven by versioned lexicons in
 [`data/match/`](data/match/) (triggers, offtopic terms, source tiers,
