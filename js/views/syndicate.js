@@ -233,11 +233,17 @@
       } else if (cached) {
         tipHtml = `<div class="syn-suggests is-weak"><span class="meta">No strong destination</span></div>`;
       }
-      const thumb = a.image
+      const thumbInner = a.image
         ? `<img class="syn-thumb" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
         : `<div class="syn-thumb syn-thumb-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
+      const thumb = a.link
+        ? `<a class="syn-thumb-link" href="${esc(a.link)}" target="_blank" rel="noopener" title="Open article">${thumbInner}</a>`
+        : thumbInner;
+      const title = a.link
+        ? `<a class="syn-title" href="${esc(a.link)}" target="_blank" rel="noopener" title="Open article">${esc(a.title)}</a>`
+        : `<div class="syn-title">${esc(a.title)}</div>`;
       return `
-        <button type="button" class="syn-card${active}" data-syn-id="${esc(a.id)}">
+        <div class="syn-card${active}" data-syn-id="${esc(a.id)}" role="button" tabindex="0">
           ${thumb}
           <div class="syn-card-body">
             <div class="syn-card-meta">
@@ -245,11 +251,11 @@
               ${when.rel ? `<span class="syn-time-box" title="${esc(when.abs)}">${esc(when.rel)}</span>` : ""}
               ${a.category ? `<span class="badge">${esc(a.category)}</span>` : ""}
             </div>
-            <div class="syn-title">${esc(a.title)}</div>
+            ${title}
             ${a.summary ? `<div class="syn-sum">${esc(a.summary.slice(0, 140))}${a.summary.length > 140 ? "…" : ""}</div>` : ""}
             ${tipHtml || keyHtml}
           </div>
-        </button>`;
+        </div>`;
     }).join("");
   }
 
@@ -271,8 +277,13 @@
     const post = Syndicate.asPost(article);
     const when = whenBits(article);
     const hero = article.image
-      ? `<div class="syn-article-hero"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></div>`
+      ? (article.link
+        ? `<a class="syn-article-hero" href="${esc(article.link)}" target="_blank" rel="noopener" title="Open article"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></a>`
+        : `<div class="syn-article-hero"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></div>`)
       : "";
+    const title = article.link
+      ? `<h3 class="syn-article-title"><a href="${esc(article.link)}" target="_blank" rel="noopener" title="Open article">${esc(article.title)}</a></h3>`
+      : `<h3 class="syn-article-title">${esc(article.title)}</h3>`;
 
     host.innerHTML = `
       <article class="syn-article">
@@ -282,7 +293,7 @@
           ${when.rel ? `<span class="syn-time-box" title="${esc(when.abs)}">${esc(when.rel)}</span>` : ""}
           ${article.category ? `<span class="badge">${esc(article.category)}</span>` : ""}
         </div>
-        <h3 class="syn-article-title">${esc(article.title)}</h3>
+        ${title}
         ${article.link ? `<a class="syn-article-link" href="${esc(article.link)}" target="_blank" rel="noopener">Read original ↗</a>` : ""}
         ${article.summary ? `<p class="syn-article-sum">${esc(article.summary)}</p>` : ""}
         <div class="syn-article-keys">
@@ -720,7 +731,9 @@
             ${when ? `<span class="syn-time-box">${esc(when)}</span>` : ""}
             <span class="meta">${planSynIndex + 1}/${picks.length}</span>
           </div>
-          <h3 class="plan-syn-title">${esc(a.title)}</h3>
+          <h3 class="plan-syn-title">${a.link
+            ? `<a href="${esc(a.link)}" target="_blank" rel="noopener" title="Open article">${esc(a.title)}</a>`
+            : esc(a.title)}</h3>
           ${a.summary ? `<p class="plan-syn-brief">${esc(a.summary.slice(0, 220))}${a.summary.length > 220 ? "…" : ""}</p>` : ""}
           ${keys.length ? `<div class="plan-syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>` : ""}
           ${tipHtml}
@@ -806,8 +819,18 @@
       View.render();
     });
 
-    Dom.delegate(document, "click", "[data-syn-id]", (e, btn) => {
-      selectedId = btn.dataset.synId;
+    Dom.delegate(document, "click", "[data-syn-id]", (e, card) => {
+      /* Title / thumb links open the article; don't steal that click. */
+      if (e.target && e.target.closest && e.target.closest("a[href]")) return;
+      selectedId = card.dataset.synId;
+      View.render();
+    });
+
+    Dom.delegate(document, "keydown", "[data-syn-id]", (e, card) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      if (e.target && e.target.closest && e.target.closest("a[href]")) return;
+      e.preventDefault();
+      selectedId = card.dataset.synId;
       View.render();
     });
 
