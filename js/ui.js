@@ -167,6 +167,22 @@
     return r.slotLabel || (r.bestHour >= 0 ? hhmm(r.bestHour) : "—");
   }
 
+  /* Ensure every [data-avail-mount] has a live dual-ended slider.
+     Mounts live in Plan + Trends so the control is visible without
+     waiting on a timing paint, and survive empty-state rewrites of
+     #posting-times. */
+  UI.mountAvailabilitySliders = function (avail) {
+    const want = avail !== undefined
+      ? avail
+      : (window.AppState ? AppState.postingAvail : null);
+    document.querySelectorAll("[data-avail-mount]").forEach((mount) => {
+      if (!mount.querySelector("[data-avail-slider]")) {
+        mount.innerHTML = UI.availabilitySliderHtml(want);
+      }
+      UI.syncAvailabilitySlider(mount, want);
+    });
+  };
+
   /* Dual-ended "I can post between…" control. Values are quarter-hour
    * slots 0..96 (96 = end of day / 24:00). */
   UI.availabilitySliderHtml = function (avail) {
@@ -415,6 +431,7 @@
 
     if (!model || !model.rows.length) {
       if (window.Charts && Charts.destroyIn) Charts.destroyIn(host);
+      UI.mountAvailabilitySliders(window.AppState ? AppState.postingAvail : null);
       host.innerHTML = Dom.emptyState({
         icon: "◔",
         title: "No posting times yet",
@@ -446,19 +463,12 @@
     }
 
     const avail = model.availability || (window.AppState && AppState.postingAvail);
-    let body = host.querySelector("[data-posting-times-body]");
-    if (!host.querySelector("[data-avail-slider]")) {
-      host.innerHTML = `${UI.availabilitySliderHtml(avail)}<div data-posting-times-body></div>`;
-      body = host.querySelector("[data-posting-times-body]");
-    } else if (!body) {
-      body = document.createElement("div");
-      body.setAttribute("data-posting-times-body", "");
-      host.appendChild(body);
-    }
-    UI.syncAvailabilitySlider(host, avail);
-    if (window.Charts && Charts.destroyIn) Charts.destroyIn(body);
+    UI.mountAvailabilitySliders(avail);
 
-    body.innerHTML = `
+    /* Slider lives in #trends-avail-mount (outside this host) so empty
+     * states and re-paints never wipe the thumbs mid-drag. */
+    if (window.Charts && Charts.destroyIn) Charts.destroyIn(host);
+    host.innerHTML = `
       <p class="timing-lead">${lead}</p>
       ${ranked.length ? chartKey(model) : ""}
       <div class="timing-grid">
@@ -476,7 +486,7 @@
 
     if (!window.Charts || !window.Chart) return;
     for (const row of shown) {
-      const slot = body.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
+      const slot = host.querySelector(`[data-timing-chart="${CSS.escape(row.key)}"]`);
       if (!slot) continue;
       try {
         Charts.mount(slot, { kind: "timingCurve", data: row, opts: { compact: true } });
@@ -506,7 +516,6 @@
       + (borrowed ? ` ${borrowed} of these ${borrowed === 1 ? "is" : "are"} read from the subreddit's own traffic rather than your posts.` : "");
 
     return `
-      ${UI.availabilitySliderHtml(model.availability || (window.AppState && AppState.postingAvail))}
       <p class="timing-lead">${lead}</p>
       ${UI.timingListHtml(model, { limit: opts.limit || 6, more: opts.more })}
       ${flatNote(model)}
@@ -1693,12 +1702,10 @@
         <span class="briefing-body">
           <span class="briefing-value">${r.value}</span>
           ${r.note ? `<span class="briefing-note">${r.note}</span>` : ""}
-          ${r.timing ? `${UI.availabilitySliderHtml(r.timing.availability || (window.AppState && AppState.postingAvail))}<span class="briefing-timing">${UI.timingListHtml(r.timing, timingOpts)}</span>` : ""}
+          ${r.timing ? `<span class="briefing-timing">${UI.timingListHtml(r.timing, timingOpts)}</span>` : ""}
         </span>
       </li>`).join("");
-    rows.forEach((r) => {
-      if (r.timing) UI.syncAvailabilitySlider(el, r.timing.availability || (window.AppState && AppState.postingAvail));
-    });
+    UI.mountAvailabilitySliders(window.AppState ? AppState.postingAvail : null);
   };
 
   /* ---------- Themes ---------- */
