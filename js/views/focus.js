@@ -473,13 +473,20 @@
     const scoreBit = post.syndicated
       ? ""
       : ` · ${Util.fmtNum(post.score || 0)} pts`;
+    const feedBtn = (!post.syndicated && window.FeedView)
+      ? `<button type="button" class="btn ghost small" data-action="focus-open-feed"
+                 title="Read this post in the in-app feed">View</button>`
+      : "";
     return `
       <div class="focus-chosen">
         <div class="focus-chosen-main">
           <div class="focus-chosen-title">${esc(trunc(post.title || "(untitled)", 120))}</div>
           <div class="focus-chosen-meta">${whereBit}${scoreBit} · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
         </div>
-        <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
+        <div class="focus-chosen-actions">
+          ${feedBtn}
+          <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
+        </div>
       </div>
       ${reachHtml(post)}
       ${pendingPostHtml(post)}
@@ -1045,6 +1052,12 @@
     });
 
     Dom.delegate(document, "click", '[data-action="focus-clear"]', () => View.set(null));
+
+    Dom.delegate(document, "click", '[data-action="focus-open-feed"]', () => {
+      const post = focused();
+      if (!post || !window.FeedView) return;
+      FeedView.openPost(post, { title: "r/" + (post.subreddit || "posts") });
+    });
 
     /* The link opens Reddit itself — no preventDefault. All this does
        is remember that it happened, so the card can ask about it once
