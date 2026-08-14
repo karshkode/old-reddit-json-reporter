@@ -398,11 +398,11 @@ joins the campaign on the next sync.
 
 ## How the cascade picks its times
 
-The Plan tab lays out a staggered posting order: one community per
-slot, at least an hour apart, each as close as possible to its own best
-time. Every stop carries a button that opens that community's submit
-page with the post already written, so the plan is something you carry
-out rather than something you re-enter into Reddit by hand.
+Plan’s **Next move / Then** list uses the same staggered posting order
+(one community per slot, at least an hour apart, each as close as
+possible to its own best time). Anytime rooms and open windows are
+preferred for the lead. Every stop still carries a button that opens
+that community’s submit page with the post already written.
 
 Two posts cannot occupy the same slot, so somebody has to move, and
 what the scheduler does about that is the whole design.
