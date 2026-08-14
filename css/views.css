@@ -2454,6 +2454,9 @@ a.syn-title:focus-visible {
   border-radius: var(--radius-sm);
   background: var(--bg-elev-2);
 }
+[data-avail-mount] .avail-slider {
+  margin-top: var(--s-2);
+}
 .avail-slider.is-constrained {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }

@@ -149,6 +149,9 @@
 
     UI.renderKpis(bundle.agg, timingModel);
     updateScopeSummary(bundle);
+    if (window.UI && UI.mountAvailabilitySliders) {
+      UI.mountAvailabilitySliders(AppState.postingAvail);
+    }
     paintSection();
   };
 
@@ -168,6 +171,9 @@
     painted.delete("briefing");
     /* Plan + KPIs read timingModel live. */
     UI.renderKpis(bundle && bundle.agg, timingModel);
+    if (window.UI && UI.mountAvailabilitySliders) {
+      UI.mountAvailabilitySliders(AppState.postingAvail);
+    }
     if (window.FocusView && activeSection() === "plan") {
       FocusView.paint(timingModel, signature);
     }
@@ -349,6 +355,10 @@
       for (const sib of btn.parentElement.children) sib.classList.toggle("active", sib === btn);
       View.render();
     });
+
+    if (window.UI && UI.mountAvailabilitySliders) {
+      UI.mountAvailabilitySliders(AppState.postingAvail);
+    }
 
     Dom.delegate(document, "click", '[data-action="show-all-timing"]', () => {
       timingLimit = "all";
