@@ -20,8 +20,14 @@
   const CONCURRENCY = 2;
 
   let suggesting = false;
+  let suggestTimer = 0;
   let dataSignature = "";
   let lastPainted = "";
+  /* Post ids we already ran Discovery on for this inventory signature.
+   * Weak matches (below the floor) used to stay in the work queue forever,
+   * so paint → suggest → paint spun between "Matching… 9/16" and
+   * "9 of 16 with strong destinations". */
+  const attempted = new Set();
 
   const esc = (s) => Util.escapeHtml(s == null ? "" : String(s));
 
@@ -38,6 +44,22 @@
     return (window.Discovery && Discovery.MIN_SUGGEST_SCORE != null)
       ? Discovery.MIN_SUGGEST_SCORE
       : 35;
+  }
+
+  function resetAttemptsIfScopeChanged(signature) {
+    if (!signature || signature === dataSignature) return;
+    dataSignature = signature;
+    attempted.clear();
+  }
+
+  /* Still needs an offline Discovery pass. Cached (even weak) or already
+   * attempted rows are settled until the user taps Re-rank. */
+  function needsMatch(post, force) {
+    if (!post || !post.id) return false;
+    if (force) return true;
+    if (cachedMatch(post)) return false;
+    if (attempted.has(post.id)) return false;
+    return true;
   }
 
   /* One representative per url / title cluster so a 12-sub cross-post
@@ -119,29 +141,36 @@
     opts = opts || {};
     if (!post || !window.Discovery) return null;
     const hit = cachedMatch(post);
-    if (hit && !opts.force) return hit;
+    if (hit && !opts.force) {
+      attempted.add(post.id);
+      return hit;
+    }
     const include = (window.AppState && AppState.knownSubs)
       ? AppState.knownSubs.slice()
       : [];
-    const result = await Discovery.forPost(post, {
-      limit: opts.limit || 8,
-      live: opts.live === true,
-      aboutBudget: opts.aboutBudget == null ? 0 : opts.aboutBudget,
-      linkPriors: opts.linkPriors === true,
-      include: include,
-      onPartial: (partial) => {
-        if (window.AppState) AppState.postRelated.set(post.id, partial);
-        if (typeof opts.onPartial === "function") opts.onPartial(partial);
-      },
-    });
-    if (window.AppState) AppState.postRelated.set(post.id, result);
-    return result;
+    try {
+      const result = await Discovery.forPost(post, {
+        limit: opts.limit || 8,
+        live: opts.live === true,
+        aboutBudget: opts.aboutBudget == null ? 0 : opts.aboutBudget,
+        linkPriors: opts.linkPriors === true,
+        include: include,
+        onPartial: (partial) => {
+          if (window.AppState) AppState.postRelated.set(post.id, partial);
+          if (typeof opts.onPartial === "function") opts.onPartial(partial);
+        },
+      });
+      if (window.AppState) AppState.postRelated.set(post.id, result);
+      return result;
+    } finally {
+      attempted.add(post.id);
+    }
   }
 
   function destHtml(tips, home) {
     const homeKey = String(home || "").toLowerCase();
     if (!tips.length) {
-      return `<p class="plan-rec-nodest meta">No strong destination yet — matching in the background.</p>`;
+      return `<p class="plan-rec-nodest meta">No strong destination yet.</p>`;
     }
     return `<div class="plan-syn-dests">${tips.map((c, i) => {
       const name = c.name || c.key;
@@ -208,10 +237,11 @@
     });
   }
 
-  View.paint = function (signature) {
+  View.paint = function (signature, opts) {
+    opts = opts || {};
     const el = host();
     if (!el) return;
-    if (signature) dataSignature = signature;
+    if (signature) resetAttemptsIfScopeChanged(signature);
 
     const posts = candidatePosts(LIST_CAP);
     if (!posts.length) {
@@ -225,27 +255,47 @@
 
     const ranked = rankedForPaint(posts);
     const matched = ranked.filter((p) => suggestionsOf(cachedMatch(p), 1, p.subreddit).length).length;
-    const status = suggesting
-      ? `Matching destinations… ${matched}/${ranked.length}`
-      : matched
-        ? `${matched} of ${ranked.length} with strong destinations`
+    const pending = ranked.filter((p) => needsMatch(p, false)).length;
+    const settled = ranked.length - pending;
+    let status;
+    if (suggesting) {
+      status = `Matching destinations… ${settled}/${ranked.length}`;
+    } else if (pending) {
+      status = matched
+        ? `${matched} strong so far · ranking ${pending} more…`
         : `Ranking ${ranked.length} posts for destinations…`;
+    } else if (matched) {
+      status = matched === ranked.length
+        ? `${matched} posts with strong destinations`
+        : `${matched} of ${ranked.length} with strong destinations`;
+    } else {
+      status = `No strong destinations in ${ranked.length} posts — try Re-rank after loading more communities`;
+    }
 
     el.innerHTML = `
       <div class="plan-rec-meta meta">${esc(status)}</div>
       <div class="plan-rec-list">
         ${ranked.map((p) => rowHtml(p, cachedMatch(p))).join("")}
       </div>`;
-    lastPainted = ranked.map((p) => p.id).join(",") + ":" + matched + ":" + (suggesting ? 1 : 0);
+    lastPainted = ranked.map((p) => p.id).join(",") + ":" + matched + ":" + pending + ":" + (suggesting ? 1 : 0);
 
-    View.scheduleSuggest();
+    /* Only kick the worker when there is unmatched work — paint during
+     * an in-flight suggest must not queue another pass. */
+    if (!opts.skipSchedule && pending && !suggesting) {
+      View.scheduleSuggest();
+    }
   };
 
   View.scheduleSuggest = function (opts) {
     opts = opts || {};
     if (suggesting) return;
+    if (suggestTimer) {
+      window.clearTimeout(suggestTimer);
+      suggestTimer = 0;
+    }
     const delay = opts.delay == null ? 60 : opts.delay;
-    window.setTimeout(() => {
+    suggestTimer = window.setTimeout(() => {
+      suggestTimer = 0;
       View.suggest(opts).catch(() => {});
     }, delay);
   };
@@ -254,23 +304,21 @@
     opts = opts || {};
     if (suggesting) return { busy: true };
     if (!window.Discovery) return { done: 0 };
+    const force = !!opts.force;
+    if (force) attempted.clear();
+
     const posts = candidatePosts(LIST_CAP);
-    const want = posts.filter((p) => {
-      if (opts.force) return true;
-      const hit = cachedMatch(p);
-      if (!hit) return true;
-      return !suggestionsOf(hit, 1, p.subreddit).length;
-    }).slice(0, opts.limit || BATCH * 2);
+    const want = posts.filter((p) => needsMatch(p, force)).slice(0, opts.limit || LIST_CAP);
     if (!want.length) {
-      if (lastPainted) View.paint(dataSignature);
+      View.paint(dataSignature, { skipSchedule: true });
       return { done: 0, total: 0 };
     }
 
     suggesting = true;
-    View.paint(dataSignature);
+    View.paint(dataSignature, { skipSchedule: true });
     let done = 0;
     try {
-      /* Waves keep the Plan tab interactive — same idea as Syndicate. */
+      /* Waves keep the Recommend tab interactive — same idea as Syndicate. */
       for (let i = 0; i < want.length; i += BATCH) {
         const batch = want.slice(i, i + BATCH);
         await Util.pmap(batch, CONCURRENCY, async (post) => {
@@ -278,26 +326,27 @@
             await matchOne(post, {
               live: false,
               aboutBudget: 0,
-              force: !!opts.force,
+              force: force,
               onPartial: () => {
-                /* Cheap partial paints only while still on Plan. */
                 if (window.Router && Router.current() === "dashboard" && AppState.dashSection === "recommend") {
-                  View.paint(dataSignature);
+                  View.paint(dataSignature, { skipSchedule: true });
                 }
               },
             });
-          } catch (_) {}
+          } catch (_) {
+            attempted.add(post.id);
+          }
           done++;
         });
         if (window.Router && Router.current() === "dashboard" && AppState.dashSection === "recommend") {
-          View.paint(dataSignature);
+          View.paint(dataSignature, { skipSchedule: true });
         }
         await new Promise((r) => setTimeout(r, 16));
       }
       return { done: done, total: want.length };
     } finally {
       suggesting = false;
-      View.paint(dataSignature);
+      View.paint(dataSignature, { skipSchedule: true });
     }
   };
 
@@ -318,7 +367,7 @@
         App.populateCampaignSelectors();
         App.publishCampaign(made.campaign);
       }
-      View.paint(dataSignature);
+      View.paint(dataSignature, { skipSchedule: true });
     } catch (err) {
       Util.toast("Couldn't make a campaign: " + ((err && err.message) || err), "err");
     }
@@ -335,6 +384,7 @@
       if (el.dataset.campaign && window.App) App.openCampaign(el.dataset.campaign);
     });
     Dom.delegate(document, "click", '[data-action="plan-rec-refresh"]', () => {
+      attempted.clear();
       View.suggest({ force: true, limit: LIST_CAP }).catch(() => {});
     });
   };
