@@ -34,21 +34,19 @@
    * bars and each community's own curve now open inside the
    * recommendation they belong to, so Trends is for the whole-collection
    * view rather than a detour in the middle of a decision. */
-  /* Plan places posts (Syndicate picks, Recommended inventory, Next move,
-   * cross-post → campaign). Briefing reads the loaded collection. Putting
-   * them on the same tab made a syndicated article look like it was
-   * answering "what this data is telling you" — two jobs, two tabs. */
-  const SECTIONS = ["plan", "briefing", "trends", "communities"];
+  /* Recommend is the desk (inventory + syndicate). Plan is the timed
+   * next-move for one post. Briefing reads the loaded collection. */
+  const SECTIONS = ["recommend", "plan", "briefing", "trends", "communities"];
   const RAIL = "dashboard-section-rail";
 
   /* Where the retired tabs went, so old links and saved state still
-   * land somewhere sensible instead of silently falling back to Plan. */
+   * land somewhere sensible instead of silently falling back. */
   const MOVED = {
     summary: "briefing",
     timing: "trends",
     charts: "trends",
     themes: "trends",
-    crossposts: "plan",
+    crossposts: "recommend",
   };
 
   /* The last analysis and the scope it was computed for. */
@@ -92,7 +90,7 @@
   function activeSection() {
     const s = AppState.dashSection;
     if (SECTIONS.indexOf(s) !== -1) return s;
-    return MOVED[s] || "plan";
+    return MOVED[s] || "recommend";
   }
 
   /* Identifies the data the current analysis was built from, so a
@@ -154,19 +152,21 @@
     Dom.paintRail(RAIL, "dash-tab", section, "dash-", ".dash-section");
     if (!bundle) return;
 
-    /* Outside the paint-once guard. The focus card holds a post the
-     * user picked and re-ranks it against whatever is loaded now, so
-     * it has to hear about every visit to the tab — but it renders
-     * itself, so repainting it costs nothing when nothing moved.
-     * Recommended posts and cross-posts live on Plan too: both are
-     * planning actions, not community fingerprints. */
-    if (section === "plan") {
-      if (window.FocusView) safe("focus", () => FocusView.paint(timingModel, signature));
+    /* Recommend owns the inventory + syndicate carousel and cross-posts.
+     * Plan owns the single-post Next move card. Both re-paint on every
+     * visit so rankings stay current without wiping unrelated tabs. */
+    if (section === "recommend") {
       if (window.RecommendView) safe("recommend", () => RecommendView.paint(signature));
-      if (!painted.has("plan-crossposts")) {
-        painted.add("plan-crossposts");
+      if (window.SyndicateView && SyndicateView.paintPlanCarousel) {
+        safe("syndicate", () => SyndicateView.paintPlanCarousel());
+      }
+      if (!painted.has("recommend-crossposts")) {
+        painted.add("recommend-crossposts");
         safe("crossposts", () => App.renderCrossPostsView());
       }
+    }
+    if (section === "plan" && window.FocusView) {
+      safe("focus", () => FocusView.paint(timingModel, signature));
     }
 
     if (painted.has(section)) return;

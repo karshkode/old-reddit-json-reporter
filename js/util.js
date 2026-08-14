@@ -404,6 +404,145 @@
 
   Util.sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /* ------------------------------------------------------------------
+   * SHARE / SUBMIT DESTINATION
+   * ------------------------------------------------------------------
+   * Cross-posting via Reddit's /submit?url=… must carry the content's
+   * real destination. Bare v.redd.it / i.redd.it hosts open as a dead
+   * "Open" chip with no embed — the opposite of passing the content
+   * through. We are deliberately NOT using Reddit's native xpost
+   * (crosspost_parent) API: this builds an ordinary link (or self)
+   * post that re-shares the underlying URL.
+   * ------------------------------------------------------------------ */
+
+  Util.isRedditCommentsUrl = function (raw) {
+    return !!(raw && /reddit\.com\/(?:r\/[^/]+\/)?comments\//i.test(String(raw)));
+  };
+
+  Util.isRedditHostedMedia = function (raw) {
+    if (!raw) return false;
+    try {
+      const u = new URL(String(raw), "https://www.reddit.com");
+      const host = u.hostname.replace(/^www\./, "").toLowerCase();
+      if (host === "v.redd.it" || host === "i.redd.it" || host === "preview.redd.it") return true;
+      if (host === "reddit.com" || host.endsWith(".reddit.com")) {
+        if (/^\/gallery\//i.test(u.pathname)) return true;
+        if (/^\/video\//i.test(u.pathname)) return true;
+        if (/^\/media\//i.test(u.pathname)) return true;
+      }
+      return false;
+    } catch (_) {
+      return /(?:^|\.)v\.redd\.it|(?:^|\.)i\.redd\.it|reddit\.com\/gallery\//i.test(String(raw));
+    }
+  };
+
+  /* Unwrap Reddit's outbound click wrappers and common AMP shells without
+   * a network round-trip — the destination is already in the query. */
+  Util.unwrapShareUrl = function (raw) {
+    if (!raw) return "";
+    const s = String(raw).trim();
+    if (!s) return "";
+    try {
+      const u = new URL(s, "https://www.reddit.com");
+      const host = String(u.hostname || "").replace(/^www\./i, "").toLowerCase();
+      const nested = u.searchParams.get("url") || u.searchParams.get("u") || "";
+
+      /* outbound.reddit.com/?url=<dest>, /outgoing?url=, etc. */
+      const isOutboundHost = host === "outbound.reddit.com" || host === "out.reddit.com";
+      const isRedditHost = host === "reddit.com" || host.slice(-11) === ".reddit.com";
+      if (nested && (isOutboundHost || (isRedditHost && (/outgoing/i.test(u.pathname) || u.searchParams.has("url"))))) {
+        return Util.unwrapShareUrl(nested);
+      }
+
+      if ((host === "google.com") && nested && /^https?:/i.test(nested)) {
+        return Util.unwrapShareUrl(nested);
+      }
+
+      if (host.indexOf("amp.") === 0) {
+        const bare = host.slice(4);
+        if (bare.indexOf(".") !== -1) {
+          return Util.unwrapShareUrl(u.protocol + "//" + bare + u.pathname + u.search);
+        }
+      }
+      return u.href;
+    } catch (_) {
+      return s;
+    }
+  };
+
+  /* Pick the URL a cross-post submit should carry.
+   *
+   * Preference order:
+   *   1. External (non-Reddit-media) destination on this post or its
+   *      crosspost parent — the content itself.
+   *   2. For Reddit-hosted video/image/gallery: the post permalink, so
+   *      submit embeds the original player instead of a bare v.redd.it
+   *      chip. Still a normal link post, not Reddit's xpost feature.
+   *   3. Whatever url/permalink remains.
+   *
+   * Returns { url, kind: "link"|"self", note? }. */
+  Util.shareDestination = function (post) {
+    if (!post) return null;
+
+    const candidates = [];
+    function add(raw, why) {
+      if (!raw) return;
+      const unwrapped = Util.unwrapShareUrl(raw);
+      if (!unwrapped) return;
+      candidates.push({ raw: unwrapped, why: why || "" });
+    }
+
+    add(post.url_dest, "url_dest");
+    add(post.url, "url");
+    add(post.crosspost_parent_dest, "parent_dest");
+    add(post.crosspost_parent_url, "parent_url");
+
+    const external = candidates.find((c) => {
+      if (Util.isRedditHostedMedia(c.raw)) return false;
+      if (Util.isRedditCommentsUrl(c.raw)) return false;
+      /* Self posts list their own comments URL as url — skip. */
+      try {
+        const host = new URL(c.raw).hostname.replace(/^www\./, "").toLowerCase();
+        if (host === "reddit.com" || host.endsWith(".reddit.com")) return false;
+      } catch (_) { return false; }
+      return /^https?:\/\//i.test(c.raw);
+    });
+    if (external) {
+      return { url: external.raw, kind: "link", source: external.why };
+    }
+
+    const redditMedia = post.is_video || post.is_gallery
+      || Util.isRedditHostedMedia(post.url_dest || post.url)
+      || Util.isRedditHostedMedia(post.crosspost_parent_dest || post.crosspost_parent_url);
+
+    if (redditMedia) {
+      /* Permalink carries the playable post; bare v.redd.it does not
+       * embed when re-submitted as a fresh link post. */
+      const permalink = post.permalink
+        || (post.id ? ("https://www.reddit.com/comments/" + post.id) : "");
+      if (permalink) {
+        return {
+          url: permalink,
+          kind: "link",
+          source: "permalink",
+          note: "Reddit-hosted media — linking the original post so the player embeds",
+        };
+      }
+    }
+
+    if (post.is_self || (post.url && Util.isRedditCommentsUrl(post.url))) {
+      return { url: "", kind: "self", source: "self" };
+    }
+
+    const fallback = (post.url_dest || post.url || post.permalink || "").trim();
+    if (!fallback) return { url: "", kind: "self", source: "empty" };
+    return {
+      url: Util.unwrapShareUrl(fallback),
+      kind: Util.isRedditCommentsUrl(fallback) && post.is_self ? "self" : "link",
+      source: "fallback",
+    };
+  };
+
   /* Build a pre-filled Reddit compose URL for cross-posting into a
    * subreddit. Reddit's /submit page accepts:
    *   ?title=…
@@ -451,15 +590,28 @@
       title = String(data.title || "").slice(0, 300);
       isSelf = !data.isLinkPost;
       text = String(data.body || "");
-      linkUrl = String(data.url || "");
+      linkUrl = Util.unwrapShareUrl(String(data.url || ""));
     } else {
       title = String(data.title || "").slice(0, 300);
-      /* Treat the post as a self/text post if Reddit marked it so OR
-       * if the link URL points back at the post itself (Reddit posts
-       * a /comments/... permalink as `url` for self posts). */
-      isSelf = !!(data.is_self || (data.url && /\/comments\//.test(data.url)));
+      const dest = Util.shareDestination(data);
       text = String(data.selftext || "");
-      linkUrl = String(data.url || "");
+      if (dest && dest.kind === "self") {
+        isSelf = true;
+        linkUrl = "";
+        /* When the only shareable form is the original Reddit media
+         * post, put its permalink in the body so the content still
+         * travels with the title. */
+        if (!text && data.permalink) {
+          text = data.permalink;
+        }
+      } else {
+        isSelf = false;
+        linkUrl = dest && dest.url ? dest.url : "";
+        /* Absolute last resort: never ship a bare v.redd.it chip. */
+        if (linkUrl && Util.isRedditHostedMedia(linkUrl) && data.permalink) {
+          linkUrl = data.permalink;
+        }
+      }
     }
 
     if (text.length > maxBody) text = text.slice(0, maxBody);

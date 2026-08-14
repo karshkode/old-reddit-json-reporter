@@ -1765,18 +1765,45 @@ body.sheet-open {
   max-width: 16rem;
 }
 
-/* ---- Plan split: Syndicate carousel | Next move ---- */
-.plan-split {
+/* ---- Recommend split: posts | syndicate articles ---- */
+.plan-split,
+.recommend-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--s-4);
   align-items: start;
 }
 @media (max-width: 960px) {
-  .plan-split { grid-template-columns: 1fr; }
+  .plan-split,
+  .recommend-split { grid-template-columns: 1fr; }
 }
-.plan-syn-card { margin-bottom: 0; }
-.plan-syn-body { min-height: 280px; }
+.plan-syn-card,
+.plan-rec-card { margin-bottom: 0; min-width: 0; }
+.plan-syn-body { min-height: 0; }
+.plan-rec-body { min-height: 0; }
+/* Cap each column so a long recommend list does not push Syndicate
+ * off-screen on desktop, and so mobile stacks one readable block at a
+ * time instead of a double-height scroll trap. */
+@media (min-width: 961px) {
+  .recommend-split .plan-rec-body,
+  .recommend-split .plan-syn-body {
+    max-height: min(70vh, 640px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+@media (max-width: 960px) {
+  .recommend-split .plan-rec-body {
+    max-height: min(55vh, 420px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .recommend-split .plan-syn-body {
+    max-height: none;
+  }
+}
 .plan-syn-empty { padding: var(--s-5); }
 .plan-syn-slide {
   display: grid;
@@ -1871,8 +1898,6 @@ body.sheet-open {
 }
 
 /* ---- Plan: Recommended posts (inventory ↔ destinations) ---- */
-.plan-rec-card { margin-top: var(--s-4); }
-.plan-rec-body { min-height: 120px; }
 .plan-rec-meta {
   margin: 0 0 var(--s-3);
   padding: 0 var(--s-1);

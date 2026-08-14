@@ -281,7 +281,7 @@
               force: !!opts.force,
               onPartial: () => {
                 /* Cheap partial paints only while still on Plan. */
-                if (window.Router && Router.current() === "dashboard" && AppState.dashSection === "plan") {
+                if (window.Router && Router.current() === "dashboard" && AppState.dashSection === "recommend") {
                   View.paint(dataSignature);
                 }
               },
@@ -289,7 +289,7 @@
           } catch (_) {}
           done++;
         });
-        if (window.Router && Router.current() === "dashboard" && AppState.dashSection === "plan") {
+        if (window.Router && Router.current() === "dashboard" && AppState.dashSection === "recommend") {
           View.paint(dataSignature);
         }
         await new Promise((r) => setTimeout(r, 16));
@@ -306,8 +306,6 @@
     if (!post || !window.FocusView) return;
     const related = cachedMatch(post);
     FocusView.focusPost(post, related ? { related: related } : undefined);
-    const card = Dom.byId("focus-card");
-    if (card) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
 
   View.makeCampaign = function (postId) {

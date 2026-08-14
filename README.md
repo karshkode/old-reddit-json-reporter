@@ -146,7 +146,8 @@ snapping row rather than stacking.
 
 | Tab | What is in it |
 |---|---|
-| **Plan** | The singular planning desk: **Top Syndicate picks** (RSS), **Where should a post go next?** (timed Next move), **Recommended posts** (loaded inventory ranked with the same keyword match engine, plus Make campaign when copies already span communities), and **Existing cross-posts**. Briefing findings sit on their own tab |
+| **Recommend** | Default landing desk: **Recommended posts** (left) beside **Syndicate articles** (right), with **Existing cross-posts** below. Mobile stacks them and caps list height so scrolling stays usable |
+| **Plan** | Timed **Where should a post go next?** for one focused post — open a row from Recommend to land here |
 | **Briefing** | What the loaded data is telling you about where and when to post — see [the briefing](#the-summary-is-a-briefing-not-a-recap) |
 | **Trends** | **When posts go up** — a full-width timeline, switchable between *Per sub*, *Stacked*, *Density* (each sub normalised to its own peak, so cadence shapes overlay without volume bias) and *Total*, across windows from 1 day to all time. Then **best hours to post per subreddit**, one small chart per community on its own clock ([below](#posting-times-are-per-subreddit)); **busiest days**, **score vs comments**, **side-by-side subreddit totals**, a **score histogram**, a **sentiment doughnut** and **recent-post velocity**; and **words coming up most** with **topics that keep coming up** |
 | **Communities** | **What each subreddit looks like** — an audience fingerprint per sub: engagement style, reception, best hour, top themes |
@@ -258,15 +259,18 @@ carries that match into the dashboard Plan tab without re-blocking on a
 live Discovery pass. Extra civic desks (ProPublica, Democracy Now, The
 Nation, NPR Politics, …) ship alongside the default Politics/News folders.
 
-The Plan tab shows a **Top Syndicate picks** carousel beside **Where
-should a post go next?** — image, brief, keywords, and destination chips
-for the strongest ranked headlines. Below that, **Recommended posts**
-runs the same Discovery keyword match over the loaded inventory
-(offline first, strongest destinations first) with **Open in Plan** and
-**Make campaign** when copies already span two or more communities.
-**Existing cross-posts** lists multi-sub groups for the same CTA.
-Next move folds the old separate “run” schedule into one list (anytime /
-open-now rooms preferred).
+The **Recommend** tab shows **Recommended posts** beside **Syndicate
+articles** — image, brief, keywords, and destination chips. Loaded
+inventory is ranked with the same Discovery keyword match (offline
+first, strongest destinations first) with **Open in Plan** and **Make
+campaign** when copies already span two or more communities. **Existing
+cross-posts** lists multi-sub groups for the same CTA. The **Plan** tab
+is the timed next-move for one focused post. Cross-post submit links
+pass through the content's real destination (external URL when there is
+one; for Reddit-hosted video/image, the original post permalink so the
+player embeds — never a bare `v.redd.it` chip). Next move folds the old
+separate “run” schedule into one list (anytime / open-now rooms
+preferred).
 
 Destination quality is driven by versioned lexicons in
 [`data/match/`](data/match/) (triggers, offtopic terms, source tiers,

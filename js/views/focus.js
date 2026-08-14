@@ -733,9 +733,14 @@
     opts = opts || {};
     const url = Crosspost.submitUrl(m.name, post);
     if (!url) return "";
-    const self = post.is_self || (post.url && /\/comments\//.test(post.url));
-    const tip = `Open Reddit's submit page for r/${m.name} with this post's title and `
-      + (self ? "body" : "link") + " already filled in";
+    const dest = window.Util && Util.shareDestination ? Util.shareDestination(post) : null;
+    const self = !!(dest && dest.kind === "self")
+      || post.is_self
+      || (post.url && /\/comments\//.test(post.url) && !post.is_video);
+    const tip = dest && dest.note
+      ? dest.note
+      : (`Open Reddit's submit page for r/${m.name} with this post's title and `
+        + (self ? "body" : "destination link") + " already filled in");
     /* Weight follows evidence. A community with nothing loaded has no
        hour and no comparison behind it, so a row of them all shouting
        in the same colour as a graded suggestion would be the card
