@@ -782,6 +782,11 @@
         if (data) state.detailCache.set(post.id, data);
       }
       if (!data) throw new Error("post not found");
+      if (data.comments && window.Analysis && Analysis.summarizeAudience) {
+        try {
+          state.audienceByPost.set(data.post.id || post.id, Analysis.summarizeAudience(data.comments));
+        } catch (_) {}
+      }
       UI.renderPostDetail(data.post, data.comments);
       renderRelatedForDetail(data.post);
     } catch (err) {

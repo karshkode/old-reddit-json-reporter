@@ -942,8 +942,27 @@
     const objections = Analysis.extractObjections ? Analysis.extractObjections(comments, { limit: 5 }) : [];
     const brigading = Analysis.detectBrigading ? Analysis.detectBrigading(comments) : null;
     const velocity = Analysis.commentVelocity ? Analysis.commentVelocity(comments, post.created_utc) : null;
+    const audience = Analysis.summarizeAudience
+      ? Analysis.summarizeAudience(comments)
+      : null;
+    if (audience && window.AppState && AppState.audienceByPost) {
+      try { AppState.audienceByPost.set(post.id, audience); } catch (_) {}
+    }
+    const postKeywords = Analysis.extractKeywords
+      ? Analysis.extractKeywords([post], 8).map((k) => k.word)
+      : [];
+    const commentKeywords = (audience && audience.keywords)
+      ? audience.keywords.map((k) => k.word || k).filter(Boolean)
+      : (Analysis.extractCommentKeywords
+        ? Analysis.extractCommentKeywords(comments, 8).map((k) => k.word)
+        : []);
     const topComments = comments.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
     const tq = Analysis.titleQuality(post.title);
+
+    const kwRow = (label, words, hint) => words && words.length
+      ? `<div class="post-kw-row"><span class="post-kw-label" title="${Util.escapeHtml(hint || "")}">${Util.escapeHtml(label)}</span>
+          <div class="plan-syn-keys">${words.map((w) => `<code>${Util.escapeHtml(w)}</code>`).join(" ")}</div></div>`
+      : "";
 
     body.innerHTML = `
       <div class="post-detail-grid">
@@ -952,10 +971,15 @@
           <div class="meta" style="color:var(--text-mute);font-size:12px;margin-bottom:10px">
             r/${Util.escapeHtml(post.subreddit)} · u/${Util.escapeHtml(post.author || "")} · ${Util.escapeHtml(Util.relTime(post.created_utc))}
             ${post.flair ? ` · <span class="tag flair">${Util.escapeHtml(post.flair)}</span>` : ""}
-            · ${sentBadge}
+            · post ${sentBadge}
           </div>
 
           ${renderTitleQualityBlock(tq)}
+
+          <div class="post-kw-block">
+            ${kwRow("Post keywords", postKeywords, "From title and body — drives destination matching")}
+            ${kwRow("Audience keywords", commentKeywords, "From comments — reception vocabulary in this subreddit, separate from destination fit")}
+          </div>
 
           ${post.selftext ? `<div style="white-space:pre-wrap;font-size:13px;color:var(--text-dim);max-height:240px;overflow:auto;background:var(--bg-elev-2);padding:10px;border-radius:8px;word-break:break-word;margin-top:10px">${Util.escapeHtml(post.selftext.slice(0, 4000))}</div>` : ""}
 
@@ -982,6 +1006,7 @@
             <dt>URL</dt><dd><a href="${Util.escapeHtml(post.url || "")}" target="_blank" rel="noopener">${Util.escapeHtml((post.url || "").slice(0, 80))}</a></dd>
             <dt>Permalink</dt><dd><a href="${Util.escapeHtml(post.permalink)}" target="_blank" rel="noopener">open thread</a></dd>
             <dt>Posted</dt><dd>${Util.escapeHtml(Util.fmtDateShort(post.created_utc))} ${Util.escapeHtml(Util.getTzLabel())}</dd>
+            <dt>Audience<br>tone</dt><dd>${tempInfo ? `<span class="badge ${tempInfo.label === "supportive" ? "good" : tempInfo.label === "hostile" ? "bad" : tempInfo.label === "mixed" ? "warn" : "info"}">${Util.escapeHtml(tempInfo.label)}</span>` : "—"}</dd>
             <dt>Comments<br>sentiment</dt><dd>${commentSent.positive} pos / ${commentSent.negative} neg / ${commentSent.neutral} neu</dd>
           </dl>
         </div>
@@ -991,10 +1016,10 @@
         <header class="post-related-header">
           <div>
             <h4>Where else this post could go</h4>
-            <span class="hint">Matched against the issue-sphere catalog and every community description already cached — no campaign needed</span>
+            <span class="hint">Matched from title and body (plus a light audience-keyword boost when comments are loaded) against the catalog and cached community descriptions</span>
           </div>
           <button class="card-help" type="button" aria-label="How this works"
-                  data-help="The post's title, flair and body become a term vector, which is ranked against every issue sphere in the catalog. The winning spheres bring their member communities, the home subreddit's own spheres bring their siblings, and anything with a similar cached description is added too. Each community is then scored on shared vocabulary, sphere fit, civic language and activity. Check the ones you want and load them, or turn the whole thing into a campaign.">?</button>
+                  data-help="Destination fit is driven by the post's title, flair and body. Comment tone and audience keywords measure how the thread is being received in this subreddit — a separate reception signal, not a substitute for subject match. When comments are loaded, a few audience terms lightly reinforce the match vector.">?</button>
         </header>
         <ol class="post-related-howto">
           <li>Check the communities worth reaching — the score is out of 100, and every row says why it matched.</li>
@@ -1041,6 +1066,7 @@
     return `
       <div class="comment-side-analysis">
         <div class="csa-head">
+          <span class="csa-label">Audience reception</span>
           <span class="badge ${tempCls}">${tempIcon} ${Util.escapeHtml(temp.label)}</span>
           <span class="meta">${temp.support} support · ${temp.oppose} oppose · ${temp.neutral} neutral</span>
         </div>

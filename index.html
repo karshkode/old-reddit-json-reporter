@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081502" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081502" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081502" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081502" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081502" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081503" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081503" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081503" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081503" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081503" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081502"></script>
+  <script src="./js/theme.js?v=2026081503"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -200,7 +200,7 @@
                 <header class="card-header">
                   <div>
                     <h2>Recommended posts</h2>
-                    <span class="hint">Loaded posts ranked by keyword match — where each should go next</span>
+                    <span class="hint">Loaded posts ranked by keyword match — destinations as compact scores; audience tone from comments</span>
                   </div>
                 <div class="card-actions">
                   <button class="btn small ghost" type="button" data-action="open-feed"
@@ -208,7 +208,7 @@
                           title="Browse recommended posts as an in-app feed">☰ Feed</button>
                   <button class="btn small ghost" type="button" data-action="plan-rec-refresh"
                           title="Re-rank destinations for loaded posts">↻ Re-rank</button>
-                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each row is one post from your loaded inventory (cross-post copies are collapsed to a single representative). Keywords come from the title and body; destinations are scored with the same Discovery match path Syndicate uses for headlines — theme, sphere, reach and activity — with a floor so weak fits stay off the list. Open in Plan hands the post to the Plan tab for a timed next move. View opens the in-app feed. When the same content already exists in two or more communities, Make campaign turns those copies into a tracked campaign.">?</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each row is one post from your loaded inventory (cross-post copies are collapsed to a single representative). Post keywords come from the title and body and drive destination match — theme, sphere, reach and activity — with a floor so weak fits stay off the list. Audience tone and audience keywords come from the comment thread in the home subreddit: a separate reception signal for how the room is responding, not a substitute for subject fit. Destinations show as compact scores; open the post for the full match terms. Open in Plan hands the post to the Plan tab for a timed next move. View opens the in-app feed. When the same content already exists in two or more communities, Make campaign turns those copies into a tracked campaign.">?</button>
                 </div>
                 </header>
                 <div id="plan-recommend-body" class="plan-rec-body">
@@ -1253,45 +1253,45 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081502"></script>
+<script src="./vendor/marked.min.js?v=2026081503"></script>
 
-<script src="./js/dom.js?v=2026081502"></script>
-<script src="./js/util.js?v=2026081502"></script>
-<script src="./js/state.js?v=2026081502"></script>
-<script src="./js/router.js?v=2026081502"></script>
-<script src="./js/sync.js?v=2026081502"></script>
-<script src="./js/archive.js?v=2026081502"></script>
-<script src="./js/reddit.js?v=2026081502"></script>
-<script src="./js/postcache.js?v=2026081502"></script>
-<script src="./js/live.js?v=2026081502"></script>
-<script src="./js/refresh.js?v=2026081502"></script>
-<script src="./js/subindex.js?v=2026081502"></script>
-<script src="./js/seeds.js?v=2026081502"></script>
-<script src="./js/matchlex.js?v=2026081502"></script>
-<script src="./js/rules.js?v=2026081502"></script>
-<script src="./js/timing.js?v=2026081502"></script>
-<script src="./js/analysis.js?v=2026081502"></script>
-<script src="./js/discovery.js?v=2026081502"></script>
-<script src="./js/charts.js?v=2026081502"></script>
-<script src="./js/campaigns.js?v=2026081502"></script>
-<script src="./js/reset.js?v=2026081502"></script>
-<script src="./js/analyze.js?v=2026081502"></script>
-<script src="./js/crosspost.js?v=2026081502"></script>
-<script src="./js/nextmove.js?v=2026081502"></script>
-<script src="./js/syndicate.js?v=2026081502"></script>
-<script src="./js/sidebar.js?v=2026081502"></script>
-<script src="./js/composer.js?v=2026081502"></script>
-<script src="./js/ui.js?v=2026081502"></script>
-<script src="./js/views/focus.js?v=2026081502"></script>
-<script src="./js/views/recommend.js?v=2026081502"></script>
-<script src="./js/views/feed.js?v=2026081502"></script>
-<script src="./js/views/dashboard.js?v=2026081502"></script>
-<script src="./js/views/campaign.js?v=2026081502"></script>
-<script src="./js/views/communities.js?v=2026081502"></script>
-<script src="./js/views/posts.js?v=2026081502"></script>
-<script src="./js/views/syndicate.js?v=2026081502"></script>
-<script src="./js/demo.js?v=2026081502"></script>
-<script src="./js/app.js?v=2026081502"></script>
+<script src="./js/dom.js?v=2026081503"></script>
+<script src="./js/util.js?v=2026081503"></script>
+<script src="./js/state.js?v=2026081503"></script>
+<script src="./js/router.js?v=2026081503"></script>
+<script src="./js/sync.js?v=2026081503"></script>
+<script src="./js/archive.js?v=2026081503"></script>
+<script src="./js/reddit.js?v=2026081503"></script>
+<script src="./js/postcache.js?v=2026081503"></script>
+<script src="./js/live.js?v=2026081503"></script>
+<script src="./js/refresh.js?v=2026081503"></script>
+<script src="./js/subindex.js?v=2026081503"></script>
+<script src="./js/seeds.js?v=2026081503"></script>
+<script src="./js/matchlex.js?v=2026081503"></script>
+<script src="./js/rules.js?v=2026081503"></script>
+<script src="./js/timing.js?v=2026081503"></script>
+<script src="./js/analysis.js?v=2026081503"></script>
+<script src="./js/discovery.js?v=2026081503"></script>
+<script src="./js/charts.js?v=2026081503"></script>
+<script src="./js/campaigns.js?v=2026081503"></script>
+<script src="./js/reset.js?v=2026081503"></script>
+<script src="./js/analyze.js?v=2026081503"></script>
+<script src="./js/crosspost.js?v=2026081503"></script>
+<script src="./js/nextmove.js?v=2026081503"></script>
+<script src="./js/syndicate.js?v=2026081503"></script>
+<script src="./js/sidebar.js?v=2026081503"></script>
+<script src="./js/composer.js?v=2026081503"></script>
+<script src="./js/ui.js?v=2026081503"></script>
+<script src="./js/views/focus.js?v=2026081503"></script>
+<script src="./js/views/recommend.js?v=2026081503"></script>
+<script src="./js/views/feed.js?v=2026081503"></script>
+<script src="./js/views/dashboard.js?v=2026081503"></script>
+<script src="./js/views/campaign.js?v=2026081503"></script>
+<script src="./js/views/communities.js?v=2026081503"></script>
+<script src="./js/views/posts.js?v=2026081503"></script>
+<script src="./js/views/syndicate.js?v=2026081503"></script>
+<script src="./js/demo.js?v=2026081503"></script>
+<script src="./js/app.js?v=2026081503"></script>
 
 <script>
   (function () {

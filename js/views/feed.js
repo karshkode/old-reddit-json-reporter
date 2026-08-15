@@ -105,6 +105,17 @@
     return `<div class="feed-body${short ? " is-clamped" : ""}">${esc(shown)}</div>`;
   }
 
+  function audienceBadge(post) {
+    const aud = window.AppState && AppState.audienceByPost
+      ? AppState.audienceByPost.get(post.id)
+      : null;
+    if (!aud || !aud.total) return "";
+    const cls = aud.label === "supportive" ? "good"
+      : aud.label === "hostile" ? "bad"
+      : aud.label === "mixed" ? "warn" : "info";
+    return `<span class="badge ${cls} feed-audience" title="Comment-thread tone">${esc(aud.label)}</span>`;
+  }
+
   function cardHtml(post, opts) {
     opts = opts || {};
     const active = post.id === focusId;
@@ -150,6 +161,7 @@
           ${expanded ? bodyHtml(post) : (post.selftext ? `<p class="feed-body-preview">${esc(trunc(post.selftext, 160))}</p>` : "")}
           <div class="feed-actions">
             <span class="feed-comments">${Util.fmtNum(post.num_comments || 0)} comments</span>
+            ${audienceBadge(post)}
             <button type="button" class="btn tiny" data-action="feed-plan" data-post="${esc(post.id)}">Where next</button>
             ${post.permalink ? `<a class="btn tiny ghost" href="${esc(post.permalink)}" target="_blank" rel="noopener">Reddit ↗</a>` : ""}
             ${!expanded ? `<button type="button" class="btn tiny ghost" data-action="feed-expand" data-post="${esc(post.id)}">Expand</button>` : ""}
