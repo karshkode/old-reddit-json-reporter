@@ -158,29 +158,50 @@
   Util.postBody = function (post, limit) {
     if (!post || post.removed) return "";
     let s = String(post.selftext || "");
-    if (!s || s === "[removed]" || s === "[deleted]") return "";
-    s = s
-      .replace(/```[\s\S]*?```/g, " ")          /* fenced code */
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")    /* images */
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")  /* links: keep the text */
-      .replace(/\bhttps?:\/\/\S+/gi, " ")       /* bare URLs */
-      .replace(/\/?[ru]\/[A-Za-z0-9_-]+/g, " ") /* r/sub and u/user handles */
-      .replace(/^&gt;.*$/gm, " ")               /* quoted text: someone else's words */
-      .replace(/^>.*$/gm, " ")
-      .replace(/&amp;#?\w+;/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    if (!s || s === "[removed]" || s === "[deleted]") s = "";
+    else {
+      s = s
+        .replace(/```[\s\S]*?```/g, " ")          /* fenced code */
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")    /* images */
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")  /* links: keep the text */
+        .replace(/\bhttps?:\/\/\S+/gi, " ")       /* bare URLs */
+        .replace(/\/?[ru]\/[A-Za-z0-9_-]+/g, " ") /* r/sub and u/user handles */
+        .replace(/^&gt;.*$/gm, " ")               /* quoted text: someone else's words */
+        .replace(/^>.*$/gm, " ")
+        .replace(/&amp;#?\w+;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    /* Image / screenshot substance — captions first, then OCR when run. */
+    const mediaBits = [post.media_captions, post.image_text]
+      .map((t) => String(t || "").trim())
+      .filter(Boolean);
+    if (mediaBits.length) {
+      s = (s ? s + " " : "") + mediaBits.join(" ");
+    } else if (post.media_title && String(post.media_title).trim()
+        && String(post.media_title).trim() !== String(post.title || "").trim()) {
+      s = (s ? s + " " : "") + String(post.media_title).trim();
+    }
+    if (!s) return "";
     const cap = limit == null ? 4000 : limit;
     return s.length > cap ? s.slice(0, cap) : s;
   };
 
   /* Everything about a post that carries its subject: the headline, the
-   * framing the community applied, and the body. One accessor so that
-   * "does this analysis read bodies?" has a single answer. */
+   * framing the community applied, and the body (including image text). */
   Util.postText = function (post, limit) {
     if (!post) return "";
     return [post.title || "", post.flair || "", Util.postBody(post, limit)]
       .filter(Boolean).join(" ");
+  };
+
+  /* True when the post has almost no subject text beyond title/flair —
+   * typical of image and link posts before OCR. Discovery must not fill
+   * that vacuum with the home subreddit's sidebar vocabulary. */
+  Util.postIsTextThin = function (post) {
+    if (!post) return true;
+    const body = Util.postBody(post, 4000);
+    return !body || body.length < 40;
   };
 
   /* Accept Reddit post IDs in any of these forms (mixed in one paste):
