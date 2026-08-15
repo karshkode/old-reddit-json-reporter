@@ -2080,8 +2080,22 @@ body.sheet-open {
   font-size: var(--fs-sm);
   color: var(--text-dim);
   line-height: 1.35;
-  max-height: 4.8em;
-  overflow: hidden;
+  max-height: 6.5em;
+  overflow: auto;
+}
+.focus-audience {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: var(--s-2) 0 0;
+}
+.focus-audience.is-pending .meta {
+  font-size: var(--fs-2xs);
+  color: var(--text-mute);
+}
+.focus-audience .badge {
+  text-transform: lowercase;
 }
 
 .syn-layout {

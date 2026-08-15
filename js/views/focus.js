@@ -506,9 +506,30 @@
   }
 
   function chosenHtml(post) {
+    let scrubbedOcr = false;
     if (window.ImageText && ImageText.getCached && !post.image_text) {
       const hit = ImageText.getCached(post.id);
-      if (hit && hit.text) ImageText.applyToPost(post, hit.text, hit.source);
+      if (hit && hit.text) {
+        if (ImageText.isPlausible && !ImageText.isPlausible(hit.text)) {
+          ImageText.clear(post);
+          scrubbedOcr = true;
+        } else {
+          ImageText.applyToPost(post, hit.text, hit.source);
+        }
+      }
+    }
+    if (post.image_text && window.ImageText && ImageText.isPlausible
+        && !ImageText.isPlausible(post.image_text)) {
+      ImageText.clear(post);
+      scrubbedOcr = true;
+    }
+    if (scrubbedOcr) {
+      cache.delete(post.id);
+      if (window.AppState && AppState.postRelated) AppState.postRelated.delete(post.id);
+      /* Rematch without the junk OCR so destinations aren't poisoned. */
+      window.setTimeout(() => {
+        if (focusId === post.id && !busy) rank().catch(() => {});
+      }, 0);
     }
     const body = Util.postBody(post, 240);
     const read = ["title"];
@@ -537,6 +558,9 @@
     const scoreBit = post.syndicated
       ? ""
       : ` · ${Util.fmtNum(post.score || 0)} pts`;
+    const cmtBit = (!post.syndicated && post.num_comments)
+      ? ` · ${Util.fmtNum(post.num_comments)} comments`
+      : "";
     const feedBtn = (!post.syndicated && window.FeedView)
       ? `<button type="button" class="btn ghost small" data-action="focus-open-feed"
                  title="Read this post in the in-app feed">View</button>`
@@ -549,16 +573,19 @@
                  title="Read text in the image. If Reddit blocks the download (403), you will be asked to pick a saved copy or screenshot — OCR still runs on this device.">Read image text</button>`
       : (post.image_text
         ? `<button type="button" class="btn ghost small" data-action="focus-ocr" data-force="1"
-                   title="Re-run OCR on the image">Re-read image</button>`
+                   title="Re-run OCR on the image">Re-read image</button>
+           <button type="button" class="btn ghost small" data-action="focus-ocr-clear"
+                   title="Drop image text so matching uses title/flair only">Discard image text</button>`
         : "");
     const imagePreview = post.image_text
-      ? `<p class="focus-image-text" title="Text read from the image (${esc(post.image_text_source || "ocr")})">${esc(trunc(post.image_text, 220))}</p>`
+      ? `<p class="focus-image-text" title="Text read from the image (${esc(post.image_text_source || "ocr")})">${esc(trunc(post.image_text, 280))}</p>`
       : "";
     return `
       <div class="focus-chosen">
         <div class="focus-chosen-main">
           <div class="focus-chosen-title">${esc(trunc(post.title || "(untitled)", 120))}</div>
-          <div class="focus-chosen-meta">${whereBit}${scoreBit} · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
+          <div class="focus-chosen-meta">${whereBit}${scoreBit}${cmtBit} · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
+          ${audienceStrip(post)}
           ${imagePreview}
         </div>
         <div class="focus-chosen-actions">
@@ -570,6 +597,55 @@
       ${reachHtml(post)}
       ${pendingPostHtml(post)}
     `;
+  }
+
+  function audienceStrip(post) {
+    if (!post || post.syndicated) return "";
+    const aud = window.AppState && AppState.audienceByPost
+      ? AppState.audienceByPost.get(post.id)
+      : null;
+    const n = post.num_comments || 0;
+    if (!aud || !aud.total) {
+      if (n > 0) {
+        return `<div class="focus-audience is-pending" data-focus-aud>
+          <span class="meta">Audience · ${Util.fmtNum(n)} comments — reading tone…</span>
+        </div>`;
+      }
+      return "";
+    }
+    const cls = aud.label === "supportive" ? "good"
+      : aud.label === "hostile" ? "bad"
+      : aud.label === "mixed" ? "warn" : "info";
+    const keys = (aud.keywords || []).slice(0, 5).map((k) =>
+      typeof k === "string" ? k : (k.word || "")
+    ).filter(Boolean);
+    return `<div class="focus-audience" data-focus-aud title="Comment-thread tone in r/${esc(post.subreddit || "?")} — separate from destination match">
+      <span class="badge ${cls}">${esc(aud.label)}</span>
+      <span class="meta">audience · ${Util.fmtNum(aud.total)} comments
+        · ${Util.fmtNum(aud.support || 0)} support / ${Util.fmtNum(aud.oppose || 0)} oppose</span>
+      ${keys.length ? `<span class="plan-rec-aud-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</span>` : ""}
+    </div>`;
+  }
+
+  async function ensureAudience(post) {
+    if (!post || !post.id || post.syndicated) return null;
+    if (!window.AppState || !window.Analysis || !Analysis.summarizeAudience) return null;
+    if (!(post.num_comments > 0)) return null;
+    if (AppState.audienceByPost.has(post.id)) return AppState.audienceByPost.get(post.id);
+    try {
+      let data = AppState.detailCache && AppState.detailCache.get(post.id);
+      if (!data && window.Reddit && Reddit.fetchPostWithComments) {
+        data = await Reddit.fetchPostWithComments(post.id, { commentLimit: 40 });
+        if (data && AppState.detailCache) AppState.detailCache.set(post.id, data);
+      }
+      if (!data || !data.comments) return null;
+      const summary = Analysis.summarizeAudience(data.comments);
+      AppState.audienceByPost.set(post.id, summary);
+      if (focusId === post.id) render();
+      return summary;
+    } catch (_) {
+      return null;
+    }
   }
 
   /* Where the content already is, and whether anything is tracking it.
@@ -1103,6 +1179,7 @@
     }
     render();
     rank();
+    ensureAudience(post).catch(() => {});
     /* Thin image posts: kick OCR in the background so Plan can rematch
      * on the screenshot text once Tesseract finishes (no cloud AI). */
     if (window.ImageText && ImageText.isImagePost(post)
@@ -1148,6 +1225,17 @@
       const post = focused();
       if (!post || !window.ImageText) return;
       runImageText(post, { force: btn.dataset.force === "1", interactive: true });
+    });
+
+    Dom.delegate(document, "click", '[data-action="focus-ocr-clear"]', () => {
+      const post = focused();
+      if (!post || !window.ImageText) return;
+      ImageText.clear(post);
+      cache.delete(post.id);
+      if (window.AppState && AppState.postRelated) AppState.postRelated.delete(post.id);
+      try { Util.toast("Image text discarded — re-ranking from title/flair.", "ok"); } catch (_) {}
+      busy = false;
+      rank();
     });
 
     /* The link opens Reddit itself — no preventDefault. All this does
