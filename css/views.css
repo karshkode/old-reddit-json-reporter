@@ -1792,16 +1792,38 @@ body.sheet-open {
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
+  /* Desktop: all Recommend panels stay visible (side-by-side + cross-posts). */
+  .recommend-panel {
+    display: block !important;
+    min-width: 0;
+  }
+  #rec-panel-crossposts {
+    margin-top: var(--s-4);
+  }
 }
 @media (max-width: 960px) {
-  .recommend-split .plan-rec-body {
-    max-height: min(55vh, 420px);
+  /* One Recommend panel at a time — Posts / Articles / Cross-posts via
+   * the sticky subrail — so the dashboard is not an endless scroll. */
+  .recommend-panel {
+    display: none;
+  }
+  .recommend-panel.active {
+    display: block;
+    animation: view-in var(--dur) var(--ease-out);
+  }
+  .recommend-split .plan-rec-body,
+  .recommend-split .plan-syn-body,
+  .plan-syn-list-host {
+    max-height: min(60vh, 480px);
     overflow: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
-  .recommend-split .plan-syn-body {
-    max-height: none;
+  #crossposts {
+    max-height: min(60vh, 480px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 }
 .plan-syn-empty { padding: var(--s-5); }
@@ -2660,5 +2682,4 @@ a.syn-title:focus-visible {
 }
 @media (max-width: 560px) {
   .plan-syn-row-actions { padding-left: 0; }
-  .plan-syn-list-host { max-height: min(60vh, 520px); }
 }

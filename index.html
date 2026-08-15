@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081501" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081501" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081501" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081501" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081501" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081502" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081502" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081502" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081502" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081502" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081501"></script>
+  <script src="./js/theme.js?v=2026081502"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -176,16 +176,26 @@
         <div id="dashboard-content">
           <section class="stat-grid" id="kpi-row" aria-label="Headline metrics"></section>
 
-          <nav class="section-rail" id="dashboard-section-rail" role="tablist" aria-label="Dashboard sections">
-            <button type="button" role="tab" data-dash-tab="recommend" class="active" aria-selected="true" aria-controls="dash-recommend">Recommend</button>
-            <button type="button" role="tab" data-dash-tab="plan" aria-selected="false" aria-controls="dash-plan" tabindex="-1">Plan</button>
-            <button type="button" role="tab" data-dash-tab="briefing" aria-selected="false" aria-controls="dash-briefing" tabindex="-1">Briefing</button>
-            <button type="button" role="tab" data-dash-tab="trends" aria-selected="false" aria-controls="dash-trends" tabindex="-1">Trends</button>
-            <button type="button" role="tab" data-dash-tab="communities" aria-selected="false" aria-controls="dash-communities" tabindex="-1">Communities</button>
-          </nav>
+          <!-- Sticky stack: dashboard sections + Recommend sub-panels stay
+               reachable on mobile instead of vanishing under the topbar. -->
+          <div class="dash-nav-stack" id="dash-nav-stack">
+            <nav class="section-rail" id="dashboard-section-rail" role="tablist" aria-label="Dashboard sections">
+              <button type="button" role="tab" data-dash-tab="recommend" class="active" aria-selected="true" aria-controls="dash-recommend">Recommend</button>
+              <button type="button" role="tab" data-dash-tab="plan" aria-selected="false" aria-controls="dash-plan" tabindex="-1">Plan</button>
+              <button type="button" role="tab" data-dash-tab="briefing" aria-selected="false" aria-controls="dash-briefing" tabindex="-1">Briefing</button>
+              <button type="button" role="tab" data-dash-tab="trends" aria-selected="false" aria-controls="dash-trends" tabindex="-1">Trends</button>
+              <button type="button" role="tab" data-dash-tab="communities" aria-selected="false" aria-controls="dash-communities" tabindex="-1">Communities</button>
+            </nav>
+            <nav class="section-rail recommend-subrail" id="recommend-subrail" role="tablist" aria-label="Recommend panels" hidden>
+              <button type="button" role="tab" data-rec-tab="posts" class="active" aria-selected="true" aria-controls="rec-panel-posts">Posts</button>
+              <button type="button" role="tab" data-rec-tab="syndicate" aria-selected="false" aria-controls="rec-panel-syndicate" tabindex="-1">Articles</button>
+              <button type="button" role="tab" data-rec-tab="crossposts" aria-selected="false" aria-controls="rec-panel-crossposts" tabindex="-1">Cross-posts</button>
+            </nav>
+          </div>
 
           <div class="dash-section active" id="dash-recommend" role="tabpanel">
             <div class="plan-split recommend-split">
+              <div class="recommend-panel active" id="rec-panel-posts" data-rec-panel="posts" role="tabpanel">
               <div class="card plan-rec-card" id="plan-recommend-card">
                 <header class="card-header">
                   <div>
@@ -208,6 +218,8 @@
                   </div>
                 </div>
               </div>
+              </div>
+              <div class="recommend-panel" id="rec-panel-syndicate" data-rec-panel="syndicate" role="tabpanel">
               <div class="card plan-syn-card" id="plan-syndicate-card">
                 <header class="card-header">
                   <div>
@@ -229,9 +241,11 @@
                   </div>
                 </div>
               </div>
+              </div>
             </div>
 
-            <div class="card" id="crossposts-card" style="margin-top:var(--s-4)">
+            <div class="recommend-panel" id="rec-panel-crossposts" data-rec-panel="crossposts" role="tabpanel">
+            <div class="card" id="crossposts-card">
               <header class="card-header">
                 <div>
                   <h2>Existing cross-posts</h2>
@@ -273,6 +287,7 @@
               <div id="crossposts-meta" class="meta crossposts-meta" hidden></div>
               <div id="crossposts" class="crosspost-list"></div>
               <div id="crossposts-pagination" class="pagination" hidden></div>
+            </div>
             </div>
           </div>
 
@@ -866,6 +881,7 @@
     <button class="tabbar-link" type="button" data-view="campaigns"><span class="rail-link-icon" aria-hidden="true">◆</span>Campaigns</button>
     <button class="tabbar-link" type="button" data-view="communities"><span class="rail-link-icon" aria-hidden="true">⌗</span>Communities</button>
     <button class="tabbar-link" type="button" data-view="posts"><span class="rail-link-icon" aria-hidden="true">≡</span>Posts</button>
+    <button class="tabbar-link" type="button" data-action="open-nav-menu" aria-controls="rail" aria-label="Open menu"><span class="rail-link-icon" aria-hidden="true">☰</span>Menu</button>
   </nav>
 </div>
 
@@ -1237,45 +1253,45 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081501"></script>
+<script src="./vendor/marked.min.js?v=2026081502"></script>
 
-<script src="./js/dom.js?v=2026081501"></script>
-<script src="./js/util.js?v=2026081501"></script>
-<script src="./js/state.js?v=2026081501"></script>
-<script src="./js/router.js?v=2026081501"></script>
-<script src="./js/sync.js?v=2026081501"></script>
-<script src="./js/archive.js?v=2026081501"></script>
-<script src="./js/reddit.js?v=2026081501"></script>
-<script src="./js/postcache.js?v=2026081501"></script>
-<script src="./js/live.js?v=2026081501"></script>
-<script src="./js/refresh.js?v=2026081501"></script>
-<script src="./js/subindex.js?v=2026081501"></script>
-<script src="./js/seeds.js?v=2026081501"></script>
-<script src="./js/matchlex.js?v=2026081501"></script>
-<script src="./js/rules.js?v=2026081501"></script>
-<script src="./js/timing.js?v=2026081501"></script>
-<script src="./js/analysis.js?v=2026081501"></script>
-<script src="./js/discovery.js?v=2026081501"></script>
-<script src="./js/charts.js?v=2026081501"></script>
-<script src="./js/campaigns.js?v=2026081501"></script>
-<script src="./js/reset.js?v=2026081501"></script>
-<script src="./js/analyze.js?v=2026081501"></script>
-<script src="./js/crosspost.js?v=2026081501"></script>
-<script src="./js/nextmove.js?v=2026081501"></script>
-<script src="./js/syndicate.js?v=2026081501"></script>
-<script src="./js/sidebar.js?v=2026081501"></script>
-<script src="./js/composer.js?v=2026081501"></script>
-<script src="./js/ui.js?v=2026081501"></script>
-<script src="./js/views/focus.js?v=2026081501"></script>
-<script src="./js/views/recommend.js?v=2026081501"></script>
-<script src="./js/views/feed.js?v=2026081501"></script>
-<script src="./js/views/dashboard.js?v=2026081501"></script>
-<script src="./js/views/campaign.js?v=2026081501"></script>
-<script src="./js/views/communities.js?v=2026081501"></script>
-<script src="./js/views/posts.js?v=2026081501"></script>
-<script src="./js/views/syndicate.js?v=2026081501"></script>
-<script src="./js/demo.js?v=2026081501"></script>
-<script src="./js/app.js?v=2026081501"></script>
+<script src="./js/dom.js?v=2026081502"></script>
+<script src="./js/util.js?v=2026081502"></script>
+<script src="./js/state.js?v=2026081502"></script>
+<script src="./js/router.js?v=2026081502"></script>
+<script src="./js/sync.js?v=2026081502"></script>
+<script src="./js/archive.js?v=2026081502"></script>
+<script src="./js/reddit.js?v=2026081502"></script>
+<script src="./js/postcache.js?v=2026081502"></script>
+<script src="./js/live.js?v=2026081502"></script>
+<script src="./js/refresh.js?v=2026081502"></script>
+<script src="./js/subindex.js?v=2026081502"></script>
+<script src="./js/seeds.js?v=2026081502"></script>
+<script src="./js/matchlex.js?v=2026081502"></script>
+<script src="./js/rules.js?v=2026081502"></script>
+<script src="./js/timing.js?v=2026081502"></script>
+<script src="./js/analysis.js?v=2026081502"></script>
+<script src="./js/discovery.js?v=2026081502"></script>
+<script src="./js/charts.js?v=2026081502"></script>
+<script src="./js/campaigns.js?v=2026081502"></script>
+<script src="./js/reset.js?v=2026081502"></script>
+<script src="./js/analyze.js?v=2026081502"></script>
+<script src="./js/crosspost.js?v=2026081502"></script>
+<script src="./js/nextmove.js?v=2026081502"></script>
+<script src="./js/syndicate.js?v=2026081502"></script>
+<script src="./js/sidebar.js?v=2026081502"></script>
+<script src="./js/composer.js?v=2026081502"></script>
+<script src="./js/ui.js?v=2026081502"></script>
+<script src="./js/views/focus.js?v=2026081502"></script>
+<script src="./js/views/recommend.js?v=2026081502"></script>
+<script src="./js/views/feed.js?v=2026081502"></script>
+<script src="./js/views/dashboard.js?v=2026081502"></script>
+<script src="./js/views/campaign.js?v=2026081502"></script>
+<script src="./js/views/communities.js?v=2026081502"></script>
+<script src="./js/views/posts.js?v=2026081502"></script>
+<script src="./js/views/syndicate.js?v=2026081502"></script>
+<script src="./js/demo.js?v=2026081502"></script>
+<script src="./js/app.js?v=2026081502"></script>
 
 <script>
   (function () {

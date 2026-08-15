@@ -1069,12 +1069,18 @@
     enter: function () {
       /* Desk lives on the Recommend dashboard now — keep the route as a
        * soft redirect so old bookmarks still land somewhere useful. */
-      if (window.AppState) AppState.dashSection = "recommend";
+      if (window.DashboardView && DashboardView.goToRecommendPanel) {
+        DashboardView.goToRecommendPanel("syndicate");
+      } else if (window.AppState) {
+        AppState.dashSection = "recommend";
+        AppState.recommendPanel = "syndicate";
+      }
       Router.go("dashboard");
       window.setTimeout(() => {
         try { View.paintPlanCarousel(); } catch (_) {}
-        const card = Dom.byId("plan-syndicate-card");
-        if (card) try { card.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {}
+        if (window.DashboardView && DashboardView.goToRecommendPanel) {
+          try { DashboardView.goToRecommendPanel("syndicate"); } catch (_) {}
+        }
       }, 60);
     },
   });

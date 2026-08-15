@@ -38,6 +38,14 @@
    * next-move for one post. Briefing reads the loaded collection. */
   const SECTIONS = ["recommend", "plan", "briefing", "trends", "communities"];
   const RAIL = "dashboard-section-rail";
+  const REC_RAIL = "recommend-subrail";
+  const REC_PANELS = ["posts", "syndicate", "crossposts"];
+  const REC_MOVED = {
+    articles: "syndicate",
+    syn: "syndicate",
+    recommend: "posts",
+    inventory: "posts",
+  };
 
   /* Where the retired tabs went, so old links and saved state still
    * land somewhere sensible instead of silently falling back. */
@@ -188,6 +196,7 @@
   function paintSection() {
     const section = activeSection();
     Dom.paintRail(RAIL, "dash-tab", section, "dash-", ".dash-section");
+    paintRecommendChrome(section);
     if (!bundle) return;
 
     /* Recommend owns the inventory + syndicate carousel and cross-posts.
@@ -227,16 +236,62 @@
     }
   }
 
+  function activeRecommendPanel() {
+    let panel = AppState.recommendPanel || "posts";
+    if (REC_PANELS.indexOf(panel) === -1) panel = REC_MOVED[panel] || "posts";
+    if (REC_PANELS.indexOf(panel) === -1) panel = "posts";
+    return panel;
+  }
+
+  /* Show/hide the mobile Recommend subrail and mark the active panel. */
+  function paintRecommendChrome(section) {
+    const sub = Dom.byId(REC_RAIL);
+    const onRecommend = section === "recommend";
+    if (sub) {
+      if (onRecommend) sub.removeAttribute("hidden");
+      else sub.setAttribute("hidden", "");
+    }
+    if (!onRecommend) return;
+    const panel = activeRecommendPanel();
+    Dom.paintRail(REC_RAIL, "rec-tab", panel, "rec-panel-", ".recommend-panel");
+  }
+
+  function topbarOffset() {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue("--topbar-h");
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : 58;
+  }
+
+  /* Park the sticky dash nav under the topbar so KPIs do not force a
+   * long scroll just to reach section tabs again. */
+  function scrollDashNavIntoStick() {
+    const stack = Dom.byId("dash-nav-stack") || Dom.byId(RAIL);
+    if (!stack) return;
+    const y = stack.getBoundingClientRect().top + window.scrollY - topbarOffset() - 2;
+    window.scrollTo({ top: Math.max(0, y), behavior: "auto" });
+  }
+
+  View.goToRecommendPanel = function (panel, opts) {
+    opts = opts || {};
+    if (REC_PANELS.indexOf(panel) === -1) panel = REC_MOVED[panel];
+    if (!panel) return;
+    AppState.recommendPanel = panel;
+    AppState.dashSection = "recommend";
+    paintSection();
+    Dom.revealRailTab(REC_RAIL, "rec-tab", panel);
+    Dom.revealRailTab(RAIL, "dash-tab", "recommend");
+    if (opts.scroll !== false) scrollDashNavIntoStick();
+  };
+
   View.goToSection = function (section) {
+    const requested = section;
     if (SECTIONS.indexOf(section) === -1) section = MOVED[section];
     if (!section) return;
+    if (requested === "crossposts") AppState.recommendPanel = "crossposts";
     AppState.dashSection = section;
     paintSection();
     Dom.revealRailTab(RAIL, "dash-tab", section);
-    /* Land at the top of the new section rather than wherever the last
-     * one had been scrolled to. */
-    const view = Dom.byId("view-dashboard");
-    if (view) window.scrollTo({ top: Math.max(0, view.offsetTop - 8), behavior: "auto" });
+    scrollDashNavIntoStick();
   };
 
   /* Open Trends on one particular community's panel.
@@ -421,12 +476,18 @@
     if (window.FocusView) FocusView.mount();
 
     Dom.wireRail(RAIL, "dash-tab", View.goToSection);
+    Dom.wireRail(REC_RAIL, "rec-tab", View.goToRecommendPanel);
 
     /* Buttons elsewhere in the app that deep-link to a section. */
     Dom.delegate(document, "click", "[data-dash-goto]", (e, btn) => {
       e.preventDefault();
       Router.go("dashboard");
       View.goToSection(btn.dataset.dashGoto);
+    });
+    Dom.delegate(document, "click", "[data-rec-goto]", (e, btn) => {
+      e.preventDefault();
+      Router.go("dashboard");
+      View.goToRecommendPanel(btn.dataset.recGoto);
     });
   };
 
