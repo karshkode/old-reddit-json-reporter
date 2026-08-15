@@ -37,6 +37,10 @@
      * dozen about.json reads, so the answer is worth keeping for as
      * long as the tab lives. */
     postRelated: new Map(),
+    /* post id -> Analysis.summarizeAudience(...) from fetched comments.
+     * Title/body keywords stay on Discovery; this is reception tone and
+     * what the thread actually talked about in that subreddit. */
+    audienceByPost: new Map(),
     subProfiles: {},
     crossPosts: [],
     campaignSummaries: {},

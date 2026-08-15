@@ -1733,6 +1733,62 @@
     return { perHour: Math.round(perHour * 100) / 100, ageHours, total: comments.length, lastHour, alive };
   };
 
+  /* Recurring topical words from a comment thread, weighted by comment
+   * score so the visible top of the thread shapes the vocabulary. This
+   * is the audience-side counterpart to extractKeywords on post text —
+   * same stoplist, different input, kept separate so destination match
+   * (title/body) and reception (what people actually talked about) do
+   * not collapse into one number. */
+  Analysis.extractCommentKeywords = function (comments, limit) {
+    const counts = {};
+    if (!comments || !comments.length) return [];
+    for (const c of comments) {
+      const txt = String(c.body || "").slice(0, 800);
+      if (!txt) continue;
+      const w = Math.sqrt(Math.max(0, (c.score || 0)) + 1);
+      for (const t of tokenize(txt)) {
+        if (isWeak(t)) continue;
+        counts[t] = (counts[t] || 0) + w;
+      }
+    }
+    return Object.entries(counts)
+      .map(([word, weight]) => ({ word, weight: Math.round(weight * 10) / 10 }))
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, limit || 8);
+  };
+
+  /* One object the UI can hang on a post: thread tone + audience
+   * vocabulary + a couple of objections. Callers cache this per post id
+   * so Recommend / Feed can show reception without re-scoring. */
+  Analysis.summarizeAudience = function (comments) {
+    const empty = {
+      label: "flat",
+      score: 0,
+      support: 0,
+      oppose: 0,
+      neutral: 0,
+      total: 0,
+      keywords: [],
+      objections: [],
+      at: Date.now(),
+    };
+    if (!comments || !comments.length) return empty;
+    const temp = Analysis.threadTemperature(comments);
+    return {
+      label: temp.label,
+      score: temp.score,
+      support: temp.support,
+      oppose: temp.oppose,
+      neutral: temp.neutral,
+      total: temp.total || comments.length,
+      keywords: Analysis.extractCommentKeywords(comments, 8),
+      objections: Analysis.extractObjections
+        ? Analysis.extractObjections(comments, { limit: 3 })
+        : [],
+      at: Date.now(),
+    };
+  };
+
   /* ============================================================
      PREDICTIVE POSTING (PR 5)
      ----------------------------------------------------------------

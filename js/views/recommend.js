@@ -21,6 +21,9 @@
 
   let suggesting = false;
   let suggestTimer = 0;
+  let audienceTimer = 0;
+  let audienceBusy = false;
+  const audienceAttempted = new Set();
   let dataSignature = "";
   let lastPainted = "";
   /* Post ids we already ran Discovery on for this inventory signature.
@@ -50,6 +53,7 @@
     if (!signature || signature === dataSignature) return;
     dataSignature = signature;
     attempted.clear();
+    audienceAttempted.clear();
   }
 
   /* Still needs an offline Discovery pass. Cached (even weak) or already
@@ -170,23 +174,59 @@
   function destHtml(tips, home) {
     const homeKey = String(home || "").toLowerCase();
     if (!tips.length) {
-      return `<div data-plan-rec-dests><p class="plan-rec-nodest meta">No strong destination yet.</p></div>`;
+      return `<div class="plan-rec-dests" data-plan-rec-dests><span class="plan-rec-nodest meta">No strong destination yet</span></div>`;
     }
-    return `<div class="plan-syn-dests" data-plan-rec-dests>${tips.map((c, i) => {
-      const name = c.name || c.key;
-      const same = String(name || "").toLowerCase() === homeKey;
-      const score = c.score == null ? "" : Math.round(c.score);
-      const terms = (c.overlapTerms || []).slice(0, 3).map((t) =>
-        typeof t === "string" ? t : (t.term || "")
-      ).filter(Boolean);
-      return `<div class="plan-syn-dest${i === 0 && !same ? " is-top" : ""}${same ? " is-posted" : ""}"${same ? ` title="Already in r/${esc(name)}"` : ""}>
-        <span class="plan-syn-dest-name">r/${esc(name)}</span>
-        ${same
-          ? `<span class="badge bad">already here</span>`
-          : (score !== "" ? `<span class="badge accent">${esc(String(score))}</span>` : "")}
-        ${terms.length ? `<span class="plan-syn-dest-terms">${terms.map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>` : ""}
-      </div>`;
-    }).join("")}</div>`;
+    /* Compact chip row — name + score only. Matching keywords live on
+     * the post (title/body) and on the audience strip (comments), not
+     * repeated under every destination. */
+    return `<div class="plan-rec-dests" data-plan-rec-dests role="list" aria-label="Suggested destinations">
+      <span class="plan-rec-dests-label">Next</span>
+      ${tips.map((c, i) => {
+        const name = c.name || c.key;
+        const same = String(name || "").toLowerCase() === homeKey;
+        const score = c.score == null ? "" : Math.round(c.score);
+        const title = same
+          ? `Already in r/${name}`
+          : (c.overlapTerms && c.overlapTerms.length
+            ? `Match ${score} · ${(c.overlapTerms || []).slice(0, 3).map((t) => typeof t === "string" ? t : (t.term || "")).filter(Boolean).join(", ")}`
+            : `Match ${score}`);
+        return `<span class="plan-rec-dest-chip${i === 0 && !same ? " is-top" : ""}${same ? " is-posted" : ""}" role="listitem" title="${esc(title)}">
+          <span class="plan-rec-dest-name">r/${esc(name)}</span>
+          ${same
+            ? `<span class="plan-rec-dest-score is-here">here</span>`
+            : (score !== "" ? `<span class="plan-rec-dest-score">${esc(String(score))}</span>` : "")}
+        </span>`;
+      }).join("")}
+    </div>`;
+  }
+
+  function audienceOf(post) {
+    if (!post || !window.AppState || !AppState.audienceByPost) return null;
+    return AppState.audienceByPost.get(post.id) || null;
+  }
+
+  function audienceHtml(post) {
+    const aud = audienceOf(post);
+    const n = post && (post.num_comments || 0);
+    if (!aud || !aud.total) {
+      if (n > 0) {
+        return `<div class="plan-rec-audience is-pending" data-plan-rec-aud>
+          <span class="meta">Audience · ${Util.fmtNum(n)} comments — reading tone…</span>
+        </div>`;
+      }
+      return `<div class="plan-rec-audience is-empty" data-plan-rec-aud hidden></div>`;
+    }
+    const cls = aud.label === "supportive" ? "good"
+      : aud.label === "hostile" ? "bad"
+      : aud.label === "mixed" ? "warn" : "info";
+    const keys = (aud.keywords || []).slice(0, 4).map((k) =>
+      typeof k === "string" ? k : (k.word || "")
+    ).filter(Boolean);
+    return `<div class="plan-rec-audience" data-plan-rec-aud>
+      <span class="badge ${cls}" title="Comment-thread tone in r/${esc(post.subreddit || "?")}">${esc(aud.label)}</span>
+      <span class="meta">audience · ${Util.fmtNum(aud.total)} comments</span>
+      ${keys.length ? `<span class="plan-rec-aud-keys" title="What commenters talked about">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</span>` : ""}
+    </div>`;
   }
 
   function campaignActions(post) {
@@ -206,18 +246,26 @@
 
   function rowHtml(post, result) {
     const tips = suggestionsOf(result, DEST_CAP, post.subreddit);
-    const keys = keywordsOf(post, result, 6);
+    const keys = keywordsOf(post, result, 4);
     const when = post.created_utc ? Util.relTime(post.created_utc) : "";
     const camp = campaignActions(post);
+    const top = tips.length && String(tips[0].name || "").toLowerCase() !== String(post.subreddit || "").toLowerCase()
+      ? tips[0]
+      : null;
+    const topBit = top && top.score != null
+      ? `<span class="plan-rec-top-fit meta" title="Best destination match">→ r/${esc(top.name || top.key)} ${Math.round(top.score)}</span>`
+      : "";
     return `
       <article class="plan-rec-row" data-plan-rec-id="${esc(post.id)}">
         <div class="plan-rec-main">
           <div class="plan-syn-kicker">
             <span class="syn-source-box">r/${esc(post.subreddit || "?")}</span>
-            <span class="meta">${Util.fmtNum(post.score || 0)} pts${when ? " · " + esc(when) : ""}${post.imported ? " · just added" : ""}</span>
+            <span class="meta">${Util.fmtNum(post.score || 0)} pts${when ? " · " + esc(when) : ""}${post.num_comments ? " · " + Util.fmtNum(post.num_comments) + " cmt" : ""}${post.imported ? " · just added" : ""}</span>
+            ${topBit}
           </div>
-          <h3 class="plan-rec-title">${esc(trunc(post.title || "(untitled)", 120))}</h3>
-          ${keys.length ? `<div class="plan-syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>` : ""}
+          <h3 class="plan-rec-title">${esc(trunc(post.title || "(untitled)", 140))}</h3>
+          ${keys.length ? `<div class="plan-syn-keys plan-rec-post-keys" title="From title and body">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>` : ""}
+          ${audienceHtml(post)}
           ${destHtml(tips, post.subreddit)}
           <div class="plan-syn-actions">
             <button type="button" class="btn primary small" data-action="plan-rec-open" data-post="${esc(post.id)}">Open in Plan</button>
@@ -290,11 +338,14 @@
         if (!row) continue;
         const destSlot = row.querySelector("[data-plan-rec-dests]");
         if (destSlot) destSlot.outerHTML = destHtml(suggestionsOf(cachedMatch(post), DEST_CAP, post.subreddit), post.subreddit);
+        const audSlot = row.querySelector("[data-plan-rec-aud]");
+        if (audSlot) audSlot.outerHTML = audienceHtml(post);
         const campSlot = row.querySelector("[data-plan-rec-camp]");
         if (campSlot) campSlot.innerHTML = campaignActions(post);
       }
       lastPainted = paintSig;
       if (!opts.skipSchedule && pending && !suggesting) View.scheduleSuggest();
+      if (!opts.skipAudience) View.scheduleAudience(ranked);
       return;
     }
 
@@ -310,6 +361,7 @@
     if (!opts.skipSchedule && pending && !suggesting) {
       View.scheduleSuggest();
     }
+    if (!opts.skipAudience) View.scheduleAudience(ranked);
   };
 
   View.scheduleSuggest = function (opts) {
@@ -324,6 +376,57 @@
       suggestTimer = 0;
       View.suggest(opts).catch(() => {});
     }, delay);
+  };
+
+  /* Pull a small comment sample for visible Recommend rows so each card
+   * can show reception tone + audience keywords without opening detail.
+   * Budgeted: one at a time, few per pass, skip posts with no comments. */
+  View.scheduleAudience = function (posts) {
+    if (audienceBusy) return;
+    if (audienceTimer) {
+      window.clearTimeout(audienceTimer);
+      audienceTimer = 0;
+    }
+    audienceTimer = window.setTimeout(() => {
+      audienceTimer = 0;
+      View.enrichAudience(posts).catch(() => {});
+    }, 400);
+  };
+
+  View.enrichAudience = async function (posts) {
+    if (audienceBusy || !window.Reddit || !Reddit.fetchPostWithComments) return;
+    if (!window.Analysis || !Analysis.summarizeAudience) return;
+    if (!window.AppState) return;
+    const list = (posts || []).filter((p) => {
+      if (!p || !p.id) return false;
+      if (AppState.audienceByPost.has(p.id)) return false;
+      if (audienceAttempted.has(p.id)) return false;
+      return (p.num_comments || 0) > 0;
+    }).slice(0, 5);
+    if (!list.length) return;
+    audienceBusy = true;
+    try {
+      for (const post of list) {
+        audienceAttempted.add(post.id);
+        try {
+          let data = AppState.detailCache && AppState.detailCache.get(post.id);
+          if (!data) {
+            data = await Reddit.fetchPostWithComments(post.id, { commentLimit: 40 });
+            if (data && AppState.detailCache) AppState.detailCache.set(post.id, data);
+          }
+          if (!data || !data.comments) continue;
+          const summary = Analysis.summarizeAudience(data.comments);
+          AppState.audienceByPost.set(post.id, summary);
+          /* Soft re-paint so destination matching can pick up audience
+           * keywords without resetting button DOM mid-tap. */
+          View.paint(dataSignature, { skipSchedule: true, skipAudience: true });
+        } catch (_) {
+          /* Leave the pending strip; a later Re-rank / View can retry. */
+        }
+      }
+    } finally {
+      audienceBusy = false;
+    }
   };
 
   View.suggest = async function (opts) {

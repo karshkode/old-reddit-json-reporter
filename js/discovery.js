@@ -1234,6 +1234,19 @@
         SubIndex.addText(vec, record.public_description || "", 0.8);
       }
     }
+    /* Audience vocabulary from comments is a light secondary signal —
+     * what the thread talked about, not a substitute for the post's
+     * own title/body. Kept well below title weight so a noisy thread
+     * cannot yank the destination ranking. */
+    const aud = window.AppState && AppState.audienceByPost
+      ? AppState.audienceByPost.get(post.id)
+      : null;
+    if (aud && Array.isArray(aud.keywords)) {
+      for (const k of aud.keywords.slice(0, 6)) {
+        const term = typeof k === "string" ? k : (k.word || "");
+        if (term) SubIndex.addText(vec, term, 0.55);
+      }
+    }
     return vec;
   };
 
