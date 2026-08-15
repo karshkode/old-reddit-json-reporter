@@ -2072,6 +2072,17 @@ body.sheet-open {
   font-size: var(--fs-sm);
   color: var(--text-dim);
 }
+.focus-image-text {
+  margin: var(--s-2) 0 0;
+  padding: var(--s-2) var(--s-3);
+  border-left: 2px solid var(--accent);
+  background: var(--bg-elev-2);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  line-height: 1.35;
+  max-height: 4.8em;
+  overflow: hidden;
+}
 
 .syn-layout {
   display: grid;

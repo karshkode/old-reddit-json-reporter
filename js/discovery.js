@@ -1217,21 +1217,42 @@
 
   /* The term vector for one post: what the post is about, in words.
    * Title carries the message, flair carries the framing the community
-   * itself applied, and the body carries the substance — for a text
-   * post that is most of the post, so it is read in full rather than
-   * sampled, but weighted by share rather than by length. */
+   * itself applied, and the body (selftext, captions, OCR) carries the
+   * substance. Home-sub sidebar text is deliberately weak — dumping
+   * WorkReform's "union / workplace" description into an image post
+   * about tariffs is how r/Unions won on community similarity alone. */
   Discovery.postVector = function (post) {
     const vec = {};
     if (!post) return vec;
-    SubIndex.addText(vec, post.title || "", 3);
-    if (post.flair) SubIndex.addText(vec, post.flair, 2);
-    SubIndex.addTextWithMass(vec, Util.postBody(post), SubIndex.mass(vec) * BODY_SHARE);
+    const thin = window.Util && Util.postIsTextThin
+      ? Util.postIsTextThin(post)
+      : !Util.postBody(post);
+    const body = Util.postBody(post);
+
+    SubIndex.addText(vec, post.title || "", thin ? 4.5 : 3);
+    /* Flair is framing ("Venting"), not subject — keep it light on thin
+     * posts so it cannot outvote the headline. */
+    if (post.flair) SubIndex.addText(vec, post.flair, thin ? 0.5 : 1.4);
+    if (body) {
+      SubIndex.addTextWithMass(vec, body, SubIndex.mass(vec) * (thin ? 1.15 : BODY_SHARE));
+    }
+
     if (post.subreddit) {
-      SubIndex.addText(vec, post.subreddit, 1.5);
-      const record = SubIndex.get(post.subreddit);
-      if (record) {
-        SubIndex.addText(vec, record.title || "", 1);
-        SubIndex.addText(vec, record.public_description || "", 0.8);
+      /* Name only, lightly — enough to prefer sibling rooms when the
+       * post truly has no subject, not enough to redefine one. */
+      SubIndex.addText(vec, post.subreddit, thin ? 0.2 : 0.55);
+      if (!thin) {
+        const record = SubIndex.get(post.subreddit);
+        if (record) {
+          SubIndex.addText(vec, record.title || "", 0.3);
+          /* Sidebar text only when the author wrote a real selftext —
+           * OCR / captions are the post's subject and must not be diluted
+           * by WorkReform-style community boilerplate. */
+          const self = String(post.selftext || "").trim();
+          if (self && self !== "[removed]" && self !== "[deleted]" && self.length > 120) {
+            SubIndex.addText(vec, record.public_description || "", 0.15);
+          }
+        }
       }
     }
     /* Audience vocabulary from comments is a light secondary signal —
@@ -1288,7 +1309,8 @@
     const bodyText = (window.Util && Util.postBody)
       ? Util.postBody(post)
       : (post.selftext || post.body || "");
-    const entityBlob = [post.title, bodyText].filter(Boolean).join("\n");
+    const entityBlob = [post.title, bodyText, post.image_text, post.media_captions]
+      .filter(Boolean).join("\n");
     const entities = Discovery.extractEntities(entityBlob);
 
     /* Candidate names come from offline sources: the spheres the post

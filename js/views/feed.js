@@ -116,6 +116,16 @@
     return `<span class="badge ${cls} feed-audience" title="Comment-thread tone">${esc(aud.label)}</span>`;
   }
 
+  function imageTextBtn(post) {
+    if (!window.ImageText || !ImageText.isImagePost(post)) return "";
+    if (post.image_text) {
+      return `<span class="badge info" title="${esc(trunc(post.image_text, 160))}">image text</span>`;
+    }
+    if (window.Util && Util.postIsTextThin && !Util.postIsTextThin(post)) return "";
+    return `<button type="button" class="btn tiny" data-action="feed-ocr" data-post="${esc(post.id)}"
+              title="Read text inside the image on this device (no cloud AI)">Read image</button>`;
+  }
+
   function cardHtml(post, opts) {
     opts = opts || {};
     const active = post.id === focusId;
@@ -162,6 +172,7 @@
           <div class="feed-actions">
             <span class="feed-comments">${Util.fmtNum(post.num_comments || 0)} comments</span>
             ${audienceBadge(post)}
+            ${imageTextBtn(post)}
             <button type="button" class="btn tiny" data-action="feed-plan" data-post="${esc(post.id)}">Where next</button>
             ${post.permalink ? `<a class="btn tiny ghost" href="${esc(post.permalink)}" target="_blank" rel="noopener">Reddit ↗</a>` : ""}
             ${!expanded ? `<button type="button" class="btn tiny ghost" data-action="feed-expand" data-post="${esc(post.id)}">Expand</button>` : ""}
@@ -285,6 +296,27 @@
       if (!post || !window.FocusView) return;
       View.close();
       FocusView.focusPost(post);
+    });
+    Dom.delegate(document, "click", '[data-action="feed-ocr"]', async (e, el) => {
+      const id = el.dataset.post;
+      const post = posts.find((p) => p && p.id === id)
+        || (((window.AppState && AppState.posts) || []).find((p) => p && p.id === id));
+      if (!post || !window.ImageText) return;
+      el.disabled = true;
+      el.textContent = "Reading…";
+      try {
+        await ImageText.ensure(post, {
+          onStatus: (msg) => { el.textContent = msg.indexOf("Fetch") === 0 ? "Fetching…" : "Reading…"; },
+        });
+        try { Util.toast("Image text ready.", "ok"); } catch (_) {}
+        paint();
+      } catch (err) {
+        try {
+          Util.toast("Couldn't read image: " + ((err && err.message) || err), "err");
+        } catch (_) {}
+        el.disabled = false;
+        el.textContent = "Read image";
+      }
     });
     Dom.delegate(document, "click", '[data-action="feed-media"]', (e, el) => {
       if (window.App && typeof App.openMediaPreview === "function") {
