@@ -170,9 +170,9 @@
   function destHtml(tips, home) {
     const homeKey = String(home || "").toLowerCase();
     if (!tips.length) {
-      return `<p class="plan-rec-nodest meta">No strong destination yet.</p>`;
+      return `<div data-plan-rec-dests><p class="plan-rec-nodest meta">No strong destination yet.</p></div>`;
     }
-    return `<div class="plan-syn-dests">${tips.map((c, i) => {
+    return `<div class="plan-syn-dests" data-plan-rec-dests>${tips.map((c, i) => {
       const name = c.name || c.key;
       const same = String(name || "").toLowerCase() === homeKey;
       const score = c.score == null ? "" : Math.round(c.score);
@@ -223,7 +223,7 @@
             <button type="button" class="btn primary small" data-action="plan-rec-open" data-post="${esc(post.id)}">Open in Plan</button>
             <button type="button" class="btn small" data-action="plan-rec-view" data-post="${esc(post.id)}"
                     title="Read this post in the in-app feed">View</button>
-            ${camp}
+            <span data-plan-rec-camp>${camp}</span>
             ${post.permalink ? `<a class="btn ghost small" href="${esc(post.permalink)}" target="_blank" rel="noopener">Reddit ↗</a>` : ""}
           </div>
         </div>
@@ -274,12 +274,36 @@
       status = `No strong destinations in ${ranked.length} posts — try Re-rank after loading more communities`;
     }
 
+    const structureSig = ranked.map((p) => p.id).join(",");
+    const paintSig = structureSig + ":" + matched + ":" + pending + ":" + (suggesting ? 1 : 0);
+    const listEl = el.querySelector(".plan-rec-list");
+    const metaEl = el.querySelector(".plan-rec-meta");
+
+    /* Mid-suggest paints used to rewrite every row (and every button) on
+     * every partial — a tap on Open in Plan often landed on a node that
+     * had just been destroyed. Keep the row DOM when the post set is
+     * unchanged; only refresh status + destination chips. */
+    if (listEl && metaEl && lastPainted && lastPainted.startsWith(structureSig + ":")) {
+      metaEl.textContent = status;
+      for (const post of ranked) {
+        const row = listEl.querySelector(`[data-plan-rec-id="${CSS.escape(post.id)}"]`);
+        if (!row) continue;
+        const destSlot = row.querySelector("[data-plan-rec-dests]");
+        if (destSlot) destSlot.outerHTML = destHtml(suggestionsOf(cachedMatch(post), DEST_CAP, post.subreddit), post.subreddit);
+        const campSlot = row.querySelector("[data-plan-rec-camp]");
+        if (campSlot) campSlot.innerHTML = campaignActions(post);
+      }
+      lastPainted = paintSig;
+      if (!opts.skipSchedule && pending && !suggesting) View.scheduleSuggest();
+      return;
+    }
+
     el.innerHTML = `
       <div class="plan-rec-meta meta">${esc(status)}</div>
       <div class="plan-rec-list">
         ${ranked.map((p) => rowHtml(p, cachedMatch(p))).join("")}
       </div>`;
-    lastPainted = ranked.map((p) => p.id).join(",") + ":" + matched + ":" + pending + ":" + (suggesting ? 1 : 0);
+    lastPainted = paintSig;
 
     /* Only kick the worker when there is unmatched work — paint during
      * an in-flight suggest must not queue another pass. */

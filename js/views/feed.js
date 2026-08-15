@@ -180,8 +180,23 @@
     list.innerHTML = posts.map((p) => cardHtml(p, { expanded: p.id === focusId })).join("");
     if (focusId) {
       const card = Dom.byId("feed-card-" + focusId);
-      if (card) {
-        try { card.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+      const body = document.querySelector("#feed-viewer [data-sidebar-body]");
+      if (card && body) {
+        const scrollToFocus = () => {
+          const top = card.offsetTop - Math.max(24, (body.clientHeight - card.offsetHeight) / 2);
+          try {
+            body.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+          } catch (_) {
+            try { card.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (__) {}
+          }
+        };
+        /* Wait for the mobile slide-up animation + layout before measuring. */
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollToFocus();
+            window.setTimeout(scrollToFocus, 260);
+          });
+        });
       }
     }
   }

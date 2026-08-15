@@ -40,6 +40,67 @@
 
   let globalsWired = false;
   let autoSuggestTimer = null;
+  let planListSig = "";
+  let statusTimer = 0;
+  let statusPending = "";
+  let statusLast = "";
+  let statusLastAt = 0;
+
+  /* Stable status line for both the desk and the dashboard card.
+   * Progress callbacks used to rewrite the title of every finished feed
+   * and every suggest wave, which made the UI flicker ("wave 1/3",
+   * rotating source names). Throttle progress; apply finals immediately. */
+  function setStatus(text, opts) {
+    opts = opts || {};
+    const msg = text == null ? "" : String(text);
+    const apply = () => {
+      statusPending = "";
+      statusLast = msg;
+      statusLastAt = Date.now();
+      const nodes = [Dom.byId("syndicate-status"), Dom.byId("plan-syndicate-status")];
+      for (const el of nodes) if (el) el.textContent = msg;
+      paintDashPullButton();
+    };
+    if (opts.force || !msg) {
+      if (statusTimer) { clearTimeout(statusTimer); statusTimer = 0; }
+      apply();
+      return;
+    }
+    statusPending = msg;
+    const elapsed = Date.now() - statusLastAt;
+    if (elapsed >= 450 || statusLast === "") {
+      if (statusTimer) { clearTimeout(statusTimer); statusTimer = 0; }
+      apply();
+      return;
+    }
+    if (statusTimer) return;
+    statusTimer = setTimeout(() => {
+      statusTimer = 0;
+      if (statusPending !== "") {
+        const pending = statusPending;
+        statusPending = "";
+        setStatus(pending, { force: true });
+      }
+    }, 450 - elapsed);
+  }
+
+  function paintDashPullButton() {
+    const busy = !!(Syndicate.pulling && Syndicate.pulling());
+    const deskBtn = Dom.byId("syndicate-pull");
+    if (deskBtn) {
+      deskBtn.disabled = busy;
+      if (!busy) deskBtn.textContent = "↻ Pull latest";
+    }
+    document.querySelectorAll('[data-action="plan-syn-pull"]').forEach((btn) => {
+      btn.disabled = busy;
+      btn.textContent = busy ? "Pulling…" : "↻ Pull latest";
+    });
+    const sBusy = !!(Syndicate.suggesting && Syndicate.suggesting());
+    document.querySelectorAll('[data-action="plan-syn-suggest"]').forEach((btn) => {
+      btn.disabled = sBusy || !Syndicate.articles().length;
+      btn.textContent = sBusy ? "Suggesting…" : "Suggest";
+    });
+  }
 
   View.subtitle = function () {
     const n = filtered().length;
@@ -263,57 +324,7 @@
     const host = Dom.byId("syndicate-detail");
     if (!host) return;
     const article = Syndicate.articles().find((a) => a.id === selectedId);
-    if (!article) {
-      host.innerHTML = `
-        <div class="empty syn-detail-empty">
-          <strong>Pick a headline</strong>
-          <p>Keywords from the title and summary are matched against the same civic communities Where-next uses — including format rules (r/politics wants a fresh article link, not a text post).</p>
-        </div>`;
-      return;
-    }
-
-    const cached = Syndicate.matchOf(article.id);
-    const keys = (cached && cached.keywords) || Syndicate.keywords(article, 10);
-    const post = Syndicate.asPost(article);
-    const when = whenBits(article);
-    const hero = article.image
-      ? (article.link
-        ? `<a class="syn-article-hero" href="${esc(article.link)}" target="_blank" rel="noopener" title="Open article"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></a>`
-        : `<div class="syn-article-hero"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></div>`)
-      : "";
-    const title = article.link
-      ? `<h3 class="syn-article-title"><a href="${esc(article.link)}" target="_blank" rel="noopener" title="Open article">${esc(article.title)}</a></h3>`
-      : `<h3 class="syn-article-title">${esc(article.title)}</h3>`;
-
-    host.innerHTML = `
-      <article class="syn-article">
-        ${hero}
-        <div class="syn-article-kicker">
-          <span class="syn-source-box">${esc(article.source || "")}</span>
-          ${when.rel ? `<span class="syn-time-box" title="${esc(when.abs)}">${esc(when.rel)}</span>` : ""}
-          ${article.category ? `<span class="badge">${esc(article.category)}</span>` : ""}
-        </div>
-        ${title}
-        ${article.link ? `<a class="syn-article-link" href="${esc(article.link)}" target="_blank" rel="noopener">Read original ↗</a>` : ""}
-        ${article.summary ? `<p class="syn-article-sum">${esc(article.summary)}</p>` : ""}
-        <div class="syn-article-keys">
-          <span class="group-label">Keywords</span>
-          <div class="keyword-cloud">${keys.map((k) => `<span class="kw"><code>${esc(k)}</code></span>`).join("") || "<span class=\"meta\">none yet</span>"}</div>
-        </div>
-        <div class="syn-article-actions">
-          <button type="button" class="btn ${cached ? "ghost" : "primary"}" data-action="syn-match" ${matchBusy === article.id ? "disabled" : ""}>
-            ${matchBusy === article.id ? "Matching…" : cached ? "Refresh match" : "Matching…"}
-          </button>
-          ${window.FocusView ? `<button type="button" class="btn ghost" data-action="syn-focus">Open in Plan</button>` : ""}
-        </div>
-        <div id="syndicate-match" class="syn-match">
-          ${cached
-            ? matchHtml(cached, post)
-            : `<p class="hint">${matchBusy === article.id
-              ? "Ranking communities from the title and summary…"
-              : "Destinations appear automatically from keywords and civic spheres."}</p>`}
-        </div>
-      </article>`;
+    host.innerHTML = articleDetailHtml(article);
   }
 
   function matchHtml(result, post) {
@@ -524,7 +535,7 @@
     }
     const token = ++suggestToken;
     paintSuggestButton();
-    const status = Dom.byId("syndicate-status");
+    paintDashPullButton();
     let totalDone = 0;
     let lastRes = null;
     const attempted = new Set();
@@ -537,10 +548,10 @@
           .slice(0, cap);
         if (!batch.length) break;
         for (const a of batch) attempted.add(a.id);
-        if (status && opts.announce !== false) {
-          status.textContent = waves > 1
-            ? `Suggesting destinations · wave ${wave + 1}/${waves} · ${batch.length} headlines…`
-            : `Suggesting destinations for ${batch.length} headline${batch.length === 1 ? "" : "s"}…`;
+        if (opts.announce !== false) {
+          setStatus(waves > 1
+            ? `Ranking destinations… ${wave + 1}/${waves}`
+            : `Ranking destinations for ${batch.length} headline${batch.length === 1 ? "" : "s"}…`);
         }
         lastRes = await Syndicate.suggestMany(batch, {
           live: false,
@@ -552,19 +563,18 @@
           refreshWeak: opts.refreshWeak !== false,
           onProgress: (done, total) => {
             if (token !== suggestToken) return;
-            if (status) {
-              status.textContent = waves > 1
-                ? `Suggesting destinations · wave ${wave + 1}/${waves} · ${done}/${total}`
-                : `Suggesting destinations ${done}/${total}…`;
+            if (opts.announce !== false) {
+              setStatus(waves > 1
+                ? `Ranking destinations… ${wave + 1}/${waves} · ${done}/${total}`
+                : `Ranking destinations… ${done}/${total}`);
             }
             scheduleListPaint();
+            scheduleDashPaint();
           },
           onPartial: () => {
             if (token !== suggestToken) return;
             scheduleListPaint();
-            if (Router.current() !== "syndicate") {
-              try { View.paintPlanCarousel(); } catch (_) {}
-            }
+            scheduleDashPaint();
           },
         });
         if (token !== suggestToken) return;
@@ -575,20 +585,20 @@
         await yieldToUi();
       }
       if (token !== suggestToken) return;
-      if (status) {
+      {
         const strong = filtered().filter((a) =>
           Syndicate.hasStrongDestination
             ? Syndicate.hasStrongDestination(a.id)
             : Syndicate.suggestionsOf(a.id, 1).length
         ).length;
         const n = filtered().filter((a) => Syndicate.matchOf(a.id)).length;
-        status.textContent = strong
+        setStatus(strong
           ? `${Util.fmtNum(strong)} with strong destinations · ${Util.fmtNum(n)} ranked`
           : n
             ? `${Util.fmtNum(n)} ranked · none cleared the fit floor yet`
             : (lastRes && lastRes.busy)
-              ? "Still suggesting…"
-              : "No destinations found — try Sync communities, then Suggest again";
+              ? "Still ranking…"
+              : "No destinations found — try Sync communities, then Suggest again", { force: true });
       }
       if (opts.toast !== false && !(lastRes && lastRes.busy)) {
         Util.toast(totalDone
@@ -599,10 +609,11 @@
       else View.paintPlanCarousel();
       ensureSelectedMatched();
     } catch (err) {
-      if (status) status.textContent = (err && err.message) || String(err);
+      setStatus((err && err.message) || String(err), { force: true });
       if (opts.toast !== false) Util.toast("Could not suggest destinations", "error");
     } finally {
       paintSuggestButton();
+      paintDashPullButton();
     }
   }
 
@@ -649,7 +660,13 @@
      * background after Focus paints. */
     if (!match) {
       matchBusy = article.id;
-      View.render();
+      if (Router.current() === "syndicate") View.render();
+      else {
+        /* Refresh sidebar match chrome if open, without a full desk paint. */
+        const host = Dom.byId("syndicate-match");
+        if (host) host.innerHTML = `<p class="hint">Ranking communities from the title and summary…</p>`;
+        paintDashPullButton();
+      }
       try {
         match = await Syndicate.match(article, {
           live: false,
@@ -660,7 +677,7 @@
       } catch (err) {
         Util.toast((err && err.message) || String(err), "error");
         matchBusy = null;
-        View.render();
+        if (Router.current() === "syndicate") View.render();
         return;
       }
       matchBusy = null;
@@ -672,6 +689,9 @@
       terms: match.keywords || Syndicate.keywords(article, 8),
     };
     FocusView.focusPost(draft, { related: related });
+    if (window.Sidebar && Sidebar.isOpen && Sidebar.isOpen()) {
+      try { Sidebar.close(); } catch (_) {}
+    }
     /* Optional background upgrade — does not block Plan. */
     if (match.fromCache || !match.archiveChecked) {
       Syndicate.match(article, {
@@ -684,108 +704,184 @@
     }
   }
 
-  /* Plan-tab carousel: strongest Syndicate picks beside Next move. */
+  /* Dashboard Recommend list: ranked headlines; tap opens the sidebar. */
+  const DASH_LIST_CAP = 24;
+  let dashPaintTimer = null;
+
+  function scheduleDashPaint() {
+    if (dashPaintTimer) return;
+    dashPaintTimer = setTimeout(() => {
+      dashPaintTimer = null;
+      try { View.paintPlanCarousel(); } catch (_) {}
+    }, 400);
+  }
+
+  function tipChipsHtml(articleId, limit) {
+    const tips = Syndicate.suggestionsOf(articleId, limit || 3);
+    if (!tips.length) return `<span class="meta">No strong destination yet</span>`;
+    return tips.map((c, i) => {
+      const name = c.name || c.key;
+      const posted = !!c.alreadyPosted;
+      const score = !posted && c.score != null ? Math.round(c.score) : "";
+      return `<span class="syn-suggest${i === 0 && !posted ? " is-top" : ""}${posted ? " is-posted" : ""}">r/${esc(name)}${posted ? `<em class="syn-posted-tag">posted</em>` : (score !== "" ? `<em>${score}</em>` : "")}</span>`;
+    }).join("");
+  }
+
+  function articleDetailHtml(article) {
+    if (!article) {
+      return `<div class="empty syn-detail-empty"><strong>Pick a headline</strong><p>Destinations come from the title and summary.</p></div>`;
+    }
+    const cached = Syndicate.matchOf(article.id);
+    const keys = (cached && cached.keywords) || Syndicate.keywords(article, 10);
+    const post = Syndicate.asPost(article);
+    const when = whenBits(article);
+    const hero = article.image
+      ? (article.link
+        ? `<a class="syn-article-hero" href="${esc(article.link)}" target="_blank" rel="noopener" title="Open article"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></a>`
+        : `<div class="syn-article-hero"><img src="${esc(article.image)}" alt="" referrerpolicy="no-referrer" /></div>`)
+      : "";
+    const title = article.link
+      ? `<h3 class="syn-article-title"><a href="${esc(article.link)}" target="_blank" rel="noopener" title="Open article">${esc(article.title)}</a></h3>`
+      : `<h3 class="syn-article-title">${esc(article.title)}</h3>`;
+    return `
+      <article class="syn-article" data-syn-sidebar-id="${esc(article.id)}">
+        ${hero}
+        <div class="syn-article-kicker">
+          <span class="syn-source-box">${esc(article.source || "")}</span>
+          ${when.rel ? `<span class="syn-time-box" title="${esc(when.abs)}">${esc(when.rel)}</span>` : ""}
+          ${article.category ? `<span class="badge">${esc(article.category)}</span>` : ""}
+        </div>
+        ${title}
+        ${article.link ? `<a class="syn-article-link" href="${esc(article.link)}" target="_blank" rel="noopener">Read original ↗</a>` : ""}
+        ${article.summary ? `<p class="syn-article-sum">${esc(article.summary)}</p>` : ""}
+        <div class="syn-article-keys">
+          <span class="group-label">Keywords</span>
+          <div class="keyword-cloud">${keys.map((k) => `<span class="kw"><code>${esc(k)}</code></span>`).join("") || "<span class=\"meta\">none yet</span>"}</div>
+        </div>
+        <div class="syn-article-actions">
+          <button type="button" class="btn ${cached ? "ghost" : "primary"}" data-action="syn-match" ${matchBusy === article.id ? "disabled" : ""}>
+            ${matchBusy === article.id ? "Matching…" : cached ? "Refresh match" : "Match now"}
+          </button>
+          ${window.FocusView ? `<button type="button" class="btn primary" data-action="syn-focus">Open in Plan</button>` : ""}
+        </div>
+        <div id="syndicate-match" class="syn-match">
+          ${cached
+            ? matchHtml(cached, post)
+            : `<p class="hint">${matchBusy === article.id
+              ? "Ranking communities from the title and summary…"
+              : "Destinations appear from keywords and civic spheres — or tap Match now."}</p>`}
+        </div>
+      </article>`;
+  }
+
+  function openArticleSidebar(article) {
+    if (!article || !window.Sidebar) return;
+    selectedId = article.id;
+    Sidebar.open({
+      id: "section-sidebar",
+      title: article.source || "Headline",
+      subtitle: article.title ? String(article.title).slice(0, 72) : "",
+      content: articleDetailHtml(article),
+      onMount: () => {
+        /* Quiet upgrade once the sidebar is open. */
+        ensureSelectedMatched();
+      },
+    });
+  }
+
   View.paintPlanCarousel = function () {
     const host = Dom.byId("plan-syndicate-body");
     if (!host) return;
-    const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
+    paintDashPullButton();
+    const picks = (Syndicate.topPicks && Syndicate.topPicks(DASH_LIST_CAP)) || [];
     if (!picks.length) {
+      planListSig = "";
       host.innerHTML = `<div class="empty plan-syn-empty">
-        <strong>No ranked headlines yet</strong>
-        <p>Syndicate articles load in the background when enabled in Settings — or open Syndicate and tap Pull latest.</p>
+        <strong>No headlines yet</strong>
+        <p>Tap <em>Pull latest</em> to read Politics and News feeds here.</p>
       </div>`;
       return;
     }
-    if (planSynIndex >= picks.length) planSynIndex = 0;
-    if (planSynIndex < 0) planSynIndex = picks.length - 1;
-    const a = picks[planSynIndex];
-    const tips = Syndicate.suggestionsOf(a.id, 4);
-    const keys = Syndicate.keywords(a, 8);
-    const when = a.published ? Util.relTime(a.published) : "";
-    const thumb = a.image
-      ? `<img class="plan-syn-media" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
-      : `<div class="plan-syn-media plan-syn-media-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
-    const tipHtml = tips.length
-      ? `<div class="plan-syn-dests">${tips.map((c, i) => {
-          const name = c.name || c.key;
-          const posted = !!c.alreadyPosted;
-          const score = !posted && c.score != null ? Math.round(c.score) : "";
-          const terms = (!posted && (c.overlapTerms || [])).slice(0, 3).map((t) =>
-            typeof t === "string" ? t : (t.term || "")
-          ).filter(Boolean);
-          return `<div class="plan-syn-dest${i === 0 && !posted ? " is-top" : ""}${posted ? " is-posted" : ""}"${posted ? ` title="Already posted on r/${esc(name)}"` : ""}>
-            <span class="plan-syn-dest-name">r/${esc(name)}</span>
-            ${posted
-              ? `<span class="badge bad">already on r/${esc(name)}</span>`
-              : (score !== "" ? `<span class="badge accent">${esc(String(score))}</span>` : "")}
-            ${terms.length ? `<span class="plan-syn-dest-terms">${terms.map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>` : ""}
-          </div>`;
-        }).join("")}</div>`
-      : "";
-    host.innerHTML = `
-      <article class="plan-syn-slide" data-plan-syn-id="${esc(a.id)}">
-        ${thumb}
-        <div class="plan-syn-copy">
-          <div class="plan-syn-kicker">
-            <span class="syn-source-box">${esc(a.source || "")}</span>
-            ${when ? `<span class="syn-time-box">${esc(when)}</span>` : ""}
-            <span class="meta">${planSynIndex + 1}/${picks.length}</span>
-          </div>
-          <h3 class="plan-syn-title">${a.link
-            ? `<a href="${esc(a.link)}" target="_blank" rel="noopener" title="Open article">${esc(a.title)}</a>`
-            : esc(a.title)}</h3>
-          ${a.summary ? `<p class="plan-syn-brief">${esc(a.summary.slice(0, 220))}${a.summary.length > 220 ? "…" : ""}</p>` : ""}
-          ${keys.length ? `<div class="plan-syn-keys">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>` : ""}
-          ${tipHtml}
-          <div class="plan-syn-actions">
-            <button type="button" class="btn primary small" data-action="plan-syn-open">Open in Plan</button>
-            ${a.link ? `<a class="btn ghost small" href="${esc(a.link)}" target="_blank" rel="noopener">Read ↗</a>` : ""}
-          </div>
-        </div>
-      </article>`;
+
+    const sig = picks.map((a) => a.id).join(",");
+    /* Same set of headlines: refresh destination chips without replacing
+     * the row buttons the user may be mid-tapping. */
+    if (sig === planListSig && host.querySelector(".plan-syn-list")) {
+      for (const a of picks) {
+        const tips = host.querySelector(`[data-plan-syn-id="${CSS.escape(a.id)}"] [data-plan-syn-tips]`);
+        if (tips) tips.innerHTML = tipChipsHtml(a.id, 3);
+      }
+      return;
+    }
+    planListSig = sig;
+
+    host.innerHTML = `<div class="plan-syn-list" role="list">
+      ${picks.map((a) => {
+        const when = a.published ? Util.relTime(a.published) : "";
+        const thumb = a.image
+          ? `<img class="plan-syn-list-thumb" src="${esc(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+          : `<div class="plan-syn-list-thumb is-empty" aria-hidden="true">${esc((a.source || "?").slice(0, 1).toUpperCase())}</div>`;
+        return `
+          <article class="plan-syn-row" data-plan-syn-id="${esc(a.id)}" role="listitem">
+            <button type="button" class="plan-syn-row-main" data-action="plan-syn-open-sidebar" data-syn-id="${esc(a.id)}"
+                    title="Open headline and destinations">
+              ${thumb}
+              <div class="plan-syn-row-copy">
+                <div class="plan-syn-kicker">
+                  <span class="syn-source-box">${esc(a.source || "")}</span>
+                  ${when ? `<span class="syn-time-box">${esc(when)}</span>` : ""}
+                </div>
+                <h3 class="plan-syn-row-title">${esc(a.title)}</h3>
+                <div class="syn-suggests" data-plan-syn-tips>${tipChipsHtml(a.id, 3)}</div>
+              </div>
+            </button>
+            <div class="plan-syn-row-actions">
+              <button type="button" class="btn primary small" data-action="plan-syn-open" data-syn-id="${esc(a.id)}">Open in Plan</button>
+            </div>
+          </article>`;
+      }).join("")}
+    </div>`;
   };
 
-  function planSynStep(delta) {
-    const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
-    if (!picks.length) return;
-    planSynIndex = (planSynIndex + delta + picks.length) % picks.length;
-    View.paintPlanCarousel();
-  }
-
   async function pullFeeds() {
-    const btn = Dom.byId("syndicate-pull");
-    const status = Dom.byId("syndicate-status");
-    if (Syndicate.pulling()) return;
+    if (Syndicate.pulling()) {
+      setStatus("Already pulling feeds…", { force: true });
+      Util.toast("Already pulling feeds");
+      paintDashPullButton();
+      return;
+    }
 
     if (window.Demo && Demo.isActive()) {
       Syndicate.loadDemo();
-      if (status) status.textContent = "Demo headlines loaded — suggesting destinations offline.";
+      setStatus("Demo headlines loaded — ranking destinations offline.", { force: true });
       if (!selectedId && Syndicate.articles()[0]) selectedId = Syndicate.articles()[0].id;
       View.render();
+      View.paintPlanCarousel();
       scheduleAutoSuggest({ announce: false, delay: 40 });
       return;
     }
 
-    if (btn) { btn.disabled = true; btn.textContent = "Pulling…"; }
-    if (status) status.textContent = "Reading feeds…";
+    paintDashPullButton();
+    const deskBtn = Dom.byId("syndicate-pull");
+    if (deskBtn) { deskBtn.disabled = true; deskBtn.textContent = "Pulling…"; }
+    setStatus("Reading feeds…", { force: true });
 
     try {
       const res = await Syndicate.pull({
-        onProgress: (done, total, title) => {
-          if (status) status.textContent = `Reading ${done}/${total} · ${title}`;
+        onProgress: (done, total) => {
+          /* Counts only — rotating feed titles made the status line thrash. */
+          setStatus(`Reading feeds… ${done}/${total}`);
         },
       });
       const errBit = res.errors.length
         ? ` · ${res.errors.length} feed${res.errors.length === 1 ? "" : "s"} failed`
         : "";
-      if (status) {
-        if (res.keptCache) {
-          status.textContent = `Feeds failed${errBit} — keeping ${Util.fmtNum(res.articles.length)} cached headlines`;
-        } else {
-          status.textContent = res.articles.length
-            ? `${Util.fmtNum(res.articles.length)} headlines from ${res.feedCount} feeds${errBit}`
-            : `No headlines${errBit}`;
-        }
+      if (res.keptCache) {
+        setStatus(`Feeds failed${errBit} — keeping ${Util.fmtNum(res.articles.length)} cached headlines`, { force: true });
+      } else {
+        setStatus(res.articles.length
+          ? `${Util.fmtNum(res.articles.length)} headlines from ${res.feedCount} feeds${errBit}`
+          : `No headlines${errBit}`, { force: true });
       }
       if (res.errors.length) console.warn("[syndicate] feed errors:", res.errors);
       if (!selectedId && filtered()[0]) selectedId = filtered()[0].id;
@@ -798,17 +894,24 @@
         res.errors.length && !res.articles.length && !res.keptCache ? "error" : ""
       );
       View.render();
+      View.paintPlanCarousel();
       if (res.articles.length) {
-        scheduleAutoSuggest({ announce: true, delay: 40 });
+        /* Quiet ranking — wave chatter stays off the status line. */
+        scheduleAutoSuggest({ announce: false, delay: 40 });
       }
     } catch (err) {
-      if (status) status.textContent = (err && err.message) || String(err);
+      setStatus((err && err.message) || String(err), { force: true });
       Util.toast("Could not pull feeds", "error");
       View.render();
+      View.paintPlanCarousel();
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "↻ Pull latest"; }
+      if (deskBtn) { deskBtn.disabled = false; deskBtn.textContent = "↻ Pull latest"; }
+      paintDashPullButton();
     }
   }
+
+  View.pullFeeds = pullFeeds;
+  View.openArticleSidebar = openArticleSidebar;
 
   View.mount = function () {
     View.wireGlobals();
@@ -922,26 +1025,38 @@
     paintSuggestButton();
   };
 
-  /* Plan carousel + auto-pull listeners — wired once from boot so Plan
-   * works before the user has opened the Syndicate desk. */
+  /* Dashboard list + pull — wired once from boot so Recommend works
+   * before the user has opened a dedicated Syndicate desk. */
   View.wireGlobals = function () {
     if (globalsWired) return;
     globalsWired = true;
 
-    Dom.delegate(document, "click", '[data-action="plan-syn-prev"]', () => planSynStep(-1));
-    Dom.delegate(document, "click", '[data-action="plan-syn-next"]', () => planSynStep(1));
-    Dom.delegate(document, "click", '[data-action="plan-syn-open"]', () => {
-      const picks = (Syndicate.topPicks && Syndicate.topPicks(12)) || [];
-      const a = picks[planSynIndex];
-      if (a) openInPlan(a);
+    Dom.delegate(document, "click", '[data-action="plan-syn-pull"]', () => {
+      pullFeeds().catch(() => {});
+    });
+    Dom.delegate(document, "click", '[data-action="plan-syn-suggest"]', () => {
+      suggestVisible({ toast: true, announce: false, force: false }).catch(() => {});
+    });
+    Dom.delegate(document, "click", '[data-action="plan-syn-open-sidebar"]', (e, el) => {
+      const id = el.dataset.synId;
+      const article = Syndicate.articles().find((a) => a && a.id === id);
+      if (article) openArticleSidebar(article);
+    });
+    Dom.delegate(document, "click", '[data-action="plan-syn-open"]', (e, el) => {
+      const id = el.dataset.synId;
+      let article = id ? Syndicate.articles().find((a) => a && a.id === id) : null;
+      if (!article) {
+        const picks = (Syndicate.topPicks && Syndicate.topPicks(DASH_LIST_CAP)) || [];
+        article = picks[0] || null;
+      }
+      if (article) openInPlan(article);
     });
 
     document.addEventListener("syndicate:pulled", () => {
       if (Router.current() === "syndicate") {
         try { View.render(); } catch (_) {}
-      } else {
-        try { View.paintPlanCarousel(); } catch (_) {}
       }
+      try { View.paintPlanCarousel(); } catch (_) {}
       scheduleAutoSuggest({ announce: false, delay: 100 });
     });
   };
@@ -951,6 +1066,17 @@
     subtitle: View.subtitle,
     mount: View.mount,
     render: View.render,
+    enter: function () {
+      /* Desk lives on the Recommend dashboard now — keep the route as a
+       * soft redirect so old bookmarks still land somewhere useful. */
+      if (window.AppState) AppState.dashSection = "recommend";
+      Router.go("dashboard");
+      window.setTimeout(() => {
+        try { View.paintPlanCarousel(); } catch (_) {}
+        const card = Dom.byId("plan-syndicate-card");
+        if (card) try { card.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (_) {}
+      }, 60);
+    },
   });
 
   window.SyndicateView = View;
