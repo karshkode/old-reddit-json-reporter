@@ -2630,13 +2630,6 @@ a.syn-title:focus-visible {
   color: var(--text-mute);
   margin-right: 4px;
 }
-.focus-chosen-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: flex-start;
-  flex-shrink: 0;
-}
 
 @media (max-width: 640px) {
   .feed-card {
