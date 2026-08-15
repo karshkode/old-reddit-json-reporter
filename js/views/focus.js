@@ -140,7 +140,7 @@
     const btn = document.querySelector('#focus-card [data-action="focus-ocr"]');
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "Reading…";
+      btn.textContent = opts.interactive ? "Reading…" : "Trying…";
     }
     try {
       if (typeof setStatus === "function") setStatus("Reading text in the image (on-device OCR)…");
@@ -148,14 +148,22 @@
     try {
       const text = await ImageText.ensure(post, {
         force: !!opts.force,
+        interactive: !!opts.interactive,
+        allowLocalFallback: !!opts.interactive,
         onStatus: (msg) => {
           try { setStatus(msg); } catch (_) {}
+          if (btn && msg) {
+            btn.textContent = /pick|blocked|paste|save|Choose/i.test(msg) ? "Choose image…" : "Reading…";
+          }
         },
       });
       cache.delete(post.id);
       if (window.AppState && AppState.postRelated) AppState.postRelated.delete(post.id);
       if (opts.interactive) {
-        try { Util.toast("Image text ready — re-ranking destinations.", "ok"); } catch (_) {}
+        const via = post.image_text_source === "upload" || post.image_text_source === "paste"
+          ? " from your image"
+          : "";
+        try { Util.toast("Image text ready" + via + " — re-ranking destinations.", "ok"); } catch (_) {}
       }
       if (focusId === post.id) {
         busy = false;
@@ -166,8 +174,9 @@
       return text;
     } catch (err) {
       if (opts.interactive) {
+        const msg = (err && err.message) || String(err);
         try {
-          Util.toast("Couldn't read image: " + ((err && err.message) || err), "err");
+          Util.toast(/cancel/i.test(msg) ? "Image read cancelled." : ("Couldn't read image: " + msg), "err");
         } catch (_) {}
       }
       render();
@@ -537,7 +546,7 @@
       && !post.image_text;
     const ocrBtn = needsOcr
       ? `<button type="button" class="btn small" data-action="focus-ocr"
-                 title="Read text inside the image on this device (Tesseract OCR — no cloud AI)">Read image text</button>`
+                 title="Read text in the image. If Reddit blocks the download (403), you will be asked to pick a saved copy or screenshot — OCR still runs on this device.">Read image text</button>`
       : (post.image_text
         ? `<button type="button" class="btn ghost small" data-action="focus-ocr" data-force="1"
                    title="Re-run OCR on the image">Re-read image</button>`
