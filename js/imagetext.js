@@ -112,6 +112,9 @@
     if (!post) return;
     const clean = String(text || "").replace(/\s+/g, " ").trim();
     if (!clean) return;
+    if (source !== "caption" && ImageText.isPlausible && !ImageText.isPlausible(clean)) {
+      return;
+    }
     post.image_text = clean;
     post.image_text_source = source || "ocr";
     const map = cache();
@@ -293,6 +296,8 @@
 
   function tidyOcr(raw) {
     return String(raw || "")
+      .replace(/\u2018|\u2019/g, "'")
+      .replace(/\u201c|\u201d/g, '"')
       .replace(/[|]/g, "I")
       .replace(/[^\S\n]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
@@ -300,16 +305,168 @@
       .slice(0, 2500);
   }
 
+  /* Yellow caption cards and meme text fail hard when OCR treats the
+   * photo as the signal. Emphasize light / warm pixels, upscale, and
+   * stretch contrast before Tesseract sees the frame. */
+  async function preprocessBlob(blob) {
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(blob);
+    } catch (_) {
+      return blob;
+    }
+    const srcW = bitmap.width || 0;
+    const srcH = bitmap.height || 0;
+    if (srcW < 8 || srcH < 8) {
+      try { bitmap.close(); } catch (_) {}
+      return blob;
+    }
+    /* Prefer a long edge around 1600–2000px — captions on phone screenshots
+     * need scale-up; giant originals just burn OCR time. */
+    const target = 1800;
+    const scale = Math.max(1.25, Math.min(2.75, target / Math.max(srcW, srcH)));
+    const w = Math.max(1, Math.round(srcW * scale));
+    const h = Math.max(1, Math.round(srcH * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    try { bitmap.close(); } catch (_) {}
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const gray = new Float32Array(w * h);
+    let min = 255;
+    let max = 0;
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      /* Luma plus a yellow/white boost — Social Security–style captions
+       * are often bright yellow on photos and vanish in plain grayscale. */
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      const warm = (r + g) * 0.5 - b * 0.35;
+      let v = Math.max(luma, warm);
+      /* Crush mid-mud so letters separate from busy backgrounds. */
+      v = (v - 90) * 1.55 + 90;
+      v = Math.max(0, Math.min(255, v));
+      gray[p] = v;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const span = Math.max(18, max - min);
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      let v = ((gray[p] - min) / span) * 255;
+      /* Soft threshold: keep grayscale detail, push near-white toward 255. */
+      if (v > 165) v = 255 - (255 - v) * 0.25;
+      else if (v < 70) v = v * 0.55;
+      const out = Math.max(0, Math.min(255, Math.round(v)));
+      d[i] = d[i + 1] = d[i + 2] = out;
+      d[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+
+    return await new Promise((resolve) => {
+      canvas.toBlob((out) => resolve(out || blob), "image/png");
+    });
+  }
+
+  function meanConfidence(data) {
+    const words = (data && data.words) || [];
+    const scored = words
+      .map((w) => Number(w.confidence))
+      .filter((c) => Number.isFinite(c) && c > 0);
+    if (!scored.length) return data && Number.isFinite(data.confidence) ? data.confidence : 0;
+    return scored.reduce((a, b) => a + b, 0) / scored.length;
+  }
+
+  /* Reject "lemma on A / COCK Bia" style junk so it cannot poison
+   * destination matching. */
+  ImageText.isPlausible = function (text, confidence) {
+    const t = String(text || "").trim();
+    if (t.length < 12) return false;
+    const letters = (t.match(/[A-Za-z]/g) || []).length;
+    const digits = (t.match(/\d/g) || []).length;
+    const spacey = (t.match(/\s/g) || []).length;
+    const weird = (t.match(/[^A-Za-z0-9\s.,!?'"$:;%&\-()/]/g) || []).length;
+    const alphaRatio = letters / Math.max(1, t.length);
+    const weirdRatio = weird / Math.max(1, t.length);
+    const words = t.split(/\s+/).filter(Boolean);
+    const realish = words.filter((w) => /[A-Za-z]{3,}/.test(w)).length;
+    if (alphaRatio < 0.45) return false;
+    if (weirdRatio > 0.18) return false;
+    if (realish < 3 && (letters + digits) < 24) return false;
+    if (confidence != null && confidence < 42 && realish < 6) return false;
+    if (words.length >= 4 && realish / words.length < 0.35) return false;
+    /* Very short lines of noise with almost no spaces. */
+    if (spacey < 2 && t.length < 40 && confidence < 55) return false;
+    return true;
+  };
+
+  ImageText.clear = function (post) {
+    if (!post) return;
+    delete post.image_text;
+    delete post.image_text_source;
+    const map = cache();
+    if (map && post.id) map.delete(post.id);
+  };
+
+  async function recognizeOnce(worker, blob, psm) {
+    if (psm != null) {
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: String(psm) });
+      } catch (_) {}
+    }
+    const result = await worker.recognize(blob);
+    const data = result && result.data;
+    const text = tidyOcr(data && data.text);
+    const confidence = meanConfidence(data);
+    return { text, confidence, data };
+  }
+
   ImageText.recognizeBlob = async function (blob, onStatus) {
     if (!blob) throw new Error("No image");
+    if (typeof onStatus === "function") onStatus("Preparing image…");
+    const prepared = await preprocessBlob(blob);
     if (typeof onStatus === "function") onStatus("Reading text in image…");
     const worker = await getWorker();
-    const result = await worker.recognize(blob);
-    const text = tidyOcr(result && result.data && result.data.text);
-    if (!text || text.length < 8) {
+    /* 3 = fully auto; 11 = sparse text (captions / overlays); 6 = block. */
+    const modes = [3, 11, 6];
+    let best = null;
+    for (const psm of modes) {
+      try {
+        const hit = await recognizeOnce(worker, prepared, psm);
+        if (!hit.text) continue;
+        if (!best
+            || (ImageText.isPlausible(hit.text, hit.confidence)
+                && hit.confidence > (best.confidence || 0) + 2)
+            || (!ImageText.isPlausible(best.text, best.confidence)
+                && ImageText.isPlausible(hit.text, hit.confidence))) {
+          best = hit;
+        }
+        /* Good enough — stop early. */
+        if (ImageText.isPlausible(hit.text, hit.confidence) && hit.confidence >= 62) {
+          best = hit;
+          break;
+        }
+      } catch (_) { /* try next mode */ }
+    }
+    if (!best || !best.text || best.text.length < 8) {
       throw new Error("No readable text found in the image");
     }
-    return text;
+    if (!ImageText.isPlausible(best.text, best.confidence)) {
+      const err = new Error(
+        "OCR was too messy to trust (try Re-read, or upload a clearer crop of the caption)."
+      );
+      err.messy = true;
+      err.raw = best.text;
+      err.confidence = best.confidence;
+      throw err;
+    }
+    return best.text;
   };
 
   /* Resolve text for a post: cache → captions → network OCR → local file. */
@@ -318,11 +475,21 @@
     if (!post || !post.id) return "";
     const hit = ImageText.getCached(post.id);
     if (hit && hit.text && !opts.force) {
-      post.image_text = hit.text;
-      post.image_text_source = hit.source;
-      return hit.text;
+      if (!ImageText.isPlausible(hit.text)) {
+        ImageText.clear(post);
+      } else {
+        post.image_text = hit.text;
+        post.image_text_source = hit.source;
+        return hit.text;
+      }
     }
-    if (post.image_text && !opts.force) return post.image_text;
+    if (post.image_text && !opts.force) {
+      if (!ImageText.isPlausible(post.image_text)) {
+        ImageText.clear(post);
+      } else {
+        return post.image_text;
+      }
+    }
     if (post.media_captions && !opts.force) {
       ImageText.applyToPost(post, post.media_captions, "caption");
       return post.image_text;
