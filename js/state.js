@@ -41,6 +41,8 @@
      * Title/body keywords stay on Discovery; this is reception tone and
      * what the thread actually talked about in that subreddit. */
     audienceByPost: new Map(),
+    /* post id -> { text, source: caption|ocr, at } from ImageText.ensure */
+    imageTextByPost: new Map(),
     subProfiles: {},
     crossPosts: [],
     campaignSummaries: {},

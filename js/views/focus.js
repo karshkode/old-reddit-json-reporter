@@ -129,6 +129,52 @@
     }
   }
 
+  /* On-device OCR for screenshot / image posts. Fills post.image_text so
+   * Discovery can match on what the image actually says, then re-ranks. */
+  async function runImageText(post, opts) {
+    opts = opts || {};
+    if (!post || !window.ImageText || !ImageText.ensure) return null;
+    if (!ImageText.isImagePost(post)) return null;
+    if (post.image_text && !opts.force) return post.image_text;
+
+    const btn = document.querySelector('#focus-card [data-action="focus-ocr"]');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Reading…";
+    }
+    try {
+      if (typeof setStatus === "function") setStatus("Reading text in the image (on-device OCR)…");
+    } catch (_) {}
+    try {
+      const text = await ImageText.ensure(post, {
+        force: !!opts.force,
+        onStatus: (msg) => {
+          try { setStatus(msg); } catch (_) {}
+        },
+      });
+      cache.delete(post.id);
+      if (window.AppState && AppState.postRelated) AppState.postRelated.delete(post.id);
+      if (opts.interactive) {
+        try { Util.toast("Image text ready — re-ranking destinations.", "ok"); } catch (_) {}
+      }
+      if (focusId === post.id) {
+        busy = false;
+        await rank();
+      } else {
+        render();
+      }
+      return text;
+    } catch (err) {
+      if (opts.interactive) {
+        try {
+          Util.toast("Couldn't read image: " + ((err && err.message) || err), "err");
+        } catch (_) {}
+      }
+      render();
+      return null;
+    }
+  }
+
   /* ------------------------------------------------------------------
    * PICKING
    * ------------------------------------------------------------------ */
@@ -451,9 +497,18 @@
   }
 
   function chosenHtml(post) {
+    if (window.ImageText && ImageText.getCached && !post.image_text) {
+      const hit = ImageText.getCached(post.id);
+      if (hit && hit.text) ImageText.applyToPost(post, hit.text, hit.source);
+    }
     const body = Util.postBody(post, 240);
     const read = ["title"];
-    if (body) read.push("body");
+    if (post.selftext && String(post.selftext).trim()
+        && post.selftext !== "[removed]" && post.selftext !== "[deleted]") {
+      read.push("body");
+    }
+    if (post.image_text) read.push("image text");
+    else if (post.media_captions) read.push("image caption");
     if (post.flair) read.push("flair");
     const kind = window.Rules ? Rules.classify(post) : null;
     const kindBit = kind
@@ -477,13 +532,28 @@
       ? `<button type="button" class="btn ghost small" data-action="focus-open-feed"
                  title="Read this post in the in-app feed">View</button>`
       : "";
+    const needsOcr = window.ImageText && ImageText.isImagePost(post)
+      && Util.postIsTextThin(post)
+      && !post.image_text;
+    const ocrBtn = needsOcr
+      ? `<button type="button" class="btn small" data-action="focus-ocr"
+                 title="Read text inside the image on this device (Tesseract OCR — no cloud AI)">Read image text</button>`
+      : (post.image_text
+        ? `<button type="button" class="btn ghost small" data-action="focus-ocr" data-force="1"
+                   title="Re-run OCR on the image">Re-read image</button>`
+        : "");
+    const imagePreview = post.image_text
+      ? `<p class="focus-image-text" title="Text read from the image (${esc(post.image_text_source || "ocr")})">${esc(trunc(post.image_text, 220))}</p>`
+      : "";
     return `
       <div class="focus-chosen">
         <div class="focus-chosen-main">
           <div class="focus-chosen-title">${esc(trunc(post.title || "(untitled)", 120))}</div>
           <div class="focus-chosen-meta">${whereBit}${scoreBit} · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
+          ${imagePreview}
         </div>
         <div class="focus-chosen-actions">
+          ${ocrBtn}
           ${feedBtn}
           <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
         </div>
@@ -1024,6 +1094,12 @@
     }
     render();
     rank();
+    /* Thin image posts: kick OCR in the background so Plan can rematch
+     * on the screenshot text once Tesseract finishes (no cloud AI). */
+    if (window.ImageText && ImageText.isImagePost(post)
+        && window.Util && Util.postIsTextThin(post) && !post.image_text) {
+      runImageText(post, { interactive: false }).catch(() => {});
+    }
   };
 
   View.mount = function () {
@@ -1057,6 +1133,12 @@
       const post = focused();
       if (!post || !window.FeedView) return;
       FeedView.openPost(post, { title: "r/" + (post.subreddit || "posts") });
+    });
+
+    Dom.delegate(document, "click", '[data-action="focus-ocr"]', (e, btn) => {
+      const post = focused();
+      if (!post || !window.ImageText) return;
+      runImageText(post, { force: btn.dataset.force === "1", interactive: true });
     });
 
     /* The link opens Reddit itself — no preventDefault. All this does

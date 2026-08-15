@@ -582,6 +582,21 @@
       /* Direct playable file when Reddit hosted the video — last resort
        * for share URLs if nothing else embeds. */
       media_fallback_url: (m && m.reddit_video && m.reddit_video.fallback_url) || null,
+      /* Free text attached to media without OCR: gallery captions and
+       * oEmbed blurbs. Discovery folds these in so screenshot posts are
+       * not stuck with only title + flair. */
+      media_captions: (window.ImageText && ImageText.fromListing)
+        ? ImageText.fromListing(d)
+        : "",
+      /* Largest preview URL when present — OCR fallback when url is not
+       * a direct image (e.g. gallery wrapper). */
+      preview_url: (function () {
+        try {
+          const p = d.preview && d.preview.images && d.preview.images[0];
+          const src = p && p.source && p.source.url;
+          return src ? String(src).replace(/&amp;/g, "&") : null;
+        } catch (_) { return null; }
+      })(),
     };
   }
 
