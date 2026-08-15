@@ -1297,9 +1297,54 @@ body.sheet-open {
   gap: var(--s-3);
   padding-bottom: var(--s-3);
   border-bottom: 1px solid var(--border-soft);
+  /* Keep the title column from collapsing when action buttons multiply
+   * (Re-read / Discard / View / Change) on a phone-width card. */
+  flex-wrap: wrap;
 }
 .focus-chosen-main {
+  flex: 1 1 12rem;
   min-width: 0;
+  max-width: 100%;
+}
+.focus-chosen-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.focus-chosen-meta {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+.focus-chosen .btn {
+  flex-shrink: 0;
+}
+.focus-chosen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+@media (max-width: 720px) {
+  .focus-chosen {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .focus-chosen-main {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .focus-chosen-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
 }
 
 /* ---- where the content already is ---- */
@@ -1403,19 +1448,6 @@ body.sheet-open {
   .focus-posted-row .btn { flex: 1 1 0; justify-content: center; }
   .focus-reach { align-items: flex-start; }
   .focus-reach > .btn { width: 100%; justify-content: center; }
-}
-.focus-chosen-title {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-medium);
-  line-height: 1.4;
-}
-.focus-chosen-meta {
-  margin-top: 2px;
-  font-size: var(--fs-xs);
-  color: var(--text-mute);
-}
-.focus-chosen .btn {
-  flex-shrink: 0;
 }
 
 .focus-pending {
