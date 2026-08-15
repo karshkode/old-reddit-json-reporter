@@ -123,7 +123,7 @@
     }
     if (window.Util && Util.postIsTextThin && !Util.postIsTextThin(post)) return "";
     return `<button type="button" class="btn tiny" data-action="feed-ocr" data-post="${esc(post.id)}"
-              title="Read text inside the image on this device (no cloud AI)">Read image</button>`;
+              title="Read text in the image. If Reddit blocks the download, pick a saved copy — OCR runs on this device.">Read image</button>`;
   }
 
   function cardHtml(post, opts) {
@@ -306,13 +306,19 @@
       el.textContent = "Reading…";
       try {
         await ImageText.ensure(post, {
-          onStatus: (msg) => { el.textContent = msg.indexOf("Fetch") === 0 ? "Fetching…" : "Reading…"; },
+          interactive: true,
+          allowLocalFallback: true,
+          onStatus: (msg) => {
+            el.textContent = /pick|blocked|Choose/i.test(msg || "") ? "Choose…" 
+              : /Fetch/i.test(msg || "") ? "Fetching…" : "Reading…";
+          },
         });
         try { Util.toast("Image text ready.", "ok"); } catch (_) {}
         paint();
       } catch (err) {
+        const msg = (err && err.message) || String(err);
         try {
-          Util.toast("Couldn't read image: " + ((err && err.message) || err), "err");
+          Util.toast(/cancel/i.test(msg) ? "Image read cancelled." : ("Couldn't read image: " + msg), "err");
         } catch (_) {}
         el.disabled = false;
         el.textContent = "Read image";

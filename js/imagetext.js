@@ -11,16 +11,42 @@
  *      demand from a CDN, run against the image bytes. No OpenAI /
  *      Vision API. First run downloads the eng traineddata (~few MB).
  *
- * i.redd.it and similar hosts rarely send CORS for canvas reads, so
- * bytes are fetched through the same public CORS proxy chain Syndicate
- * already uses for feeds.
+ * FETCHING BYTES IS THE HARD PART
+ *
+ *   <img src="https://i.redd.it/…"> displays fine from a phone/home IP.
+ *   JavaScript fetch() of the same URL does not: i.redd.it sends no CORS
+ *   headers, and every public CORS proxy is a datacenter IP that Reddit
+ *   answers with 403. So the network path is best-effort only.
+ *
+ *   When every proxy fails, we fall back to a local file / clipboard
+ *   paste — the image is already on screen, so saving or pasting it is
+ *   enough for OCR to run entirely on-device with no Reddit round-trip.
  * ===================================================================== */
 (function () {
   "use strict";
 
   const ImageText = {};
-  const PROXY = "https://corsproxy.io/?";
   const TESSERACT_SRC = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+
+  /* Ordered fetch attempts. Image CDNs that re-host with CORS headers
+   * come first; generic CORS relays last (often 403 on i.redd.it). */
+  function proxyTargets(url) {
+    const bare = String(url || "").replace(/^https?:\/\//i, "");
+    const full = encodeURIComponent(url);
+    const bareEnc = encodeURIComponent(bare);
+    return [
+      /* Direct — works for hosts that send ACAO (rare for Reddit). */
+      { label: "direct", href: url },
+      /* wsrv.nl / images.weserv.nl — image CDN that adds CORS. */
+      { label: "wsrv", href: "https://wsrv.nl/?url=" + bareEnc + "&output=jpg&n=-1" },
+      { label: "weserv", href: "https://images.weserv.nl/?url=" + bareEnc + "&output=jpg&n=-1" },
+      { label: "wsrv-full", href: "https://wsrv.nl/?url=" + full + "&output=jpg&n=-1" },
+      /* Generic relays — may 403 on Reddit CDN. */
+      { label: "allorigins", href: "https://api.allorigins.win/raw?url=" + full },
+      { label: "corsproxy", href: "https://corsproxy.io/?" + full },
+      { label: "codetabs", href: "https://api.codetabs.com/v1/proxy?quest=" + full },
+    ];
+  }
 
   let tessLoading = null;
   let workerPromise = null;
@@ -30,19 +56,8 @@
     return (window.AppState && AppState.imageTextByPost) || null;
   }
 
-  /* Pull free text Reddit already attached — captions and media titles.
-   * Called from normalizePost so thin image posts get something before
-   * OCR ever runs. */
   ImageText.fromListing = function (d) {
     const bits = [];
-    const meta = d && d.media_metadata;
-    if (meta && typeof meta === "object") {
-      for (const key of Object.keys(meta)) {
-        const m = meta[key];
-        if (!m || typeof m !== "object") continue;
-        if (m.s && m.s.u) {/* ignore urls */}
-      }
-    }
     const gallery = d && d.gallery_data && Array.isArray(d.gallery_data.items)
       ? d.gallery_data.items
       : [];
@@ -60,12 +75,13 @@
     return bits.join("\n").trim();
   };
 
-  /* Best URL to OCR — prefer the direct image, fall back to a large preview. */
   ImageText.urlFor = function (post) {
     if (!post) return "";
-    const url = String(post.url || "");
+    const url = String(post.url || "").replace(/&amp;/g, "&");
     if (/i\.redd\.it\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url)) return url;
-    if (post.preview_url && /^https?:/i.test(post.preview_url)) return post.preview_url;
+    if (post.preview_url && /^https?:/i.test(post.preview_url)) {
+      return String(post.preview_url).replace(/&amp;/g, "&");
+    }
     if (post.media_thumbnail && /^https?:/i.test(post.media_thumbnail)
         && !/default|self|nsfw|spoiler/i.test(post.media_thumbnail)) {
       return post.media_thumbnail;
@@ -127,27 +143,153 @@
     return workerPromise;
   }
 
-  async function fetchImageBlob(url) {
-    /* Direct first — some CDNs allow CORS; fall back to proxy. */
-    const attempts = [url, PROXY + encodeURIComponent(url)];
-    let lastErr = null;
-    for (const target of attempts) {
-      try {
-        const res = await fetch(target, { credentials: "omit", mode: "cors" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const blob = await res.blob();
-        if (!blob || !blob.size) throw new Error("empty image");
-        if (blob.type && !/^image\//i.test(blob.type) && !/octet-stream/i.test(blob.type)) {
-          /* Proxy sometimes returns HTML error pages. */
-          throw new Error("not an image");
+  function looksLikeImageBlob(blob) {
+    if (!blob || !blob.size) return false;
+    if (blob.type && /^image\//i.test(blob.type)) return true;
+    if (blob.type && /octet-stream/i.test(blob.type)) return true;
+    /* Relays sometimes omit Content-Type; size alone is a weak signal. */
+    return !blob.type && blob.size > 512;
+  }
+
+  async function fetchViaHttp(href) {
+    const res = await fetch(href, { credentials: "omit", mode: "cors" });
+    if (!res.ok) {
+      const err = new Error("HTTP " + res.status);
+      err.status = res.status;
+      throw err;
+    }
+    const blob = await res.blob();
+    if (!looksLikeImageBlob(blob)) throw new Error("not an image");
+    return blob;
+  }
+
+  /* Load through <img crossOrigin> + canvas — works when the URL sends
+   * ACAO (weserv does). Avoids some fetch() Content-Type quirks. */
+  function fetchViaImageElement(href) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("image load timeout"));
+      }, 20000);
+      function cleanup() {
+        window.clearTimeout(timer);
+        img.onload = null;
+        img.onerror = null;
+      }
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || 0;
+          const h = img.naturalHeight || 0;
+          if (w < 8 || h < 8) throw new Error("empty image");
+          const canvas = document.createElement("canvas");
+          /* Cap huge screenshots so OCR stays responsive on phones. */
+          const maxEdge = 1600;
+          const scale = Math.min(1, maxEdge / Math.max(w, h));
+          canvas.width = Math.max(1, Math.round(w * scale));
+          canvas.height = Math.max(1, Math.round(h * scale));
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            cleanup();
+            if (!blob) reject(new Error("canvas export failed"));
+            else resolve(blob);
+          }, "image/jpeg", 0.92);
+        } catch (err) {
+          cleanup();
+          reject(err);
         }
+      };
+      img.onerror = () => {
+        cleanup();
+        reject(new Error("image element failed"));
+      };
+      img.src = href;
+    });
+  }
+
+  async function fetchImageBlob(url, onStatus) {
+    const attempts = proxyTargets(url);
+    let saw403 = false;
+    let lastErr = null;
+    for (const attempt of attempts) {
+      if (typeof onStatus === "function") onStatus("Fetching image…");
+      try {
+        /* Prefer img+canvas for weserv (CORS-friendly); fetch for others. */
+        const blob = /wsrv|weserv/i.test(attempt.label)
+          ? await fetchViaImageElement(attempt.href).catch(() => fetchViaHttp(attempt.href))
+          : await fetchViaHttp(attempt.href);
         return blob;
       } catch (err) {
         lastErr = err;
+        if (err && (err.status === 403 || /HTTP 403/.test(String(err.message || "")))) {
+          saw403 = true;
+        }
       }
     }
-    throw lastErr || new Error("Could not fetch image");
+    const err = lastErr || new Error("Could not fetch image");
+    err.blocked = saw403;
+    err.message = saw403
+      ? "Reddit blocked image download (403). Use a saved copy or paste a screenshot."
+      : (err.message || "Could not fetch image");
+    throw err;
   }
+
+  /* Hidden file picker — used when Reddit blocks every network path. */
+  ImageText.pickLocalFile = function (opts) {
+    opts = opts || {};
+    return new Promise((resolve, reject) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.style.position = "fixed";
+      input.style.left = "-9999px";
+      document.body.appendChild(input);
+      let settled = false;
+      function done(err, file) {
+        if (settled) return;
+        settled = true;
+        try { input.remove(); } catch (_) {}
+        window.removeEventListener("focus", onFocusCheck);
+        if (err) reject(err);
+        else resolve(file);
+      }
+      input.addEventListener("change", () => {
+        const file = input.files && input.files[0];
+        if (!file) done(new Error("No image selected"));
+        else done(null, file);
+      });
+      /* User cancelled the dialog — focus returns with no file. */
+      function onFocusCheck() {
+        window.setTimeout(() => {
+          if (!settled && (!input.files || !input.files.length)) {
+            done(new Error("Cancelled"));
+          }
+        }, 600);
+      }
+      window.addEventListener("focus", onFocusCheck);
+      try {
+        input.click();
+      } catch (err) {
+        done(err || new Error("Could not open file picker"));
+      }
+    });
+  };
+
+  ImageText.readClipboardImage = async function () {
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      throw new Error("Clipboard image paste is not available here");
+    }
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type = (item.types || []).find((t) => /^image\//i.test(t));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      if (blob) return blob;
+    }
+    throw new Error("No image on the clipboard");
+  };
 
   function tidyOcr(raw) {
     return String(raw || "")
@@ -158,7 +300,19 @@
       .slice(0, 2500);
   }
 
-  /* Resolve text for a post: cache → listing captions → OCR. */
+  ImageText.recognizeBlob = async function (blob, onStatus) {
+    if (!blob) throw new Error("No image");
+    if (typeof onStatus === "function") onStatus("Reading text in image…");
+    const worker = await getWorker();
+    const result = await worker.recognize(blob);
+    const text = tidyOcr(result && result.data && result.data.text);
+    if (!text || text.length < 8) {
+      throw new Error("No readable text found in the image");
+    }
+    return text;
+  };
+
+  /* Resolve text for a post: cache → captions → network OCR → local file. */
   ImageText.ensure = async function (post, opts) {
     opts = opts || {};
     if (!post || !post.id) return "";
@@ -177,18 +331,44 @@
     if (inflight.has(post.id)) return inflight.get(post.id);
 
     const job = (async () => {
-      const url = ImageText.urlFor(post);
-      if (!url) throw new Error("No image URL to read");
-      if (typeof opts.onStatus === "function") opts.onStatus("Fetching image…");
-      const blob = await fetchImageBlob(url);
-      if (typeof opts.onStatus === "function") opts.onStatus("Reading text in image…");
-      const worker = await getWorker();
-      const result = await worker.recognize(blob);
-      const text = tidyOcr(result && result.data && result.data.text);
-      if (!text || text.length < 8) {
-        throw new Error("No readable text found in the image");
+      let blob = opts.blob || null;
+      let source = opts.blob ? "upload" : "ocr";
+
+      if (!blob) {
+        const url = ImageText.urlFor(post);
+        if (url) {
+          try {
+            blob = await fetchImageBlob(url, opts.onStatus);
+            source = "ocr";
+          } catch (err) {
+            /* Interactive callers get a file picker; background auto-OCR
+             * stays quiet so Plan is not interrupted by a dialog. */
+            if (opts.allowLocalFallback === false) throw err;
+            if (!opts.interactive) throw err;
+            if (typeof opts.onStatus === "function") {
+              opts.onStatus("Reddit blocked download — pick the image…");
+            }
+            try {
+              if (opts.preferClipboard) {
+                blob = await ImageText.readClipboardImage();
+                source = "paste";
+              }
+            } catch (_) { /* fall through to file picker */ }
+            if (!blob) {
+              blob = await ImageText.pickLocalFile();
+              source = "upload";
+            }
+          }
+        } else if (opts.interactive) {
+          blob = await ImageText.pickLocalFile();
+          source = "upload";
+        } else {
+          throw new Error("No image URL to read");
+        }
       }
-      ImageText.applyToPost(post, text, "ocr");
+
+      const text = await ImageText.recognizeBlob(blob, opts.onStatus);
+      ImageText.applyToPost(post, text, source);
       return text;
     })();
 
