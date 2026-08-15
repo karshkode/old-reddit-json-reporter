@@ -1730,9 +1730,14 @@
     const settingsBackdrop = document.getElementById("settings-sheet-backdrop");
     if (settingsBackdrop) settingsBackdrop.addEventListener("click", () => setSettingsOpen(false));
 
-    /* Navigation drawer on mobile. */
+    /* Navigation drawer on mobile. Hamburger + bottom Menu tab both open
+     * the full rail (Settings, Sync, theme) without endless scrolling. */
     const railToggle = document.getElementById("rail-toggle");
     if (railToggle) railToggle.addEventListener("click", () => setRailOpen(true));
+    Dom.delegate(document, "click", '[data-action="open-nav-menu"]', (e) => {
+      e.preventDefault();
+      setRailOpen(true);
+    });
     Router.onChange(() => setRailOpen(false));
 
     wireTheme();
@@ -3952,7 +3957,12 @@
   function setRailOpen(open) {
     const rail = document.getElementById("rail");
     if (!rail) return;
-    rail.classList.toggle("open", open);
+    rail.classList.toggle("open", !!open);
+    const toggle = document.getElementById("rail-toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    }
     let scrim = document.getElementById("rail-scrim");
     if (open && !scrim) {
       scrim = document.createElement("div");
@@ -4163,6 +4173,7 @@
     buildCampaignDigest: buildCampaignDigest,
     updateRailCounts: updateRailCounts,
     setSettingsOpen: setSettingsOpen,
+    setRailOpen: setRailOpen,
     clearCachedPosts: clearCachedPosts,
     describePendingFetch: describePendingFetch,
     populateCampaignSelectors: populateCampaignSelectors,

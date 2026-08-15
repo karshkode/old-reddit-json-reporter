@@ -54,6 +54,8 @@
     /* ---- Dashboard ---- */
     /* summary | timing | charts | themes | communities | crossposts */
     dashSection: "recommend",
+    /* Mobile Recommend sub-panel: posts | syndicate | crossposts */
+    recommendPanel: "posts",
     timelineMode: "lines", /* lines | stacked | density | total */
     timelineWindow: "7d",  /* 1d | 3d | 7d | 30d | 90d | 1y | all | auto */
 

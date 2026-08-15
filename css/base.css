@@ -1029,9 +1029,11 @@ table.data .num {
   scrollbar-width: none;
   padding: var(--s-2) 0;
   position: sticky;
-  top: 0;
+  /* Sit under the sticky topbar — top:0 put the strip underneath it so
+   * section tabs vanished after a short scroll on phones. */
+  top: var(--topbar-h);
   background: var(--bg);
-  z-index: 4;
+  z-index: 15;
   margin-bottom: var(--s-2);
 }
 .section-rail::-webkit-scrollbar {
@@ -1073,4 +1075,47 @@ table.data .num {
 .section-rail button.active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* Dashboard: one sticky stack for section tabs + Recommend sub-panels so
+ * phones can jump without scrolling past KPIs and every list. */
+.dash-nav-stack {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 15;
+  background: var(--bg);
+  margin-bottom: var(--s-2);
+  padding-bottom: var(--s-1);
+  border-bottom: 1px solid var(--border-soft);
+}
+.dash-nav-stack .section-rail {
+  position: static;
+  top: auto;
+  z-index: auto;
+  margin-bottom: 0;
+  background: transparent;
+  mask-image: none;
+}
+.dash-nav-stack .recommend-subrail {
+  padding-top: 0;
+}
+.dash-nav-stack .recommend-subrail[hidden] {
+  display: none !important;
+}
+@media (max-width: 900px) {
+  .dash-nav-stack {
+    margin-inline: calc(var(--s-3) * -1);
+    padding-inline: var(--s-3);
+  }
+  .dash-nav-stack .section-rail {
+    margin-inline: 0;
+    padding-inline: 0;
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+}
+@media (min-width: 961px) {
+  /* Desktop keeps Posts | Articles side-by-side; subrail is mobile-only. */
+  .dash-nav-stack .recommend-subrail {
+    display: none !important;
+  }
 }
