@@ -34,9 +34,14 @@
    * bars and each community's own curve now open inside the
    * recommendation they belong to, so Trends is for the whole-collection
    * view rather than a detour in the middle of a decision. */
-  /* Recommend is the desk (inventory + syndicate). Plan is the timed
-   * next-move for one post. Briefing reads the loaded collection. */
-  const SECTIONS = ["recommend", "plan", "briefing", "trends", "communities"];
+  /* Recommend is the desk (themes + inventory + syndicate). Plan is the
+   * timed next-move for one post. Trends reads the loaded collection —
+   * the briefing lines first, then the charts that back them. Three tabs
+   * fit a phone without scrolling the rail, which is what lets the nav
+   * be a fixed T-bar instead of two sliding strips stacked on each
+   * other. Sub profiles left the dashboard entirely and live on the
+   * Communities page with everything else community-shaped. */
+  const SECTIONS = ["recommend", "plan", "trends"];
   const RAIL = "dashboard-section-rail";
   const REC_RAIL = "recommend-subrail";
   const REC_PANELS = ["posts", "syndicate"];
@@ -51,7 +56,8 @@
   /* Where the retired tabs went, so old links and saved state still
    * land somewhere sensible instead of silently falling back. */
   const MOVED = {
-    summary: "briefing",
+    summary: "trends",
+    briefing: "trends",
     timing: "trends",
     charts: "trends",
     themes: "trends",
@@ -177,7 +183,6 @@
     }
     timingModel = Timing.constrainModel(rawTimingModel, AppState.postingAvail);
     painted.delete("trends");
-    painted.delete("briefing");
     /* Plan + KPIs read timingModel live. */
     UI.renderKpis(bundle && bundle.agg, timingModel);
     if (window.UI && UI.mountAvailabilitySliders) {
@@ -220,19 +225,18 @@
     painted.add(section);
 
     const posts = bundle.posts;
-    if (section === "briefing") {
+    if (section === "trends") {
+      /* Briefing first — the readable findings — then the charts that
+       * are the evidence behind them. One tab, one story. */
       UI.renderBriefing(
         Analysis.postingBriefing(posts, { agg: bundle.agg, timing: timingModel }),
         { timingLimit: briefingTimingLimit }
       );
-    } else if (section === "trends") {
       UI.renderPostingTimes(timingModel, { limit: timingLimit });
       renderTimeline(posts);
       renderCharts(posts, bundle);
       UI.renderKeywords(bundle.keywords);
       UI.renderThemes(bundle.themes);
-    } else if (section === "communities") {
-      UI.renderSubProfiles(AppState.subProfiles);
     }
   }
 
@@ -243,15 +247,11 @@
     return panel;
   }
 
-  /* Show/hide the mobile Recommend subrail and mark the active panel. */
+  /* Mark the active Posts | Articles panel. The picker lives inside the
+   * Recommend section itself (a fixed segmented control, not a second
+   * sliding rail), so it hides with the section — nothing to toggle. */
   function paintRecommendChrome(section) {
-    const sub = Dom.byId(REC_RAIL);
-    const onRecommend = section === "recommend";
-    if (sub) {
-      if (onRecommend) sub.removeAttribute("hidden");
-      else sub.setAttribute("hidden", "");
-    }
-    if (!onRecommend) return;
+    if (section !== "recommend") return;
     const panel = activeRecommendPanel();
     Dom.paintRail(REC_RAIL, "rec-tab", panel, "rec-panel-", ".recommend-panel");
   }
@@ -285,6 +285,13 @@
 
   View.goToSection = function (section) {
     const requested = section;
+    /* The dashboard's Communities tab is gone — that content lives on
+     * the Communities page now, so old links follow it there. */
+    if (requested === "communities") {
+      Router.go("communities");
+      if (window.CommunitiesView && CommunitiesView.goToTab) CommunitiesView.goToTab("profiles");
+      return;
+    }
     if (SECTIONS.indexOf(section) === -1) section = MOVED[section];
     if (!section) return;
     if (requested === "crossposts") AppState.recommendPanel = "posts";
@@ -473,11 +480,11 @@
 
     Dom.delegate(document, "click", '[data-action="expand-briefing-timing"]', () => {
       briefingTimingLimit = "all";
-      painted.delete("briefing");
+      painted.delete("trends");
       paintSection();
     });
 
-    /* Dual-ended availability slider — live on Trends + Briefing. */
+    /* Dual-ended availability slider — live on Trends. */
     let availTimer = 0;
     function applyAvailSoon(avail) {
       if (availTimer) window.clearTimeout(availTimer);

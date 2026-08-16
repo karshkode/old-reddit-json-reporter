@@ -210,6 +210,22 @@
       return data;
     }
 
+    /* Top three themes first; the rest behind one tap. The desk sits
+     * above the Recommend lists, so an always-expanded desk was most of
+     * a phone screen before any post appeared. State lives on the host
+     * so a refresh keeps the reader's choice. */
+    const TRUNC = 3;
+    const showAll = host.dataset.truncated === "false";
+    const visible = (showAll || data.topics.length <= TRUNC)
+      ? data.topics
+      : data.topics.slice(0, TRUNC);
+    host.dataset.truncated = (showAll || data.topics.length <= TRUNC) ? "false" : "true";
+    const expanderHtml = data.topics.length > TRUNC
+      ? (showAll
+        ? `<button type="button" class="list-expand" data-action="trending-collapse">Show top ${TRUNC} only</button>`
+        : `<button type="button" class="list-expand" data-action="trending-expand">Show all ${data.topics.length} themes</button>`)
+      : "";
+
     host.innerHTML = `
       <div class="trending-meta meta">Desk of ${esc(data.updated)} · themes to campaign on${
         data.headlineCount
@@ -217,7 +233,7 @@
           : ""
       }</div>
       <ul class="trending-list">
-        ${data.topics.map((t) => {
+        ${visible.map((t) => {
           const camp = t.campaign;
           const materialBits = [];
           if (t.hitCount) materialBits.push(`${t.hitCount} article${t.hitCount === 1 ? "" : "s"}`);
@@ -264,7 +280,15 @@
             </div>
           </li>`;
         }).join("")}
-      </ul>`;
+      </ul>${expanderHtml}`;
+
+    const expandBtn = host.querySelector('[data-action="trending-expand"], [data-action="trending-collapse"]');
+    if (expandBtn) {
+      expandBtn.addEventListener("click", () => {
+        host.dataset.truncated = host.dataset.truncated === "true" ? "false" : "true";
+        Trending.render(host, opts);
+      });
+    }
     return data;
   };
 

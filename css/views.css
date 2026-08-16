@@ -1923,18 +1923,15 @@ body.sheet-open {
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
-  /* Desktop: all Recommend panels stay visible (side-by-side + cross-posts). */
+  /* Desktop: both Recommend panels stay visible side-by-side. */
   .recommend-panel {
     display: block !important;
     min-width: 0;
   }
-  #rec-panel-crossposts {
-    margin-top: var(--s-4);
-  }
 }
 @media (max-width: 960px) {
-  /* One Recommend panel at a time — Posts / Articles / Cross-posts via
-   * the sticky subrail — so the dashboard is not an endless scroll. */
+  /* One Recommend panel at a time — Posts or Articles via the segmented
+   * picker — so the dashboard is not an endless scroll. */
   .recommend-panel {
     display: none;
   }

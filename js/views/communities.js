@@ -666,6 +666,11 @@
     const tab = AppState.communitiesTab || "search";
     if (tab === "catalog") renderCatalog();
     else if (tab === "loaded") renderLoaded();
+    else if (tab === "profiles") {
+      /* Audience fingerprints moved here from the dashboard, so every
+       * community-shaped surface is behind the one Communities button. */
+      if (window.UI && UI.renderSubProfiles) UI.renderSubProfiles(AppState.subProfiles);
+    }
     else if (!AppState.communitiesQuery) {
       const host = Dom.byId("sub-search-results");
       if (host && !host.innerHTML.trim()) host.innerHTML = renderSearchIdle();
