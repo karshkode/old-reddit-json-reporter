@@ -2429,35 +2429,41 @@ body.modal-open { overflow: hidden; }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.18);
 }
+/* Filters read as a labelled grid of small controls: the label sits
+ * ABOVE its control everywhere, so nothing is centred against a taller
+ * neighbour and every group truncates instead of pushing the card. */
 .posts-controls .pc-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: start;
   gap: 12px;
-  padding-bottom: 4px;
+  padding-bottom: 8px;
 }
-/* A select is as wide as its longest option wants to be, so on a 320px
- * screen a filter group could outgrow the row it sits in and push the
- * card past the viewport. Let the group and the control give way. */
 .posts-controls .pc-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   min-width: 0;
   max-width: 100%;
 }
-.posts-controls .pc-filter .group-label { white-space: nowrap; }
-.posts-controls .pc-filter select {
+.posts-controls .pc-filter .group-label { white-space: nowrap; margin: 0; }
+.posts-controls .pc-filter select,
+.posts-controls .pc-filter input[type="text"] {
+  width: 100%;
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 6px 10px;
   border-radius: 8px;
   font-size: 13px;
-  min-height: 34px;
+  min-height: 36px;
   min-width: 0;
 }
+/* The communities multi-select and the free-text ID filter want more
+ * room than one grid track. */
+.posts-controls .pc-filter-subs { grid-column: 1 / -1; }
+.posts-controls .pc-filter .chip-group { flex-wrap: wrap; }
 /* ---------- "Show all / Show fewer" expander button ---------- */
 
 .list-expand {
@@ -2483,15 +2489,21 @@ body.modal-open { overflow: hidden; }
 }
 /* ---------- Mobile-only adjustments ---------- */
 
-@media (max-width: 720px) {  /* The chip-group sometimes overflows on narrow screens — let it
-   * wrap to a second line instead of forcing horizontal scroll. */
-  .posts-controls .pc-filter .chip-group { flex-wrap: wrap; }
-  /* Posts controls: collapse to single column so each filter row
-   * is full-width. */
+@media (max-width: 720px) {
   .posts-controls { padding: 10px 12px 0; }
-  .posts-controls .pc-filters { gap: 10px; }
-  .posts-controls .pc-filter { width: 100%; justify-content: space-between; }
-  .posts-controls .pc-filter select { flex: 1 1 auto; min-width: 0; }
+  /* Two neat columns: Min score and Post IDs get a full row, Per page
+   * and Sort by pair up beside each other. */
+  .posts-controls .pc-filters { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .posts-controls .pc-filter { grid-column: span 2; }
+  .posts-controls .pc-filter:has(#posts-page-size),
+  .posts-controls .pc-filter:has(#mobile-sort) { grid-column: span 1; }
+  /* The multi-select duplicates the Showing chips at the top of every
+   * page and is miserable to operate by thumb — the chips are the
+   * mobile control for this. */
+  .posts-controls .pc-filter-subs { display: none; }
+  /* 16px stops iOS zooming into the field on focus. */
+  .posts-controls .pc-filter select,
+  .posts-controls .pc-filter input[type="text"] { font-size: 16px; }
 }
 /* ---------- Cross-posts result-count meta line ---------- */
 

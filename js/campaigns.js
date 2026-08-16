@@ -335,14 +335,12 @@
     });
   };
 
-  /* The whole campaign folded into one pseudo-post so the single-post
-   * engines (Focus / Plan, Discovery.forPost) can rank it like anything
-   * else on the site. Theme keywords carry campaigns with no resolved
-   * posts yet — a trend campaign is matchable from day zero. */
-  Campaigns.asPost = function (campaign, opts) {
+  /* Resolve a campaign's member posts from whatever is on hand — the
+   * campaign summary cache first, the loaded inventory second. Shared
+   * by asPost (matching profile) and the Plan composer (what to post). */
+  Campaigns.resolvePosts = function (campaign, opts) {
     opts = opts || {};
-    if (!campaign) return null;
-    const theme = campaign.theme || null;
+    if (!campaign) return [];
     let posts = Array.isArray(opts.posts) ? opts.posts.slice() : null;
     if (!posts) {
       const idSet = new Set(campaign.postIds || []);
@@ -355,6 +353,113 @@
       }
     }
     posts.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return posts;
+  };
+
+  /* ------------------------------------------------------------------
+   * PLAN COMPOSER — what actually gets submitted for a campaign
+   * ------------------------------------------------------------------
+   * Ranking a campaign uses the whole profile (theme keywords + every
+   * member post), but a submit page needs ONE headline and ONE piece of
+   * content. The compose choice — headline text plus a content source —
+   * is the user's answer, stored on the campaign so it survives reloads:
+   *   campaign.compose = { title: "…", source: "article" | "post:<id>" | "text" }
+   * Resolution back to a { title, body, url, isLinkPost } draft happens
+   * at link-build time, so a member post that gained a better URL after
+   * a sync is picked up automatically.
+   */
+
+  /* Every content source this campaign could submit: the theme article
+   * link, each member post (its external link, or its body for self
+   * posts), and a fresh empty text post. */
+  Campaigns.composeOptions = function (campaign, opts) {
+    if (!campaign) return [];
+    const theme = campaign.theme || null;
+    const out = [];
+    if (theme && theme.articleLink) {
+      let domain = "";
+      try { domain = new URL(theme.articleLink).hostname.replace(/^www\./, ""); } catch (_) {}
+      out.push({
+        id: "article",
+        kind: "link",
+        url: theme.articleLink,
+        label: "Article link" + (domain ? " · " + domain : ""),
+        title: theme.label || "",
+      });
+    }
+    const posts = Campaigns.resolvePosts(campaign, opts);
+    for (const p of posts.slice(0, 12)) {
+      if (!p || !p.id) continue;
+      const dest = (window.Util && Util.shareDestination) ? Util.shareDestination(p) : null;
+      const self = !dest || dest.kind === "self";
+      out.push({
+        id: "post:" + p.id,
+        kind: self ? "self" : "link",
+        url: self ? "" : dest.url,
+        body: self ? String(p.selftext || "") : "",
+        label: "r/" + (p.subreddit || "?") + " · " + (window.Util ? Util.fmtNum(p.score || 0) : p.score || 0)
+          + " pts · " + (self ? "text" : "link"),
+        title: p.title || "",
+        post: p,
+      });
+    }
+    out.push({ id: "text", kind: "self", url: "", body: "", label: "Fresh text post — write it on Reddit", title: "" });
+    return out;
+  };
+
+  /* Headlines worth offering: the campaign name, the theme label, and
+   * each distinct member-post title. */
+  Campaigns.headlineOptions = function (campaign, opts) {
+    if (!campaign) return [];
+    const seen = new Set();
+    const out = [];
+    const push = (text, from) => {
+      const t = String(text || "").trim();
+      if (!t || seen.has(t.toLowerCase())) return;
+      seen.add(t.toLowerCase());
+      out.push({ text: t, from: from });
+    };
+    push(campaign.name, "campaign name");
+    if (campaign.theme) push(campaign.theme.label, "theme");
+    for (const p of Campaigns.resolvePosts(campaign, opts).slice(0, 10)) {
+      push(p && p.title, "r/" + ((p && p.subreddit) || "?"));
+    }
+    return out;
+  };
+
+  /* The current compose choice resolved to the draft shape that
+   * Util.buildSubmitUrl understands. Falls back sensibly when nothing
+   * was chosen: the campaign name over the article, else the best post,
+   * else an empty text post. */
+  Campaigns.composeDraft = function (campaign, opts) {
+    if (!campaign) return null;
+    const options = Campaigns.composeOptions(campaign, opts);
+    const saved = campaign.compose || {};
+    let source = options.find((o) => o.id === saved.source);
+    if (!source) source = options[0] || { id: "text", kind: "self", url: "", body: "" };
+    const title = String(saved.title || "").trim()
+      || String(campaign.name || "").trim()
+      || source.title
+      || "Untitled";
+    return {
+      title: title.slice(0, 300),
+      body: source.kind === "self" ? (source.body || "") : "",
+      url: source.kind === "link" ? (source.url || "") : "",
+      isLinkPost: source.kind === "link",
+      sourceId: source.id,
+      sourceLabel: source.label,
+    };
+  };
+
+  /* The whole campaign folded into one pseudo-post so the single-post
+   * engines (Focus / Plan, Discovery.forPost) can rank it like anything
+   * else on the site. Theme keywords carry campaigns with no resolved
+   * posts yet — a trend campaign is matchable from day zero. */
+  Campaigns.asPost = function (campaign, opts) {
+    opts = opts || {};
+    if (!campaign) return null;
+    const theme = campaign.theme || null;
+    const posts = Campaigns.resolvePosts(campaign, opts);
 
     const bodyBits = [];
     if (theme && theme.label && theme.label !== campaign.name) bodyBits.push(theme.label);
