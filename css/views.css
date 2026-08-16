@@ -3038,3 +3038,26 @@ a.syn-title:focus-visible {
 #trending-topics-card {
   margin-bottom: var(--s-4);
 }
+
+/* ---- Campaign workspace overflow guards ----
+ * A select or unbroken string wider than the viewport used to widen
+ * the page and shove everything left on phones (the cascade selects
+ * were the worst offender). Clip the views and let grid/flex children
+ * shrink instead. */
+#view-campaign,
+#view-campaigns {
+  overflow-x: clip;
+}
+.campaign-section,
+.campaign-section .card,
+#view-campaign .grid > .card,
+#view-campaigns .grid > .card {
+  min-width: 0;
+}
+.campaign-section select,
+.campaign-section input,
+#view-campaigns select,
+#view-campaigns input {
+  max-width: 100%;
+  min-width: 0;
+}

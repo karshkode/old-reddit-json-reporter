@@ -1147,22 +1147,15 @@
       }
     };
 
-    setOptions("discover-campaign", campaigns.length
-      ? '<option value="">— pick a campaign —</option>' +
-        campaigns.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")
-      : '<option value="">(no campaigns saved — create one on the Campaigns tab)</option>');
+    /* The campaign Discover panel is gone (campaigns rank through the
+     * single-post engine in Plan), so there is no discover-campaign
+     * select to populate any more. */
 
-    /* Cascade and volunteer coverage both work off "a set of subs", so
-     * they offer the active dashboard subs alongside each campaign. */
+    /* Volunteer coverage works off "a set of subs", so it offers the
+     * active dashboard subs alongside each campaign. */
     const sourceOptions = `<option value="__active">Active subs (${state.activeSubs.size})</option>` +
       campaigns.map((c) => `<option value="campaign:${esc(c.id)}">${esc(c.name)} (${subsOf(c.id).length} subs)</option>`).join("");
-    setOptions("cascade-source", sourceOptions);
     setOptions("vol-source", sourceOptions);
-
-    const cascadePosts = cascadePostOptions();
-    setOptions("cascade-post", cascadePosts.length
-      ? cascadePosts.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")
-      : '<option value="">(no posts yet — the plan will just be a schedule)</option>');
 
     const pickOptions = '<option value="">— pick —</option>' +
       campaigns.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
@@ -2693,21 +2686,15 @@
         openCampaign(c);
         await loadCampaign(c.id);
 
-        /* Auto-trigger Discover. The discover-campaign select must be
-         * set to this campaign first; if either piece isn't available
-         * (e.g. the user navigated away mid-flight) we just skip with
-         * a console warning rather than throwing. */
-        const sel = document.getElementById("discover-campaign");
-        if (sel) sel.value = c.id;
-        if (typeof _runDiscover === "function") {
-          /* Scroll the discover panel into view so the user can see
-           * the recommendations populating. */
-          const discoverCard = document.getElementById("discover-card");
-          if (discoverCard && typeof discoverCard.scrollIntoView === "function") {
-            try { discoverCard.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (_) {}
+        /* Hand the whole campaign to the dashboard's single-post engine
+         * as one pseudo-post — same flow the Rank in Plan button uses,
+         * so discovery is one engine site-wide. */
+        if (window.FocusView && Campaigns.asPost) {
+          const draft = Campaigns.asPost(c);
+          if (draft && ((draft.title || "").trim() || (draft.selftext || "").trim())) {
+            try { FocusView.focusPost(draft); }
+            catch (err) { console.warn("[post->campaign] rank-in-plan failed:", err && err.message); }
           }
-          try { await _runDiscover(); }
-          catch (err) { console.warn("[post->campaign] auto-discover failed:", err && err.message); }
         }
         console.log(`[post->campaign] "${name}" goals=(${goalScore}, ${goalComments}) post=${post.id} sub=${post.subreddit}`);
       } catch (err) {
@@ -3691,99 +3678,21 @@
     }
   }
 
-  /* The post the cascade is for. A schedule with no post attached can
-   * only ever be advice; with one, every row is a button. Campaign
-   * posts come first because the Plan tab belongs to a campaign, and
-   * the one with the most upvotes leads because that is the copy worth
-   * spreading. */
-  function cascadePostOptions() {
-    const campaign = state.openCampaignId ? Campaigns.get(state.openCampaignId) : null;
-    const ids = campaign ? new Set(campaign.postIds || []) : null;
-    const pool = ids
-      ? state.posts.filter((p) => ids.has(p.id))
-      : state.posts.slice();
-    return pool
-      .slice()
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, 50)
-      .map((p) => ({
-        value: p.id,
-        label: `r/${p.subreddit} · ${(p.title || "").slice(0, 60)}${(p.title || "").length > 60 ? "…" : ""}`,
-      }));
-  }
-
-  function cascadePost() {
-    const sel = document.getElementById("cascade-post");
-    const id = sel && sel.value;
-    if (!id) return null;
-    return state.posts.find((p) => p.id === id) || null;
-  }
-
-  function renderCascade() {
-    const sel = document.getElementById("cascade-source");
-    const out = document.getElementById("cascade-results");
-    if (!sel || !out) return;
-    const v = sel.value;
-    let subs = [];
-    if (v === "__active") {
-      subs = Array.from(state.activeSubs);
-    } else if (v && v.startsWith("campaign:")) {
-      const id = v.slice(9);
-      const summary = state.campaignSummaries[id];
-      subs = summary ? (summary.subs || []) : [];
-    }
-    const post = cascadePost();
-    const limitEl = Dom.byId("cascade-limit");
-    const schedule = Analysis.cascadeSchedule(subs, {
-      posts: state.posts,
-      subProfiles: state.subProfiles || {},
-      limit: limitEl ? Number(limitEl.value) : 12,
-    });
-    UI.renderCascadeSchedule(out, schedule, {
-      post: post,
-      /* Where the post already is. Offering to cross-post it there
-       * would be the plan asking for work that is visibly finished. */
-      done: post ? Crosspost.subsWithCopies(post) : new Set(),
-      pending: post ? Crosspost.pendingFor(post) : [],
-    });
-  }
-
-  function wireCascadeCard() {
-    const card = document.getElementById("cascade-card");
-    const sel = document.getElementById("cascade-source");
-    const postSel = document.getElementById("cascade-post");
-    const btn = document.getElementById("cascade-build");
-    const out = document.getElementById("cascade-results");
-    if (!card || !sel || !btn || !out) return;
-    btn.addEventListener("click", renderCascade);
-    /* Changing either input re-plans in place rather than waiting for
-     * the button again, but only once a plan is on screen — before
-     * that there is nothing to keep in step. */
-    if (postSel) postSel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
-    sel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
-    const limitSel = document.getElementById("cascade-limit");
-    if (limitSel) limitSel.addEventListener("change", () => { if (out.innerHTML.trim()) renderCascade(); });
-
-    /* The schedule is rendered both here and in the Plan hub, so the row
-     * names its own post rather than the handler guessing from whichever
-     * dropdown happens to be on the page. */
+  /* The dedicated cascade card is gone; the schedule still renders in
+   * the Plan hub (#focus-cascade), so its cross-post buttons keep this
+   * standalone handler. */
+  function wireCascadeCrosspost() {
     Dom.delegate(document, "click", '[data-action="cascade-crosspost"]', (e, el) => {
       const id = el.dataset.postId;
-      const post = id ? state.posts.find((p) => String(p.id) === String(id)) : cascadePost();
+      const post = id ? state.posts.find((p) => String(p.id) === String(id)) : null;
       if (!post || !el.dataset.sub) return;
       Crosspost.markOpened(post.id, el.dataset.sub);
       /* After the handoff, or iOS Safari reads the repaint as the page
        * changing under the tap and drops the new tab. */
-      const inHub = !!el.closest("#focus-cascade");
       setTimeout(() => {
-        if (inHub && window.FocusView && FocusView.repaint) FocusView.repaint();
-        else renderCascade();
+        if (window.FocusView && FocusView.repaint) FocusView.repaint();
       }, 400);
     });
-
-    if (state.posts.length > 0 && (state.activeSubs.size > 0 || Object.keys(state.campaignSummaries || {}).length > 0)) {
-      card.hidden = false;
-    }
   }
 
   /* ---------- Watch mode (PR 6) ---------- */
@@ -4105,7 +4014,7 @@
     });
     safeRun("refreshAllCampaignSummaries", () => refreshAllCampaignSummaries());
     safeRun("wirePredictCard", wirePredictCard);
-    safeRun("wireCascadeCard", wireCascadeCard);
+    safeRun("wireCascadeCrosspost", wireCascadeCrosspost);
     safeRun("wireCalendar", wireCalendar);
     safeRun("wireABCompare", wireABCompare);
     safeRun("wireVolunteer", wireVolunteer);

@@ -2773,21 +2773,6 @@ body.modal-open { overflow: hidden; }
 }
 .rewrite-row .rewrite-title { font-weight: 600; color: var(--text); flex: 1 1 auto; min-width: 0; }
 .rewrite-row .meta { font-size: 11px; }
-.cascade-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.cascade-controls select {
-  flex: 1 1 auto;
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-}
 .cascade-list { display: flex; flex-direction: column; gap: 6px; }
 .cascade-row {
   display: flex;
