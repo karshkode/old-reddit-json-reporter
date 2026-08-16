@@ -594,9 +594,113 @@
           <button type="button" class="btn ghost small" data-action="focus-clear">Change</button>
         </div>
       </div>
+      ${composerHtml(post)}
       ${reachHtml(post)}
       ${pendingPostHtml(post)}
     `;
+  }
+
+  /* ------------------------------------------------------------------
+   * CAMPAIGN COMPOSER
+   * ------------------------------------------------------------------
+   * A campaign in Plan ranks on its whole profile, but a submit page
+   * takes one headline and one piece of content. This strip is where
+   * the user picks both: type or choose the headline, and choose which
+   * material travels — a member post's link or text, the theme article,
+   * or a fresh text post. Every Cross-post link on the card follows the
+   * choice, live, without re-ranking. */
+
+  function focusedCampaign(post) {
+    if (!post || !post.campaignId || !window.Campaigns) return null;
+    return Campaigns.get(post.campaignId);
+  }
+
+  /* What buildSubmitUrl should receive for this post — the compose
+   * draft for a campaign pseudo-post, the post itself otherwise. */
+  function submitDataFor(post) {
+    const campaign = focusedCampaign(post);
+    if (!campaign || !Campaigns.composeDraft) return post;
+    return Campaigns.composeDraft(campaign) || post;
+  }
+
+  function composePreview(draft) {
+    if (!draft) return "";
+    if (draft.isLinkPost && draft.url) {
+      let domain = draft.url;
+      try { domain = new URL(draft.url).hostname.replace(/^www\./, ""); } catch (_) {}
+      return `Link post → ${esc(domain)}`;
+    }
+    const words = String(draft.body || "").trim();
+    return words
+      ? `Text post → ${esc(trunc(words, 90))}`
+      : "Text post → empty body, write it on Reddit";
+  }
+
+  function composerHtml(post) {
+    const campaign = focusedCampaign(post);
+    if (!campaign || !window.Campaigns || !Campaigns.composeDraft) return "";
+    const draft = Campaigns.composeDraft(campaign);
+    const headlines = Campaigns.headlineOptions(campaign);
+    const sources = Campaigns.composeOptions(campaign);
+    return `
+      <div class="focus-compose" data-focus-compose>
+        <div class="focus-compose-head">
+          <span class="focus-block-label">What gets submitted</span>
+          <span class="meta">every Cross-post link below carries this headline and content</span>
+        </div>
+        <div class="focus-compose-grid">
+          <label class="focus-compose-field">
+            <span class="group-label">Headline</span>
+            <input id="focus-compose-title" type="text" maxlength="300" autocomplete="off"
+                   value="${esc(draft.title)}" placeholder="Headline for the submit page" />
+          </label>
+          ${headlines.length > 1 ? `
+          <label class="focus-compose-field">
+            <span class="group-label">Use headline from</span>
+            <select id="focus-compose-headline-pick" aria-label="Insert a headline from the campaign">
+              <option value="">Pick one to insert…</option>
+              ${headlines.map((h) => `
+                <option value="${esc(h.text)}">${esc(trunc(h.text, 70))} — ${esc(h.from)}</option>`).join("")}
+            </select>
+          </label>` : ""}
+          <label class="focus-compose-field">
+            <span class="group-label">Content</span>
+            <select id="focus-compose-source" aria-label="Which material to post">
+              ${sources.map((o) => `
+                <option value="${esc(o.id)}"${o.id === draft.sourceId ? " selected" : ""}>${esc(trunc(o.label, 60))}${o.title ? ` — ${esc(trunc(o.title, 50))}` : ""}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+        <p class="focus-compose-preview meta" id="focus-compose-preview">${composePreview(draft)}</p>
+      </div>`;
+  }
+
+  function saveCompose(patch) {
+    const post = focused();
+    const campaign = focusedCampaign(post);
+    if (!campaign) return;
+    const compose = Object.assign({}, campaign.compose || {}, patch);
+    Campaigns.update(campaign.id, { compose: compose });
+  }
+
+  /* Rewrite every submit link in place — no re-render, so the headline
+   * input keeps focus while the user types. */
+  function updateSubmitLinks() {
+    const post = focused();
+    if (!post) return;
+    const data = submitDataFor(post);
+    const h = host();
+    if (!h) return;
+    for (const a of h.querySelectorAll('[data-action="focus-crosspost"]')) {
+      const sub = a.dataset.sub;
+      if (!sub) continue;
+      const url = Crosspost.submitUrl(sub, data);
+      if (url) a.href = url;
+    }
+    const preview = document.getElementById("focus-compose-preview");
+    if (preview && data && Object.prototype.hasOwnProperty.call(data, "isLinkPost")) {
+      preview.innerHTML = composePreview(data);
+    }
   }
 
   function audienceStrip(post) {
@@ -893,16 +997,22 @@
      written rather than as an empty box in a new community. */
   function crosspostHtml(m, post, opts) {
     opts = opts || {};
-    const url = Crosspost.submitUrl(m.name, post);
+    const data = submitDataFor(post);
+    const url = Crosspost.submitUrl(m.name, data);
     if (!url) return "";
-    const dest = window.Util && Util.shareDestination ? Util.shareDestination(post) : null;
-    const self = !!(dest && dest.kind === "self")
-      || post.is_self
-      || (post.url && /\/comments\//.test(post.url) && !post.is_video);
-    const tip = dest && dest.note
-      ? dest.note
-      : (`Open Reddit's submit page for r/${m.name} with this post's title and `
-        + (self ? "body" : "destination link") + " already filled in");
+    const isDraft = data !== post;
+    const dest = (!isDraft && window.Util && Util.shareDestination) ? Util.shareDestination(post) : null;
+    const self = isDraft
+      ? !data.isLinkPost
+      : (!!(dest && dest.kind === "self")
+        || post.is_self
+        || (post.url && /\/comments\//.test(post.url) && !post.is_video));
+    const tip = isDraft
+      ? `Open Reddit's submit page for r/${m.name} with the campaign's chosen headline and ${self ? "text" : "link"} filled in — edit both in "What gets submitted" above`
+      : (dest && dest.note
+        ? dest.note
+        : (`Open Reddit's submit page for r/${m.name} with this post's title and `
+          + (self ? "body" : "destination link") + " already filled in"));
     /* Weight follows evidence. A community with nothing loaded has no
        hour and no comparison behind it, so a row of them all shouting
        in the same colour as a graded suggestion would be the card
@@ -1284,6 +1394,30 @@
 
     Dom.delegate(document, "click", '[data-action="focus-open-campaign"]', (e, el) => {
       if (el.dataset.campaign) App.openCampaign(el.dataset.campaign);
+    });
+
+    /* Campaign composer — headline typing and source picks patch the
+     * campaign record and rewrite the submit links in place. */
+    let composeTimer = 0;
+    Dom.delegate(document, "input", "#focus-compose-title", (e, input) => {
+      if (composeTimer) window.clearTimeout(composeTimer);
+      composeTimer = window.setTimeout(() => {
+        composeTimer = 0;
+        saveCompose({ title: input.value });
+        updateSubmitLinks();
+      }, 200);
+    });
+    Dom.delegate(document, "change", "#focus-compose-headline-pick", (e, select) => {
+      if (!select.value) return;
+      const input = document.getElementById("focus-compose-title");
+      if (input) input.value = select.value;
+      saveCompose({ title: select.value });
+      select.value = "";
+      updateSubmitLinks();
+    });
+    Dom.delegate(document, "change", "#focus-compose-source", (e, select) => {
+      saveCompose({ source: select.value });
+      updateSubmitLinks();
     });
 
     Dom.delegate(document, "click", '[data-action="focus-load-sub"]', (e, btn) => {
