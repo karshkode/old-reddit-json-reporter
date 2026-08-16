@@ -1,6 +1,18 @@
 /* Campaign manager.
  *
- * A campaign = { id, name, goalScore, goalComments, postIds[], createdAt }.
+ * A campaign = {
+ *   id, name, goalScore, goalComments, postIds[], createdAt,
+ *   theme?: { kind, id, label, keywords, spheres, originPostId, articleId, articleLink }
+ * }
+ *
+ * `theme.kind` is one of:
+ *   trend     — curated desk topic (may predate any Reddit posts)
+ *   syndicate — anchored on a news headline
+ *   post      — single origin post
+ *   posts     — aggregated set (copies and/or related material)
+ *
+ * postIds remain the Reddit material being totalled; the theme is what
+ * the campaign is *about* when that set is empty or still growing.
  *
  * Storage strategy: maintain an in-memory mirror as the source of truth for
  * the page session, and try to persist it to localStorage. If persistence
@@ -183,9 +195,43 @@
 
   Campaigns.list = function () { return ensureMirror().slice(); };
 
+  function normalizeTheme(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const kind = String(raw.kind || "").toLowerCase();
+    if (["trend", "syndicate", "post", "posts"].indexOf(kind) < 0) return null;
+    const keywords = Array.isArray(raw.keywords)
+      ? raw.keywords.map((k) => String(k || "").trim()).filter(Boolean).slice(0, 12)
+      : [];
+    const spheres = Array.isArray(raw.spheres)
+      ? raw.spheres.map((s) => String(s || "").trim()).filter(Boolean).slice(0, 8)
+      : [];
+    return {
+      kind: kind,
+      id: raw.id ? String(raw.id) : "",
+      label: String(raw.label || "").trim().slice(0, 120),
+      keywords: keywords,
+      spheres: spheres,
+      originPostId: raw.originPostId ? String(raw.originPostId) : "",
+      articleId: raw.articleId ? String(raw.articleId) : "",
+      articleLink: raw.articleLink ? String(raw.articleLink) : "",
+    };
+  }
+
+  Campaigns.normalizeTheme = normalizeTheme;
+
+  Campaigns.themeKindLabel = function (theme) {
+    if (!theme || !theme.kind) return "";
+    if (theme.kind === "trend") return "Trend theme";
+    if (theme.kind === "syndicate") return "Article theme";
+    if (theme.kind === "posts") return "Post set";
+    if (theme.kind === "post") return "Origin post";
+    return "";
+  };
+
   Campaigns.add = function (data) {
     ensureMirror();
     const id = Math.random().toString(36).slice(2, 10);
+    const theme = normalizeTheme(data && data.theme);
     const c = {
       id,
       name: String(data && data.name || "Untitled campaign"),
@@ -194,9 +240,99 @@
       postIds: Util.uniqBy(((data && data.postIds) || []).map(String), (x) => x),
       createdAt: Date.now(),
     };
+    if (theme) c.theme = theme;
     mirror.push(c);
     persist();
     return c;
+  };
+
+  /* Theme-first campaign from a Trending desk topic. Attaches matching
+   * inventory posts when present; empty postIds are fine — the theme is
+   * the anchor until material is posted or linked. */
+  Campaigns.fromTrend = function (topic, opts) {
+    opts = opts || {};
+    if (!topic || !topic.label) throw new Error("No trend topic to campaign on.");
+    const posts = Array.isArray(opts.posts) ? opts.posts : [];
+    const headline = (topic.headlines && topic.headlines[0]) || opts.article || null;
+    const origin = posts[0] || null;
+    return Campaigns.add({
+      name: opts.name || topic.label,
+      postIds: posts.map((p) => p && p.id).filter(Boolean),
+      goalScore: opts.goalScore,
+      goalComments: opts.goalComments,
+      theme: {
+        kind: "trend",
+        id: topic.id || "",
+        label: topic.label,
+        keywords: topic.keywords || [],
+        spheres: topic.spheres || [],
+        originPostId: origin && origin.id,
+        articleId: headline && headline.id,
+        articleLink: headline && headline.link,
+      },
+    });
+  };
+
+  /* Campaign anchored on a Syndicate headline (not a Reddit copy set). */
+  Campaigns.fromSyndicate = function (article, opts) {
+    opts = opts || {};
+    if (!article || !(article.title || article.id)) throw new Error("No article to campaign on.");
+    const posts = Array.isArray(opts.posts) ? opts.posts : [];
+    const title = String(article.title || "Untitled article").trim();
+    return Campaigns.add({
+      name: opts.name || title.slice(0, 60),
+      postIds: posts.map((p) => p && p.id).filter(Boolean),
+      goalScore: opts.goalScore,
+      goalComments: opts.goalComments,
+      theme: {
+        kind: "syndicate",
+        id: article.id || "",
+        label: title.slice(0, 120),
+        keywords: opts.keywords || [],
+        spheres: opts.spheres || [],
+        articleId: article.id || "",
+        articleLink: article.link || "",
+        originPostId: posts[0] && posts[0].id,
+      },
+    });
+  };
+
+  /* Campaign from an origin post, optionally folding known copies.
+   * Unlike Crosspost.track, a single community is enough — the post is
+   * the theme anchor; more copies can join later. */
+  Campaigns.fromOriginPost = function (post, opts) {
+    opts = opts || {};
+    if (!post || !post.id) throw new Error("No post to campaign on.");
+    let posts = [post];
+    if (opts.includeCopies !== false && window.Crosspost && Crosspost.copiesOf) {
+      const copies = Crosspost.copiesOf(post) || [];
+      const seen = new Set([String(post.id)]);
+      for (const c of copies) {
+        if (!c || !c.id || seen.has(String(c.id))) continue;
+        seen.add(String(c.id));
+        posts.push(c);
+      }
+    }
+    if (window.Analyze && Analyze.adopt) {
+      for (const p of posts) {
+        try { Analyze.adopt(p); } catch (_) {}
+      }
+    }
+    const title = String(post.title || "").trim();
+    const multi = posts.length > 1;
+    return Campaigns.add({
+      name: opts.name || (title ? title.slice(0, 60) : `r/${post.subreddit} post`),
+      postIds: posts.map((p) => p.id).filter(Boolean),
+      goalScore: opts.goalScore,
+      goalComments: opts.goalComments,
+      theme: {
+        kind: multi ? "posts" : "post",
+        label: title.slice(0, 120) || `r/${post.subreddit}`,
+        keywords: opts.keywords || [],
+        spheres: opts.spheres || [],
+        originPostId: post.id,
+      },
+    });
   };
 
   Campaigns.remove = function (id) {
@@ -224,7 +360,12 @@
     ensureMirror();
     const i = mirror.findIndex((c) => c.id === id);
     if (i < 0) return null;
-    mirror[i] = Object.assign({}, mirror[i], patch);
+    const next = Object.assign({}, mirror[i], patch);
+    if (patch && Object.prototype.hasOwnProperty.call(patch, "theme")) {
+      next.theme = normalizeTheme(patch.theme);
+      if (!next.theme) delete next.theme;
+    }
+    mirror[i] = next;
     persist();
     return mirror[i];
   };
