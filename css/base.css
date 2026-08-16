@@ -1077,8 +1077,9 @@ table.data .num {
   color: var(--accent);
 }
 
-/* Dashboard: one sticky stack for section tabs + Recommend sub-panels so
- * phones can jump without scrolling past KPIs and every list. */
+/* Dashboard: one sticky crossbar — the top of the T. Three tabs always
+ * fit, so on phones the rail is a fixed three-up grid rather than a
+ * strip that slides: nothing to drag, nothing cut off at the edge. */
 .dash-nav-stack {
   position: sticky;
   top: var(--topbar-h);
@@ -1096,26 +1097,39 @@ table.data .num {
   background: transparent;
   mask-image: none;
 }
-.dash-nav-stack .recommend-subrail {
-  padding-top: 0;
-}
-.dash-nav-stack .recommend-subrail[hidden] {
-  display: none !important;
+.dash-rail button {
+  text-align: center;
 }
 @media (max-width: 900px) {
   .dash-nav-stack {
     margin-inline: calc(var(--s-3) * -1);
     padding-inline: var(--s-3);
   }
-  .dash-nav-stack .section-rail {
+  .dash-nav-stack .dash-rail {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    overflow-x: visible;
     margin-inline: 0;
     padding-inline: 0;
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: none;
   }
 }
+
+/* The stem of the T: the Posts | Articles picker inside Recommend. A
+ * segmented control that fills the row on phones and disappears on
+ * desktop, where both columns are shown side by side. */
+.recommend-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  margin-bottom: var(--s-3);
+}
+.recommend-seg button {
+  min-height: 34px;
+  text-align: center;
+}
 @media (min-width: 961px) {
-  /* Desktop keeps Posts | Articles side-by-side; subrail is mobile-only. */
-  .dash-nav-stack .recommend-subrail {
+  .recommend-seg {
     display: none !important;
   }
 }

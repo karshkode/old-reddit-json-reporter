@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081608" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081608" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081608" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081608" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081608" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081609" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081609" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081609" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081609" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081609" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081608"></script>
+  <script src="./js/theme.js?v=2026081609"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -181,19 +181,14 @@
         <div id="dashboard-content">
           <section class="stat-grid" id="kpi-row" aria-label="Headline metrics"></section>
 
-          <!-- Sticky stack: dashboard sections + Recommend sub-panels stay
-               reachable on mobile instead of vanishing under the topbar. -->
+          <!-- T-shaped nav: ONE sticky crossbar of three even tabs. The
+               Posts | Articles picker lives inside Recommend as a segmented
+               control, so nothing stacks or slides under the crossbar. -->
           <div class="dash-nav-stack" id="dash-nav-stack">
-            <nav class="section-rail" id="dashboard-section-rail" role="tablist" aria-label="Dashboard sections">
+            <nav class="section-rail dash-rail" id="dashboard-section-rail" role="tablist" aria-label="Dashboard sections">
               <button type="button" role="tab" data-dash-tab="recommend" class="active" aria-selected="true" aria-controls="dash-recommend">Recommend</button>
               <button type="button" role="tab" data-dash-tab="plan" aria-selected="false" aria-controls="dash-plan" tabindex="-1">Plan</button>
-              <button type="button" role="tab" data-dash-tab="briefing" aria-selected="false" aria-controls="dash-briefing" tabindex="-1">Briefing</button>
               <button type="button" role="tab" data-dash-tab="trends" aria-selected="false" aria-controls="dash-trends" tabindex="-1">Trends</button>
-              <button type="button" role="tab" data-dash-tab="communities" aria-selected="false" aria-controls="dash-communities" tabindex="-1">Communities</button>
-            </nav>
-            <nav class="section-rail recommend-subrail" id="recommend-subrail" role="tablist" aria-label="Recommend panels" hidden>
-              <button type="button" role="tab" data-rec-tab="posts" class="active" aria-selected="true" aria-controls="rec-panel-posts">Posts</button>
-              <button type="button" role="tab" data-rec-tab="syndicate" aria-selected="false" aria-controls="rec-panel-syndicate" tabindex="-1">Articles</button>
             </nav>
           </div>
 
@@ -212,6 +207,13 @@
               </header>
               <div id="trending-topics" class="trending-topics"></div>
             </div>
+
+            <!-- The stem of the T: a fixed two-way picker, not a second
+                 sliding rail. Desktop shows both columns and hides this. -->
+            <nav class="segmented recommend-seg" id="recommend-subrail" role="tablist" aria-label="Recommend panels">
+              <button type="button" role="tab" data-rec-tab="posts" class="active" aria-selected="true" aria-controls="rec-panel-posts">Posts</button>
+              <button type="button" role="tab" data-rec-tab="syndicate" aria-selected="false" aria-controls="rec-panel-syndicate" tabindex="-1">Articles</button>
+            </nav>
 
             <div class="recommend-title-filter">
               <label class="group-label" for="recommend-title-search">Title</label>
@@ -287,25 +289,25 @@
             </div>
           </div>
 
-          <div class="dash-section" id="dash-briefing" role="tabpanel">
-            <div class="card">
+          <div class="dash-section" id="dash-trends" role="tabpanel">
+            <!-- The old Briefing tab, folded in: read the collection first,
+                 then the charts below are the evidence behind each line. -->
+            <div class="card" id="briefing-card">
               <header class="card-header">
                 <div>
                   <h2>What this data is telling you</h2>
-                  <span class="hint">Where and when to post next, read from your own loaded posts — separate from placing one article</span>
+                  <span class="hint">Where and when to post next, read from your own loaded posts — the charts below are the evidence</span>
                 </div>
                 <div class="card-actions">
                   <button class="btn small" type="button" data-sync="new"
                           title="Re-read every community in Showing so this briefing reflects current posts">↻ Sync showing</button>
-                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one names a community rather than averaging across them. Communities are compared on their typical post, not on totals — a sub does not become the better place to post just because more of its posts happen to be loaded, and a line is left out entirely when there is not enough data behind it. Under When, each percentage is how much better a typical post does at that time than that community's own average, and 'at least +20%' is how far it might realistically fall short. Where the whole day is much the same, the community is listed as having no pattern rather than being handed an hour. The badge grades how much to trust it: STRONG means the pattern held up when tested against chance and even the worst case is a gain, so about a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, about 1-in-7; WEAK means worth knowing but easily chance. Communities with fewer than 8 posts are not graded at all. Totals are in the row above and the full breakdowns are on the other tabs.">?</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Only findings that would change where or when you post appear here, and each one names a community rather than averaging across them. Communities are compared on their typical post, not on totals — a sub does not become the better place to post just because more of its posts happen to be loaded, and a line is left out entirely when there is not enough data behind it. Under When, each percentage is how much better a typical post does at that time than that community's own average, and 'at least +20%' is how far it might realistically fall short. Where the whole day is much the same, the community is listed as having no pattern rather than being handed an hour. The badge grades how much to trust it: STRONG means the pattern held up when tested against chance and even the worst case is a gain, so about a 1-in-20 chance it is a fluke; LIKELY means probably real but the payoff is less certain, about 1-in-7; WEAK means worth knowing but easily chance. Communities with fewer than 8 posts are not graded at all. Totals are in the row above and the full breakdowns are in the charts below.">?</button>
                 </div>
               </header>
               <ul id="briefing-list" class="briefing"></ul>
             </div>
-          </div>
 
-          <div class="dash-section" id="dash-trends" role="tabpanel">
-            <div class="card" id="timeline-card">
+            <div class="card" id="timeline-card" style="margin-top:var(--s-4)">
               <header class="card-header">
                 <div>
                   <h2>When posts go up</h2>
@@ -382,12 +384,6 @@
             </div>
           </div>
 
-          <div class="dash-section" id="dash-communities" role="tabpanel">
-            <div class="card">
-              <header class="card-header"><div><h2>What each subreddit looks like</h2><span class="hint">Audience fingerprint per loaded sub</span></div></header>
-              <div id="sub-profiles" class="profile-list"></div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -398,7 +394,7 @@
         <div class="view-head">
           <div>
             <h2>Campaigns</h2>
-            <p>A campaign is a set of cross-posts tracked toward a goal. Open one to see its per-subreddit trend analysis, find new communities to target, and compose the next post.</p>
+            <p>A campaign is a theme you post on — a desk trend, a headline, an origin post, or an aggregated set — tracked toward a goal. Open one to see its per-subreddit trend analysis and plan the next post.</p>
           </div>
           <div class="card-actions">
             <!-- One batched id lookup covers every campaign, against one
@@ -566,6 +562,7 @@
           <button type="button" role="tab" data-communities-tab="search" class="active" aria-selected="true" aria-controls="comm-sec-search">Search</button>
           <button type="button" role="tab" data-communities-tab="catalog" aria-selected="false" aria-controls="comm-sec-catalog" tabindex="-1">Sphere catalog</button>
           <button type="button" role="tab" data-communities-tab="loaded" aria-selected="false" aria-controls="comm-sec-loaded" tabindex="-1">Loaded subs</button>
+          <button type="button" role="tab" data-communities-tab="profiles" aria-selected="false" aria-controls="comm-sec-profiles" tabindex="-1">Profiles</button>
         </nav>
 
         <div class="communities-section active" id="comm-sec-search" role="tabpanel">
@@ -616,6 +613,15 @@
             <div id="loaded-trim" class="loaded-trim" hidden></div>
             <div id="loaded-subs-toolbar" class="subman-toolbar"></div>
             <div id="loaded-subs-grid" class="loaded-subs-grid"></div>
+          </div>
+        </div>
+
+        <!-- Moved off the dashboard: everything community-shaped lives
+             behind the one Communities button now. -->
+        <div class="communities-section" id="comm-sec-profiles" role="tabpanel">
+          <div class="card">
+            <header class="card-header"><div><h2>What each subreddit looks like</h2><span class="hint">Audience fingerprint per loaded sub</span></div></header>
+            <div id="sub-profiles" class="profile-list"></div>
           </div>
         </div>
       </section>
@@ -1208,47 +1214,47 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081608"></script>
+<script src="./vendor/marked.min.js?v=2026081609"></script>
 
-<script src="./js/dom.js?v=2026081608"></script>
-<script src="./js/util.js?v=2026081608"></script>
-<script src="./js/state.js?v=2026081608"></script>
-<script src="./js/router.js?v=2026081608"></script>
-<script src="./js/sync.js?v=2026081608"></script>
-<script src="./js/archive.js?v=2026081608"></script>
-<script src="./js/imagetext.js?v=2026081608"></script>
-<script src="./js/reddit.js?v=2026081608"></script>
-<script src="./js/postcache.js?v=2026081608"></script>
-<script src="./js/live.js?v=2026081608"></script>
-<script src="./js/refresh.js?v=2026081608"></script>
-<script src="./js/subindex.js?v=2026081608"></script>
-<script src="./js/seeds.js?v=2026081608"></script>
-<script src="./js/matchlex.js?v=2026081608"></script>
-<script src="./js/rules.js?v=2026081608"></script>
-<script src="./js/timing.js?v=2026081608"></script>
-<script src="./js/analysis.js?v=2026081608"></script>
-<script src="./js/discovery.js?v=2026081608"></script>
-<script src="./js/charts.js?v=2026081608"></script>
-<script src="./js/campaigns.js?v=2026081608"></script>
-<script src="./js/reset.js?v=2026081608"></script>
-<script src="./js/analyze.js?v=2026081608"></script>
-<script src="./js/crosspost.js?v=2026081608"></script>
-<script src="./js/nextmove.js?v=2026081608"></script>
-<script src="./js/syndicate.js?v=2026081608"></script>
-<script src="./js/trending.js?v=2026081608"></script>
-<script src="./js/sidebar.js?v=2026081608"></script>
-<script src="./js/composer.js?v=2026081608"></script>
-<script src="./js/ui.js?v=2026081608"></script>
-<script src="./js/views/focus.js?v=2026081608"></script>
-<script src="./js/views/recommend.js?v=2026081608"></script>
-<script src="./js/views/feed.js?v=2026081608"></script>
-<script src="./js/views/dashboard.js?v=2026081608"></script>
-<script src="./js/views/campaign.js?v=2026081608"></script>
-<script src="./js/views/communities.js?v=2026081608"></script>
-<script src="./js/views/posts.js?v=2026081608"></script>
-<script src="./js/views/syndicate.js?v=2026081608"></script>
-<script src="./js/demo.js?v=2026081608"></script>
-<script src="./js/app.js?v=2026081608"></script>
+<script src="./js/dom.js?v=2026081609"></script>
+<script src="./js/util.js?v=2026081609"></script>
+<script src="./js/state.js?v=2026081609"></script>
+<script src="./js/router.js?v=2026081609"></script>
+<script src="./js/sync.js?v=2026081609"></script>
+<script src="./js/archive.js?v=2026081609"></script>
+<script src="./js/imagetext.js?v=2026081609"></script>
+<script src="./js/reddit.js?v=2026081609"></script>
+<script src="./js/postcache.js?v=2026081609"></script>
+<script src="./js/live.js?v=2026081609"></script>
+<script src="./js/refresh.js?v=2026081609"></script>
+<script src="./js/subindex.js?v=2026081609"></script>
+<script src="./js/seeds.js?v=2026081609"></script>
+<script src="./js/matchlex.js?v=2026081609"></script>
+<script src="./js/rules.js?v=2026081609"></script>
+<script src="./js/timing.js?v=2026081609"></script>
+<script src="./js/analysis.js?v=2026081609"></script>
+<script src="./js/discovery.js?v=2026081609"></script>
+<script src="./js/charts.js?v=2026081609"></script>
+<script src="./js/campaigns.js?v=2026081609"></script>
+<script src="./js/reset.js?v=2026081609"></script>
+<script src="./js/analyze.js?v=2026081609"></script>
+<script src="./js/crosspost.js?v=2026081609"></script>
+<script src="./js/nextmove.js?v=2026081609"></script>
+<script src="./js/syndicate.js?v=2026081609"></script>
+<script src="./js/trending.js?v=2026081609"></script>
+<script src="./js/sidebar.js?v=2026081609"></script>
+<script src="./js/composer.js?v=2026081609"></script>
+<script src="./js/ui.js?v=2026081609"></script>
+<script src="./js/views/focus.js?v=2026081609"></script>
+<script src="./js/views/recommend.js?v=2026081609"></script>
+<script src="./js/views/feed.js?v=2026081609"></script>
+<script src="./js/views/dashboard.js?v=2026081609"></script>
+<script src="./js/views/campaign.js?v=2026081609"></script>
+<script src="./js/views/communities.js?v=2026081609"></script>
+<script src="./js/views/posts.js?v=2026081609"></script>
+<script src="./js/views/syndicate.js?v=2026081609"></script>
+<script src="./js/demo.js?v=2026081609"></script>
+<script src="./js/app.js?v=2026081609"></script>
 
 <script>
   (function () {
