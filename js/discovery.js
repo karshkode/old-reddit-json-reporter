@@ -972,6 +972,50 @@
     return queries.slice(0, count);
   };
 
+  /* Bounded Reddit subreddit search from a post/campaign vector — the
+   * Recommend / Focus path used to stop at catalog + loaded rooms, which
+   * left posts with thin local coverage saying "nothing matched". A few
+   * query angles (plus desk trigger phrases) widen the pool without a
+   * full Discover run. */
+  Discovery.searchKeywordSubs = async function (vector, opts) {
+    opts = opts || {};
+    if (!window.Reddit || !Reddit.searchSubreddits) return [];
+    if (window.Demo && Demo.isActive && Demo.isActive()) return [];
+
+    const queries = Discovery.buildQueries(vector, opts.profile, opts.queryLimit || 4);
+    /* Fold in a couple of multi-word desk triggers from ranked spheres so
+     * semi-weekly lexicon updates actually reach Reddit search. */
+    const sphereHits = opts.spheres || Discovery.rankSpheres(vector, {
+      limit: 3,
+      minConfidence: opts.minConfidence != null ? opts.minConfidence : 40,
+      minAbsolute: opts.minAbsolute,
+    });
+    for (const sphere of sphereHits) {
+      if (queries.length >= (opts.queryLimit || 4) + 2) break;
+      const triggers = (sphere.terms || []).filter((t) => String(t).indexOf(" ") > -1).slice(0, 2);
+      for (const phrase of triggers) {
+        const q = `"${phrase}"`;
+        if (queries.indexOf(q) === -1) queries.push(q);
+      }
+    }
+
+    const found = new Map();
+    if (!queries.length) return [];
+    await Util.pmap(queries.slice(0, opts.queryLimit || 4), 2, async (q) => {
+      try {
+        const results = await Reddit.searchSubreddits(q, { limit: opts.perQuery || 10 });
+        for (const raw of results) {
+          const record = SubIndex.put(raw, { partial: true });
+          if (!record || record.over18) continue;
+          found.set(record.key, record.display_name);
+        }
+      } catch (err) {
+        console.warn(`[discovery] keyword search "${q}":`, err && err.message);
+      }
+    });
+    return Array.from(found.values());
+  };
+
   /* ==================================================================
    * SIMILAR COMMUNITIES
    * ------------------------------------------------------------------
@@ -1461,9 +1505,48 @@
       minAbsolute: minAbsolute,
     });
 
-    const partial = build(spheres);
+    let partial = build(spheres);
     if (typeof opts.onPartial === "function") {
       try { opts.onPartial(partial); } catch (err) { console.warn("[forPost] onPartial:", err && err.message); }
+    }
+
+    /* Keyword Reddit search widens beyond catalog + loaded communities.
+     * Focus (live) always runs a short search so desk lexicon updates
+     * reach suggestions. Recommend (offline) only searches when the
+     * local pool is thin, so a full inventory re-rank does not stampede
+     * /subreddits/search. Pass keywordSearch: true to force it. */
+    let keywordHits = [];
+    const thin = (partial.communities || []).length < (opts.keywordSearchIfBelow != null ? opts.keywordSearchIfBelow : 3);
+    const wantSearch = opts.keywordSearch === true
+      || (opts.keywordSearch !== false && (opts.live !== false || thin));
+    if (wantSearch) {
+      try {
+        keywordHits = await Discovery.searchKeywordSubs(vector, {
+          profile: opts.profile,
+          spheres: spheres,
+          queryLimit: opts.searchQueryLimit || (opts.live === false ? 2 : 4),
+          perQuery: opts.searchPerQuery || 10,
+          minConfidence: minConfidence,
+          minAbsolute: minAbsolute,
+        });
+      } catch (err) {
+        console.warn("[forPost] keyword search:", err && err.message);
+      }
+      if (keywordHits.length) {
+        for (const name of keywordHits) {
+          const key = String(name || "").toLowerCase();
+          if (!key || excludeSet.has(key)) continue;
+          includeSet.add(key);
+        }
+        opts = Object.assign({}, opts, {
+          include: Array.from(new Set((opts.include || []).concat(keywordHits))),
+        });
+        partial = build(spheres);
+        partial.keywordHits = keywordHits.length;
+        if (typeof opts.onPartial === "function") {
+          try { opts.onPartial(partial); } catch (err) { console.warn("[forPost] onPartial:", err && err.message); }
+        }
+      }
     }
     if (opts.live === false) return partial;
 

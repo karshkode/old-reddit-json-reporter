@@ -130,17 +130,33 @@
    * is routing information rather than an outage, so it must not be
    * retried or counted against the breaker. Everything else is a real
    * failure. */
+  const liveAborts = new Set();
+
+  /* Force-stop every in-flight archive request. Soft Sync cancel only
+   * stops queueing; this is the second tap that actually cuts the wire. */
+  Reddit.abortInflight = function () {
+    for (const c of liveAborts) {
+      try { c.abort(); } catch (_) {}
+    }
+    liveAborts.clear();
+  };
+
   async function fetchFromArchive(redditUrl) {
     const controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
     const tid = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
+    if (controller) liveAborts.add(controller);
     try {
       return await Archive.fetchRedditUrl(redditUrl, { signal: controller && controller.signal });
     } catch (e) {
       if (window.Archive && Archive.isUnsupported(e)) throw e;
       const err = new Error(normalizeFetchKind(e));
       if (e && e.status) err.status = e.status;
+      if (e && (e.name === "AbortError" || /abort/i.test(String(e.message || "")))) {
+        err.aborted = true;
+      }
       throw err;
     } finally {
+      if (controller) liveAborts.delete(controller);
       if (tid) clearTimeout(tid);
     }
   }

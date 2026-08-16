@@ -772,8 +772,8 @@
           ${blockedHtml(result)}
           ${footnoteHtml(result)}`;
       }
-      return `<p class="focus-status">Nothing in the catalog or your loaded communities reads like this post.
-              Try loading a sphere that covers its subject from Communities.</p>`;
+      return `<p class="focus-status">Nothing strong matched yet from the catalog, your loaded communities, or a keyword search against the current desk.
+              Try loading a sphere from Communities, or check Trends for today’s topic keywords.</p>`;
     }
 
     const scheduled = attachSchedule(result);

@@ -1844,11 +1844,29 @@
     const cancelBtn = document.getElementById("action-cancel");
     if (cancelBtn) cancelBtn.addEventListener("click", () => {
       if (!window.Refresh || !Refresh.cancel) return;
-      if (Refresh.cancel()) {
+      const soft = Refresh.cancelMode && Refresh.cancelMode() === "soft";
+      const result = Refresh.cancel({ force: soft });
+      if (!result) return;
+      /* Keep the existing fill during cancel — indeterminate sweep reads
+       * as a jumbled bar on a narrow banner. */
+      const fill = document.getElementById("action-progress-fill");
+      const width = fill && fill.style.width ? parseFloat(fill.style.width) : NaN;
+      const pct = Number.isFinite(width) ? width : 0;
+      if (result.mode === "soft") {
+        cancelBtn.textContent = "Force stop";
+        cancelBtn.setAttribute("aria-label", "Force stop sync now");
+        Util.setProgress(pct, "Cancelling… finishing in-flight reads");
+        Util.toast("Cancelling — tap Force stop if it hangs.");
+      } else {
         cancelBtn.disabled = true;
-        Util.setProgress(null, "Cancelling… finishing in-flight reads");
-        Util.toast("Cancelling sync — keeping what already loaded.");
-        window.setTimeout(() => { cancelBtn.disabled = false; }, 800);
+        cancelBtn.textContent = "Stopping…";
+        Util.setProgress(pct, "Force stopping…");
+        Util.toast("Force stopping sync — keeping what already loaded.");
+        window.setTimeout(() => {
+          cancelBtn.disabled = false;
+          cancelBtn.textContent = "Cancel";
+          cancelBtn.setAttribute("aria-label", "Cancel sync");
+        }, 1200);
       }
     });
 

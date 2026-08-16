@@ -751,7 +751,7 @@
     const shown = communities.slice(0, opts.limit || (opts.compact ? 6 : 10));
 
     if (!spheres.length && !shown.length) {
-      host.innerHTML = `<p class="post-related-status">Nothing in the catalog reads like this post. Try the Communities search, or add the post to a campaign and run full discovery — that reaches Reddit's own search as well.</p>`;
+      host.innerHTML = `<p class="post-related-status">Nothing strong matched yet from the catalog, your loaded rooms, or a quick keyword search. Try Communities search, or add the post to a campaign and run full discovery for a deeper Reddit sweep.</p>`;
       return;
     }
 

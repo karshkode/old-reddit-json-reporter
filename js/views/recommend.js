@@ -177,6 +177,9 @@
         live: opts.live === true,
         aboutBudget: opts.aboutBudget == null ? 0 : opts.aboutBudget,
         linkPriors: opts.linkPriors === true,
+        /* Prefer desk keyword Reddit search when local matches are scarce. */
+        keywordSearchIfBelow: opts.keywordSearchIfBelow != null ? opts.keywordSearchIfBelow : 4,
+        searchQueryLimit: opts.searchQueryLimit || 2,
         include: include,
         onPartial: (partial) => {
           if (window.AppState) AppState.postRelated.set(post.id, partial);
