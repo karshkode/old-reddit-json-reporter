@@ -26,6 +26,8 @@
   const audienceAttempted = new Set();
   let dataSignature = "";
   let lastPainted = "";
+  /* Shared with Syndicate articles on the Recommend pane. */
+  let titleQuery = "";
   /* Post ids we already ran Discovery on for this inventory signature.
    * Weak matches (below the floor) used to stay in the work queue forever,
    * so paint → suggest → paint spun between "Matching… 9/16" and
@@ -66,8 +68,14 @@
     return true;
   }
 
+  View.titleQuery = function () {
+    return String(titleQuery || "").trim().toLowerCase();
+  };
+
   /* One representative per url / title cluster so a 12-sub cross-post
-   * group does not fill the list with clones. Prefer the highest score. */
+   * group does not fill the list with clones. Prefer the highest score.
+   * Title filter runs before the cap so a search can surface matches
+   * outside the default top-N ranking window. */
   function candidatePosts(limit) {
     const posts = ((window.AppState && AppState.posts) || []).filter((p) => {
       if (!p || !p.id || p.syndicated) return false;
@@ -91,14 +99,25 @@
         ((p.num_comments || 0) > (prev.num_comments || 0) && (p.score || 0) === (prev.score || 0));
       if (prefer) byKey.set(key, p);
     }
-    return Array.from(byKey.values())
+    let list = Array.from(byKey.values())
       .sort((a, b) => {
         const ai = a.imported ? 1 : 0;
         const bi = b.imported ? 1 : 0;
         if (bi !== ai) return bi - ai;
         return (b.score || 0) - (a.score || 0) || (b.created_utc || 0) - (a.created_utc || 0);
-      })
-      .slice(0, limit == null ? LIST_CAP : limit);
+      });
+    const q = View.titleQuery();
+    if (q) {
+      list = list.filter((p) => String(p.title || "").toLowerCase().indexOf(q) !== -1);
+    }
+    return list.slice(0, limit == null ? LIST_CAP : limit);
+  }
+
+  function inventoryHasPosts() {
+    return ((window.AppState && AppState.posts) || []).some((p) => {
+      if (!p || !p.id || p.syndicated) return false;
+      return !!(p.title || p.url);
+    });
   }
 
   function cachedMatch(post) {
@@ -293,13 +312,22 @@
     if (!el) return;
     if (signature) resetAttemptsIfScopeChanged(signature);
 
+    const q = View.titleQuery();
     const posts = candidatePosts(LIST_CAP);
     if (!posts.length) {
-      el.innerHTML = `<div class="empty plan-syn-empty">
-        <strong>No loaded posts yet</strong>
-        <p>Sync communities above, then this list ranks where each post fits next — same match engine as Syndicate.</p>
-      </div>`;
-      lastPainted = "empty";
+      if (q && inventoryHasPosts()) {
+        el.innerHTML = `<div class="empty plan-syn-empty">
+          <strong>No title matches</strong>
+          <p>Nothing in loaded posts matches “${esc(q)}”.</p>
+        </div>`;
+        lastPainted = "filter-empty:" + q;
+      } else {
+        el.innerHTML = `<div class="empty plan-syn-empty">
+          <strong>No loaded posts yet</strong>
+          <p>Sync communities above, then this list ranks where each post fits next — same match engine as Syndicate.</p>
+        </div>`;
+        lastPainted = "empty";
+      }
       return;
     }
 
@@ -321,8 +349,9 @@
     } else {
       status = `No strong destinations in ${ranked.length} posts — try Re-rank after loading more communities`;
     }
+    if (q) status = `Title “${q}” · ${status}`;
 
-    const structureSig = ranked.map((p) => p.id).join(",");
+    const structureSig = q + ":" + ranked.map((p) => p.id).join(",");
     const paintSig = structureSig + ":" + matched + ":" + pending + ":" + (suggesting ? 1 : 0);
     const listEl = el.querySelector(".plan-rec-list");
     const metaEl = el.querySelector(".plan-rec-meta");
@@ -504,6 +533,14 @@
     }
   };
 
+  function refreshTitleFilter() {
+    lastPainted = "";
+    View.paint(dataSignature, { skipSchedule: true });
+    if (window.SyndicateView && SyndicateView.paintPlanCarousel) {
+      try { SyndicateView.paintPlanCarousel(); } catch (_) {}
+    }
+  }
+
   View.bind = function () {
     Dom.delegate(document, "click", '[data-action="plan-rec-open"]', (e, el) => {
       if (el.dataset.post) View.openInPlan(el.dataset.post);
@@ -528,6 +565,15 @@
       attempted.clear();
       View.suggest({ force: true, limit: LIST_CAP }).catch(() => {});
     });
+    const search = Dom.byId("recommend-title-search");
+    if (search && !search.dataset.boundTitleFilter) {
+      search.dataset.boundTitleFilter = "1";
+      if (search.value !== titleQuery) search.value = titleQuery;
+      search.addEventListener("input", () => {
+        titleQuery = search.value || "";
+        refreshTitleFilter();
+      });
+    }
   };
 
   if (document.readyState === "loading") {

@@ -1797,6 +1797,42 @@ body.sheet-open {
   max-width: 16rem;
 }
 
+/* ---- Recommend title filter (posts + articles) ---- */
+.recommend-title-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--s-3);
+  max-width: 22rem;
+}
+.recommend-title-filter .group-label {
+  flex: 0 0 auto;
+  margin: 0;
+  white-space: nowrap;
+}
+.recommend-title-filter input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, var(--bg));
+  color: inherit;
+}
+.recommend-title-filter input[type="search"]:focus {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 1px;
+}
+@media (max-width: 960px) {
+  .recommend-title-filter {
+    max-width: none;
+    margin-bottom: var(--s-2);
+  }
+}
+
 /* ---- Recommend split: posts | syndicate articles ---- */
 .plan-split,
 .recommend-split {
