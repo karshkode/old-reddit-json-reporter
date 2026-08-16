@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081607" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081607" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081607" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081607" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081607" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081608" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081608" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081608" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081608" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081608" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081607"></script>
+  <script src="./js/theme.js?v=2026081608"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -527,61 +527,18 @@
         <div class="campaign-section active" id="camp-sec-plan" role="tabpanel">
           <div id="campaign-posting-times"></div>
 
-          <!-- Discovery sits in Plan because "where has this campaign not
-               reached" is a question you ask while deciding where to post
-               next, not while reading charts. It used to live at the foot
-               of a Subreddits tab, one scroll below the same campaign's
-               per-community breakdown, which put the list of rooms you
-               are in and the list of rooms you are not in on the same
-               page and called only one of them planning. -->
-          <div class="card" id="discover-card" style="margin-top:var(--s-4)">
+          <!-- Discovery moved to the dashboard's single-post engine: the
+               whole campaign (theme keywords + its posts) becomes one
+               profile in Plan, same as any post or headline. -->
+          <div class="card" id="campaign-plan-next-card" style="margin-top:var(--s-4)">
             <header class="card-header">
               <div>
                 <h2>Communities this campaign hasn't reached</h2>
-                <span class="hint">Everything above is where it already is. This searches Reddit for the rest, from all its keywords at once</span>
+                <span class="hint">Runs the same engine as a single post — theme keywords and every campaign post become one profile</span>
               </div>
-              <div class="card-actions">
-                <div class="segmented discover-mode" role="tablist" aria-label="Discovery filter">
-                  <button type="button" data-strict="1" class="active" role="tab" title="Drop obvious off-topic and mega-generic subs">Relevant</button>
-                  <button type="button" data-strict="0" role="tab" title="Show every match, including off-topic ones">All</button>
-                </div>
-                <button id="discover-run" class="btn primary small" type="button">Find subreddits</button>
-              </div>
+              <button id="campaign-rank-in-plan" class="btn primary small" type="button" data-action="campaign-rank-in-plan">Rank in Plan</button>
             </header>
-
-            <label class="visually-hidden" for="discover-campaign">Campaign</label>
-            <select id="discover-campaign" class="visually-hidden" aria-hidden="true" tabindex="-1"></select>
-
-            <div class="sphere-picker">
-              <span class="group-label">Issue spheres</span>
-              <div id="sphere-suggestions" class="sphere-suggestions"></div>
-              <div class="sphere-picker-selects">
-                <select id="sphere-add-issue" aria-label="Add an issue sphere"><option value="" disabled selected>+ Issue</option></select>
-                <select id="sphere-add-state" aria-label="Add a state sphere"><option value="" disabled selected>+ State</option></select>
-                <select id="sphere-add-audience" aria-label="Add an audience sphere"><option value="" disabled selected>+ Audience</option></select>
-              </div>
-            </div>
-            <div id="active-spheres" class="active-spheres"></div>
-            <div id="discover-status" class="meta" hidden></div>
-            <div id="discover-results" class="targeting-list"></div>
-          </div>
-
-          <div class="grid two" style="margin-top:var(--s-4)">
-            <div class="card span-2" id="cascade-card">
-              <header class="card-header"><div><h2>Cross-post cascade</h2><span class="hint">A staggered posting plan across a sub list, with the submit page ready at each stop — for this campaign's posts</span></div></header>
-              <div class="cascade-controls">
-                <select id="cascade-post" aria-label="Which post to cascade"></select>
-                <select id="cascade-source" aria-label="Which communities to plan across"></select>
-                <select id="cascade-limit" aria-label="How many stops to plan">
-                  <option value="6">6 stops</option>
-                  <option value="12" selected>12 stops</option>
-                  <option value="24">24 stops</option>
-                  <option value="0">As many as fit</option>
-                </select>
-                <button id="cascade-build" type="button" class="btn small primary">Plan cascade</button>
-              </div>
-              <div id="cascade-results"></div>
-            </div>
+            <p class="meta" id="campaign-plan-next-note"></p>
           </div>
         </div>
 
@@ -1251,47 +1208,47 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081607"></script>
+<script src="./vendor/marked.min.js?v=2026081608"></script>
 
-<script src="./js/dom.js?v=2026081607"></script>
-<script src="./js/util.js?v=2026081607"></script>
-<script src="./js/state.js?v=2026081607"></script>
-<script src="./js/router.js?v=2026081607"></script>
-<script src="./js/sync.js?v=2026081607"></script>
-<script src="./js/archive.js?v=2026081607"></script>
-<script src="./js/imagetext.js?v=2026081607"></script>
-<script src="./js/reddit.js?v=2026081607"></script>
-<script src="./js/postcache.js?v=2026081607"></script>
-<script src="./js/live.js?v=2026081607"></script>
-<script src="./js/refresh.js?v=2026081607"></script>
-<script src="./js/subindex.js?v=2026081607"></script>
-<script src="./js/seeds.js?v=2026081607"></script>
-<script src="./js/matchlex.js?v=2026081607"></script>
-<script src="./js/rules.js?v=2026081607"></script>
-<script src="./js/timing.js?v=2026081607"></script>
-<script src="./js/analysis.js?v=2026081607"></script>
-<script src="./js/discovery.js?v=2026081607"></script>
-<script src="./js/charts.js?v=2026081607"></script>
-<script src="./js/campaigns.js?v=2026081607"></script>
-<script src="./js/reset.js?v=2026081607"></script>
-<script src="./js/analyze.js?v=2026081607"></script>
-<script src="./js/crosspost.js?v=2026081607"></script>
-<script src="./js/nextmove.js?v=2026081607"></script>
-<script src="./js/syndicate.js?v=2026081607"></script>
-<script src="./js/trending.js?v=2026081607"></script>
-<script src="./js/sidebar.js?v=2026081607"></script>
-<script src="./js/composer.js?v=2026081607"></script>
-<script src="./js/ui.js?v=2026081607"></script>
-<script src="./js/views/focus.js?v=2026081607"></script>
-<script src="./js/views/recommend.js?v=2026081607"></script>
-<script src="./js/views/feed.js?v=2026081607"></script>
-<script src="./js/views/dashboard.js?v=2026081607"></script>
-<script src="./js/views/campaign.js?v=2026081607"></script>
-<script src="./js/views/communities.js?v=2026081607"></script>
-<script src="./js/views/posts.js?v=2026081607"></script>
-<script src="./js/views/syndicate.js?v=2026081607"></script>
-<script src="./js/demo.js?v=2026081607"></script>
-<script src="./js/app.js?v=2026081607"></script>
+<script src="./js/dom.js?v=2026081608"></script>
+<script src="./js/util.js?v=2026081608"></script>
+<script src="./js/state.js?v=2026081608"></script>
+<script src="./js/router.js?v=2026081608"></script>
+<script src="./js/sync.js?v=2026081608"></script>
+<script src="./js/archive.js?v=2026081608"></script>
+<script src="./js/imagetext.js?v=2026081608"></script>
+<script src="./js/reddit.js?v=2026081608"></script>
+<script src="./js/postcache.js?v=2026081608"></script>
+<script src="./js/live.js?v=2026081608"></script>
+<script src="./js/refresh.js?v=2026081608"></script>
+<script src="./js/subindex.js?v=2026081608"></script>
+<script src="./js/seeds.js?v=2026081608"></script>
+<script src="./js/matchlex.js?v=2026081608"></script>
+<script src="./js/rules.js?v=2026081608"></script>
+<script src="./js/timing.js?v=2026081608"></script>
+<script src="./js/analysis.js?v=2026081608"></script>
+<script src="./js/discovery.js?v=2026081608"></script>
+<script src="./js/charts.js?v=2026081608"></script>
+<script src="./js/campaigns.js?v=2026081608"></script>
+<script src="./js/reset.js?v=2026081608"></script>
+<script src="./js/analyze.js?v=2026081608"></script>
+<script src="./js/crosspost.js?v=2026081608"></script>
+<script src="./js/nextmove.js?v=2026081608"></script>
+<script src="./js/syndicate.js?v=2026081608"></script>
+<script src="./js/trending.js?v=2026081608"></script>
+<script src="./js/sidebar.js?v=2026081608"></script>
+<script src="./js/composer.js?v=2026081608"></script>
+<script src="./js/ui.js?v=2026081608"></script>
+<script src="./js/views/focus.js?v=2026081608"></script>
+<script src="./js/views/recommend.js?v=2026081608"></script>
+<script src="./js/views/feed.js?v=2026081608"></script>
+<script src="./js/views/dashboard.js?v=2026081608"></script>
+<script src="./js/views/campaign.js?v=2026081608"></script>
+<script src="./js/views/communities.js?v=2026081608"></script>
+<script src="./js/views/posts.js?v=2026081608"></script>
+<script src="./js/views/syndicate.js?v=2026081608"></script>
+<script src="./js/demo.js?v=2026081608"></script>
+<script src="./js/app.js?v=2026081608"></script>
 
 <script>
   (function () {
