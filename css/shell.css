@@ -584,6 +584,24 @@
   display: none !important;
 }
 
+/* Score top-up lives in the same status column as Sync progress.
+ * While a Sync is running it competes for the same line and reads as
+ * a second progress message — hide it until the fetch finishes. */
+.action-banner.phase-loading .watch-badge {
+  display: none !important;
+}
+.action-banner-status .watch-badge {
+  display: block;
+  margin-top: 2px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.action-banner-status .watch-badge[hidden] {
+  display: none !important;
+}
+
 /* Primary action and its scope picker read as one control, so the
  * caret is obviously "the same button, other scopes" rather than a
  * second unrelated action. */
@@ -592,6 +610,7 @@
   display: flex;
   align-items: stretch;
   gap: 1px;
+  position: relative;
 }
 .action-banner-buttons .action-btn {
   border-top-right-radius: 0;
@@ -608,9 +627,22 @@
   padding-inline: var(--s-2);
   line-height: 1;
 }
-.action-banner.phase-loading .action-scope-toggle {
-  opacity: 0.5;
-  pointer-events: none;
+.action-banner.phase-loading .action-scope-toggle,
+.action-banner.phase-loading #action-scope-menu {
+  display: none !important;
+}
+
+/* During Sync the progress track is the indicator — a disabled
+ * "Loading…" button next to Cancel just fights for width. Cancel
+ * becomes the sole control; keep Loading on wide screens only as a
+ * quiet spinner affordance. */
+.action-banner.phase-loading .action-cancel {
+  margin-left: 0;
+  border-radius: var(--radius-sm, 6px);
+}
+.action-banner.phase-loading .action-cancel + .action-btn {
+  margin-left: 0;
+  border-radius: var(--radius-sm, 6px);
 }
 
 /* The shared .action-menu only becomes a popover on narrow screens,
@@ -750,6 +782,36 @@
   }
   .action-banner {
     padding: var(--s-2) var(--s-3);
+  }
+
+  /* Phone Sync: status + progress take the full width; Cancel sits
+   * alone underneath. The old single-row layout jammed Cancel,
+   * Loading…, and the scope caret into ~120px and they overlapped. */
+  .action-banner.phase-loading {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--s-2);
+  }
+  .action-banner.phase-loading .action-banner-status {
+    flex: 1 1 100%;
+    order: 1;
+  }
+  .action-banner.phase-loading .action-banner-buttons {
+    flex: 1 1 100%;
+    order: 2;
+    justify-content: flex-end;
+    gap: var(--s-2);
+  }
+  .action-banner.phase-loading .action-btn {
+    display: none;
+  }
+  .action-banner.phase-loading .action-cancel {
+    min-height: 36px;
+    padding-inline: var(--s-4);
+  }
+  .action-banner.phase-loading .action-progress-track {
+    height: 4px;
+    margin-top: var(--s-2);
   }
 }
 

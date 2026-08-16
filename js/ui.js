@@ -21,6 +21,11 @@
   UI.renderWatchBadge = function (watch) {
     const host = document.getElementById("watch-badge");
     if (!host) return;
+    /* Sync progress owns the banner while a fetch runs. Skip painting
+     * here so we do not flip hidden=true permanently — CSS hides the
+     * badge during phase-loading and reveals it again when Sync ends. */
+    const banner = document.getElementById("action-banner");
+    if (banner && banner.classList.contains("phase-loading")) return;
     if (!watch || !watch.on || !watch.count) {
       host.hidden = true;
       host.textContent = "";
