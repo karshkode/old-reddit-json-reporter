@@ -290,13 +290,24 @@
     if (section === "settings") return renderSettings(campaign, agg);
   }
 
-  /* Plan's cascade card is static markup wired once by app.js; what
-     this fills is timing plus who has not been reached. Inventory
-     recommendations and Make-campaign live on the dashboard Plan tab. */
+  /* Plan holds timing plus the hand-off to the dashboard's single-post
+     engine — the campaign becomes one pseudo-post (theme keywords +
+     member posts) that Focus ranks like anything else. */
   function renderPlan(campaign, agg) {
     renderCampaignTiming(campaign, agg);
-    const discoverFor = Dom.byId("discover-campaign");
-    if (discoverFor) discoverFor.value = campaign.id;
+    const note = Dom.byId("campaign-plan-next-note");
+    if (note) {
+      const n = (agg && agg.posts && agg.posts.length) || 0;
+      const themeKind = campaign.theme ? Campaigns.themeKindLabel(campaign.theme) : "";
+      const bits = [];
+      if (themeKind) bits.push(`${themeKind}${campaign.theme.label ? ` “${trunc(campaign.theme.label, 60)}”` : ""}`);
+      bits.push(n
+        ? `${n} post${n === 1 ? "" : "s"} feed the profile`
+        : (campaign.theme && campaign.theme.keywords && campaign.theme.keywords.length
+          ? "No posts yet — theme keywords carry the match"
+          : "No posts yet — add posts or a theme so there is something to match on"));
+      note.textContent = bits.join(" · ");
+    }
   }
 
   /* ------------------------------------------------------------------
@@ -825,6 +836,23 @@
       const post = ((agg && agg.posts) || []).find((p) => p && p.id === id)
         || AppState.posts.find((p) => p && p.id === id);
       if (post && window.FocusView) FocusView.focusPost(post);
+    });
+
+    /* Whole campaign → Plan as one post. Theme keywords keep this
+       working for trend/article campaigns with no resolved posts. */
+    Dom.delegate(document, "click", '[data-action="campaign-rank-in-plan"]', () => {
+      const campaign = Campaigns.get(AppState.openCampaignId);
+      if (!campaign || !window.FocusView || !Campaigns.asPost) return;
+      const agg = AppState.campaignAgg;
+      const draft = Campaigns.asPost(campaign, {
+        posts: (agg && agg.campaignId === campaign.id && agg.posts) || undefined,
+      });
+      if (!draft) return;
+      if (!(draft.title || "").trim() && !(draft.selftext || "").trim()) {
+        Util.toast("Nothing to match on yet — add posts or theme keywords first.", "err");
+        return;
+      }
+      FocusView.focusPost(draft);
     });
 
     Dom.delegate(document, "click", '[data-action="add-sub"]', (e, btn) => {

@@ -335,6 +335,55 @@
     });
   };
 
+  /* The whole campaign folded into one pseudo-post so the single-post
+   * engines (Focus / Plan, Discovery.forPost) can rank it like anything
+   * else on the site. Theme keywords carry campaigns with no resolved
+   * posts yet — a trend campaign is matchable from day zero. */
+  Campaigns.asPost = function (campaign, opts) {
+    opts = opts || {};
+    if (!campaign) return null;
+    const theme = campaign.theme || null;
+    let posts = Array.isArray(opts.posts) ? opts.posts.slice() : null;
+    if (!posts) {
+      const idSet = new Set(campaign.postIds || []);
+      const summary = (window.AppState && AppState.campaignSummaries)
+        ? AppState.campaignSummaries[campaign.id]
+        : null;
+      posts = (summary && summary.posts ? summary.posts : []).filter((p) => p && idSet.has(p.id));
+      if (!posts.length && window.AppState && Array.isArray(AppState.posts)) {
+        posts = AppState.posts.filter((p) => p && idSet.has(p.id));
+      }
+    }
+    posts.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    const bodyBits = [];
+    if (theme && theme.label && theme.label !== campaign.name) bodyBits.push(theme.label);
+    if (theme && theme.keywords && theme.keywords.length) bodyBits.push(theme.keywords.join(", "));
+    for (const p of posts.slice(0, 12)) {
+      if (p && p.title) bodyBits.push(p.title);
+    }
+    const subs = new Set();
+    for (const p of posts) {
+      if (p && p.subreddit) subs.add(String(p.subreddit).toLowerCase());
+    }
+    return {
+      id: "camp_" + campaign.id,
+      campaignId: campaign.id,
+      syndicated: true,
+      title: campaign.name,
+      selftext: bodyBits.join("\n"),
+      is_self: true,
+      url: (theme && theme.articleLink) || "",
+      subreddit: "",
+      suggested_sub: "",
+      score: posts.reduce((n, p) => n + ((p && p.score) || 0), 0),
+      num_comments: posts.reduce((n, p) => n + ((p && p.num_comments) || 0), 0),
+      created_utc: Math.floor((campaign.createdAt || Date.now()) / 1000),
+      campaign_subs: Array.from(subs),
+      source_label: (Campaigns.themeKindLabel(theme) || "Campaign") + " · " + (campaign.name || "Campaign"),
+    };
+  };
+
   Campaigns.remove = function (id) {
     ensureMirror();
     mirror = mirror.filter((c) => c.id !== id);
