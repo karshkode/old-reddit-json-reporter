@@ -701,7 +701,7 @@
     {
       key: "everything",
       label: "Everything (issues)",
-      description: "Every issue sphere in the catalog. A wide net — expect to trim it afterwards.",
+      description: "Every issue sphere — usually too wide. Prefer one starter desk; Sync only reads 12 communities per tap anyway.",
       spheres: null, /* resolved to all issue keys at call time */
     },
   ];

@@ -271,7 +271,7 @@
         bundleHost.innerHTML = `
           <div class="catalog-bundle-head">
             <strong>Starter bundles</strong>
-            <span class="hint">Combinations that make a sensible first load. Available any time, not just on a fresh install.</span>
+            <span class="hint">Prefer one cohesive desk (or two related ones). “Everything” loads the whole issue catalog — Sync and matching both suffer.</span>
           </div>
           <div class="catalog-bundle-row">
             ${Seeds.BUNDLES.map((b) => {
@@ -339,6 +339,94 @@
   let loadedFilter = "";
   const selection = new Set();
 
+  /* Keep the desk tight: a few related issue spheres beat dozens of
+     unrelated rooms. Past these soft caps, matching dilutes and Sync
+     cost balloons (~2 archive calls per sub). */
+  const COHESION_MAX_SPHERES = 3;
+  const COHESION_SOFT_SUBS = 36;
+
+  function issueKeysOf(name) {
+    return Seeds.spheresOf(name).filter((k) =>
+      !String(k).startsWith("state:") && !String(k).startsWith("demo:"));
+  }
+
+  function issueSphereSet(names) {
+    const keys = new Set();
+    for (const n of names || []) {
+      for (const k of issueKeysOf(n)) keys.add(k);
+    }
+    return keys;
+  }
+
+  /* Issue-sphere chunks currently in inventory — one-tap unload targets.
+     A sub in two spheres appears in both counts; unloading either sphere
+     still only removes names that belong to that sphere. */
+  function loadedIssueChunks() {
+    const byKey = new Map();
+    const other = [];
+    for (const s of AppState.knownSubs) {
+      const keys = issueKeysOf(s);
+      if (!keys.length) {
+        other.push(s);
+        continue;
+      }
+      for (const k of keys) {
+        let row = byKey.get(k);
+        if (!row) {
+          row = { key: k, label: Seeds.labelOf(k), names: [] };
+          byKey.set(k, row);
+        }
+        row.names.push(s);
+      }
+    }
+    const chunks = Array.from(byKey.values())
+      .sort((a, b) => b.names.length - a.names.length || a.label.localeCompare(b.label));
+    return { chunks: chunks, other: other };
+  }
+
+  function renderTrim() {
+    const host = Dom.byId("loaded-trim");
+    if (!host) return;
+    const total = AppState.knownSubs.length;
+    if (!total) {
+      host.hidden = true;
+      host.innerHTML = "";
+      return;
+    }
+
+    const { chunks, other } = loadedIssueChunks();
+    const sphereCount = chunks.length;
+    const sprawling = sphereCount > COHESION_MAX_SPHERES || total > COHESION_SOFT_SUBS;
+    const batch = (window.Refresh && Refresh.SYNC_BATCH) || 12;
+
+    host.hidden = false;
+    host.innerHTML = `
+      <div class="loaded-trim-head">
+        <strong>Trim by theme</strong>
+        <span class="hint">${sphereCount} issue theme${sphereCount === 1 ? "" : "s"} in inventory · Sync reads ${batch} communities per tap</span>
+      </div>
+      ${sprawling ? `<p class="loaded-trim-cohesion">
+        Inventory spans ${sphereCount} themes (${total} subs). Matching works best with about ${COHESION_MAX_SPHERES} related desks and under ~${COHESION_SOFT_SUBS} communities — unload themes you are not campaigning on.
+      </p>` : ""}
+      <div class="loaded-trim-chips" role="group" aria-label="Unload theme chunks">
+        ${chunks.map((c) => `
+          <button type="button" class="chip loaded-trim-unload" data-action="unload-sphere" data-sphere="${esc(c.key)}"
+                  title="Remove the ${c.names.length} loaded communities in ${esc(c.label)}">
+            − ${esc(c.label)} · ${c.names.length}
+          </button>`).join("")}
+        ${other.length ? `
+          <button type="button" class="chip loaded-trim-unload" data-action="unload-other"
+                  title="Remove ${other.length} loaded communities not in the issue catalog">
+            − Outside catalog · ${other.length}
+          </button>` : ""}
+        ${total >= 8 ? `
+          <button type="button" class="chip loaded-trim-unload" data-action="unload-all-loaded"
+                  title="Clear the whole inventory">
+            − Remove all ${total}
+          </button>` : ""}
+      </div>`;
+  }
+
   /* Filter matches the name or any sphere the sub belongs to, so
      "healthcare" narrows to that sphere's communities and the whole
      lot can then be selected and removed together. Loading a sphere
@@ -381,7 +469,10 @@
     const subs = visibleSubs();
     const activeCount = AppState.knownSubs.filter((s) => AppState.activeSubs.has(s)).length;
     const allShownSelected = subs.length > 0 && subs.every((s) => selection.has(s));
-    const due = Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s)));
+    const duePick = Refresh.dueBatch
+      ? Refresh.dueBatch(subs.filter((s) => AppState.activeSubs.has(s)))
+      : { batch: Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s))), remaining: 0, due: [] };
+    const dueN = (duePick.due && duePick.due.length) || duePick.batch.length;
 
     toolbar.innerHTML = `
         <div class="subman-bar">
@@ -394,9 +485,10 @@
           <button class="btn small ghost" type="button" data-action="select-shown" ${subs.length ? "" : "disabled"}>
             ${allShownSelected ? "Deselect" : "Select"} ${loadedFilter ? `these ${subs.length}` : "all"}
           </button>
-          ${due.length ? `
-            <button class="btn small primary" type="button" data-sync="stale">
-              Sync ${due.length} out of date
+          ${dueN ? `
+            <button class="btn small primary" type="button" data-sync="stale"
+                    title="${duePick.remaining ? `Syncs ${duePick.batch.length} of ${dueN} due this round` : `Sync ${dueN} out of date`}">
+              Sync ${duePick.remaining ? `${duePick.batch.length} of ${dueN}` : dueN} out of date
             </button>` : ""}
         </div>
         ${selection.size ? `
@@ -414,13 +506,14 @@
     const host = Dom.byId("loaded-subs-grid");
     if (!host) return;
     pruneSelection();
+    renderTrim();
     renderToolbar();
 
     if (!AppState.knownSubs.length) {
       host.innerHTML = Dom.emptyState({
         icon: "⌗",
         title: "No subreddits yet",
-        body: "Search for communities or load a curated sphere to get started.",
+        body: "Start from one starter bundle or a single issue sphere — keep themes related so Sync stays light.",
         action: '<button class="btn primary" type="button" data-communities-tab="catalog">Browse the catalog</button>',
       });
       return;
@@ -476,23 +569,58 @@
    * ================================================================== */
 
   function bulkAdd(names, label) {
-    const added = AppState.addSubs(names);
+    const incoming = (names || []).filter(Boolean);
+    const fresh = incoming.filter((s) => !AppState.hasSub(s));
+    if (!fresh.length) {
+      Util.toast(`Every sub${label ? ` in ${label}` : ""} was already in your dashboard`);
+      return;
+    }
+
+    const projectedTotal = AppState.knownSubs.length + fresh.length;
+    const beforeSpheres = issueSphereSet(AppState.knownSubs);
+    const afterSpheres = issueSphereSet(AppState.knownSubs.concat(fresh));
+    const newThemes = Array.from(afterSpheres).filter((k) => !beforeSpheres.has(k));
+    const sprawl =
+      afterSpheres.size > COHESION_MAX_SPHERES ||
+      projectedTotal > COHESION_SOFT_SUBS ||
+      fresh.length >= 24;
+
+    if (sprawl) {
+      const themeBit = afterSpheres.size > COHESION_MAX_SPHERES
+        ? `That would span ${afterSpheres.size} issue themes`
+        : `${projectedTotal} communities in inventory`;
+      const extra = newThemes.length
+        ? `\n\nNew themes: ${newThemes.slice(0, 6).map((k) => Seeds.labelOf(k)).join(", ")}${newThemes.length > 6 ? "…" : ""}`
+        : "";
+      const ok = window.confirm(
+        `Add ${fresh.length} subreddit${fresh.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""}?\n\n` +
+        `${themeBit}. Matching stays sharper — and Sync cheaper — with about ${COHESION_MAX_SPHERES} related desks and under ~${COHESION_SOFT_SUBS} communities.` +
+        extra +
+        `\n\nPrefer one starter bundle or a single issue sphere over “Everything”.`
+      );
+      if (!ok) return;
+    }
+
+    const added = AppState.addSubs(incoming);
     App.renderChips();
     App.markPending(null, { scope: "subs" });
     View.render();
     Router.invalidate(["dashboard", "posts"]);
     if (added.length) {
-      Util.toast(`Added ${added.length} subreddit${added.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""} — tap Go to load their posts`);
-    } else {
-      Util.toast(`Every sub${label ? ` in ${label}` : ""} was already in your dashboard`);
+      const batch = (window.Refresh && Refresh.SYNC_BATCH) || 12;
+      Util.toast(
+        `Added ${added.length} subreddit${added.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""} — Sync reads ${batch} at a time`
+      );
     }
-    /* Warm the index in the background so the catalog can show real
-     * subscriber counts and so similarity search has descriptions to
-     * compare against. */
-    SubIndex.ensure(names, { limit: 30, concurrency: 3 }).then(() => {
-      Discovery.invalidateSpheres();
-      if (Router.current() === "communities") View.render();
-    }).catch(() => {});
+    /* Warm a short head of the index only — full-catalog metadata for
+     * dozens of new rooms is not worth the about.json storm. */
+    const warm = added.slice(0, 24);
+    if (warm.length) {
+      SubIndex.ensure(warm, { limit: 20, concurrency: 2 }).then(() => {
+        Discovery.invalidateSpheres();
+        if (Router.current() === "communities") View.render();
+      }).catch(() => {});
+    }
   }
 
   /* The mirror of bulkAdd. Only counts what was actually loaded, so a
@@ -506,6 +634,7 @@
     }
     if (loaded.length > 1 && !window.confirm(`Remove ${loaded.length} subreddits${label ? ` from ${label}` : ""}? Their loaded posts go too.`)) return;
     const removed = AppState.removeSubs(loaded);
+    selection.clear();
     afterSubChange(`Removed ${removed.length} subreddit${removed.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""}`);
   }
 
@@ -548,7 +677,25 @@
     }
   };
 
+  /* Overflow chips and sprawling inventories land on Loaded, where
+   * theme unload is one tap — not buried behind Catalog browsing. */
+  View.openLoaded = function () {
+    Router.go("communities");
+    View.goToTab("loaded");
+    const trim = Dom.byId("loaded-trim");
+    if (trim && !trim.hidden) {
+      try { trim.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+    }
+  };
+
   View.mount = function () {
+    /* Large inventories: first Communities visit opens Loaded so
+     * trim-by-theme is immediate. Later tab picks are left alone. */
+    if (!View._landedLoaded && AppState.knownSubs.length >= 12 && AppState.communitiesTab === "search") {
+      View._landedLoaded = true;
+      AppState.communitiesTab = "loaded";
+    }
+
     const form = Dom.byId("sub-search-form");
     const input = Dom.byId("sub-search-input");
 
@@ -662,10 +809,16 @@
         return;
       }
       const held = names.length - fetchable.length;
-      Refresh.subs(fetchable, {
-        label: fetchable.length === 1 ? "r/" + fetchable[0] : `${fetchable.length} selected`,
+      const cap = (window.Refresh && Refresh.SYNC_BATCH) || 12;
+      const batch = fetchable.slice(0, cap);
+      const remaining = fetchable.length - batch.length;
+      Refresh.subs(batch, {
+        label: remaining
+          ? `${batch.length} of ${fetchable.length} selected`
+          : (batch.length === 1 ? "r/" + batch[0] : `${batch.length} selected`),
       }).then(() => {
         if (held) Util.toast(`${held} of those are excluded from fetching, so they were skipped.`);
+        else if (remaining) Util.toast(`${remaining} selected still waiting — Sync again for the next batch.`);
         renderLoaded();
       });
     });
@@ -721,6 +874,15 @@
     Dom.delegate(document, "click", '[data-action="unload-bundle"]', (e, btn) => {
       const bundle = Seeds.BUNDLES.find((b) => b.key === btn.dataset.bundle);
       bulkRemove(Seeds.bundleSubs(btn.dataset.bundle), bundle ? bundle.label : "");
+    });
+
+    Dom.delegate(document, "click", '[data-action="unload-other"]', () => {
+      const other = loadedIssueChunks().other;
+      bulkRemove(other, "outside the issue catalog");
+    });
+
+    Dom.delegate(document, "click", '[data-action="unload-all-loaded"]', () => {
+      bulkRemove(AppState.knownSubs.slice(), "your whole inventory");
     });
 
     Dom.delegate(document, "click", '[data-action="add-pasted"]', () => {
