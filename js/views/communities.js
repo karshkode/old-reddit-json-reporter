@@ -402,7 +402,7 @@
     host.innerHTML = `
       <div class="loaded-trim-head">
         <strong>Trim by theme</strong>
-        <span class="hint">${sphereCount} issue theme${sphereCount === 1 ? "" : "s"} in inventory · Sync warns above ${((window.Refresh && Refresh.WARN_AT) || 12)} communities</span>
+        <span class="hint">${sphereCount} issue theme${sphereCount === 1 ? "" : "s"} in inventory · Sync gives a quiet heads-up above ${((window.Refresh && Refresh.WARN_AT) || 12)}</span>
       </div>
       ${sprawling ? `<p class="loaded-trim-cohesion">
         Inventory spans ${sphereCount} themes (${total} subs). Matching works best with about ${COHESION_MAX_SPHERES} related desks and under ~${COHESION_SOFT_SUBS} communities — unload themes you are not campaigning on.
@@ -564,7 +564,7 @@
    * BULK ADD
    * ================================================================== */
 
-  function bulkAdd(names, label) {
+  async function bulkAdd(names, label) {
     const incoming = (names || []).filter(Boolean);
     const fresh = incoming.filter((s) => !AppState.hasSub(s));
     if (!fresh.length) {
@@ -583,17 +583,24 @@
 
     if (sprawl) {
       const themeBit = afterSpheres.size > COHESION_MAX_SPHERES
-        ? `That would span ${afterSpheres.size} issue themes`
-        : `${projectedTotal} communities in inventory`;
-      const extra = newThemes.length
-        ? `\n\nNew themes: ${newThemes.slice(0, 6).map((k) => Seeds.labelOf(k)).join(", ")}${newThemes.length > 6 ? "…" : ""}`
-        : "";
-      const ok = window.confirm(
-        `Add ${fresh.length} subreddit${fresh.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""}?\n\n` +
-        `${themeBit}. Matching stays sharper — and Sync cheaper — with about ${COHESION_MAX_SPHERES} related desks and under ~${COHESION_SOFT_SUBS} communities.` +
-        extra +
-        `\n\nPrefer one starter bundle or a single issue sphere over “Everything”.`
-      );
+        ? `This would span ${afterSpheres.size} issue themes`
+        : `Inventory would grow to ${projectedTotal} communities`;
+      const detail = [
+        `${themeBit}. Matching stays sharper with about ${COHESION_MAX_SPHERES} related desks and under ~${COHESION_SOFT_SUBS} communities.`,
+        newThemes.length
+          ? `New themes: ${newThemes.slice(0, 6).map((k) => Seeds.labelOf(k)).join(", ")}${newThemes.length > 6 ? "…" : ""}`
+          : "",
+      ].filter(Boolean).join(" ");
+      const ok = await Util.confirm({
+        title: `Add ${fresh.length} communities?`,
+        body: label
+          ? `Load ${fresh.length} new subreddits from ${label}.`
+          : `Load ${fresh.length} new subreddits into your dashboard.`,
+        detail: detail,
+        confirmLabel: `Add ${fresh.length}`,
+        cancelLabel: "Keep it tight",
+        tone: "info",
+      });
       if (!ok) return;
     }
 
@@ -621,13 +628,25 @@
   /* The mirror of bulkAdd. Only counts what was actually loaded, so a
      sphere half of which you never had does not claim to have removed
      the other half. */
-  function bulkRemove(names, label) {
+  async function bulkRemove(names, label) {
     const loaded = (names || []).filter((s) => AppState.hasSub(s));
     if (!loaded.length) {
       Util.toast(`Nothing from ${label || "that group"} is loaded`);
       return;
     }
-    if (loaded.length > 1 && !window.confirm(`Remove ${loaded.length} subreddits${label ? ` from ${label}` : ""}? Their loaded posts go too.`)) return;
+    if (loaded.length > 1) {
+      const ok = await Util.confirm({
+        title: `Remove ${loaded.length} communities?`,
+        body: label
+          ? `Unload ${loaded.length} subreddits from ${label}.`
+          : `Unload ${loaded.length} subreddits from your dashboard.`,
+        detail: "Their loaded posts go with them.",
+        confirmLabel: `Remove ${loaded.length}`,
+        cancelLabel: "Keep them",
+        tone: "warn",
+      });
+      if (!ok) return;
+    }
     const removed = AppState.removeSubs(loaded);
     selection.clear();
     afterSubChange(`Removed ${removed.length} subreddit${removed.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""}`);
@@ -825,12 +844,22 @@
     Dom.delegate(document, "click", '[data-action="bulk-remove"]', () => {
       const names = Array.from(selection);
       if (!names.length) return;
-      /* Unloading is the one action here that throws work away, and
-         at forty subs it is not obviously undoable. */
-      if (names.length > 1 && !window.confirm(`Remove ${names.length} subreddits from your dashboard? Their loaded posts go too.`)) return;
-      const removed = AppState.removeSubs(names);
-      selection.clear();
-      afterSubChange(`Removed ${removed.length} subreddit${removed.length === 1 ? "" : "s"}`);
+      (async () => {
+        if (names.length > 1) {
+          const ok = await Util.confirm({
+            title: `Remove ${names.length} communities?`,
+            body: `Unload the ${names.length} selected subreddits from your dashboard.`,
+            detail: "Their loaded posts go with them.",
+            confirmLabel: `Remove ${names.length}`,
+            cancelLabel: "Keep them",
+            tone: "warn",
+          });
+          if (!ok) return;
+        }
+        const removed = AppState.removeSubs(names);
+        selection.clear();
+        afterSubChange(`Removed ${removed.length} subreddit${removed.length === 1 ? "" : "s"}`);
+      })().catch(() => {});
     });
 
     Dom.delegate(document, "click", '[data-action="toggle-catalog-sub"]', (e, btn) => {

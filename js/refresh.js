@@ -98,16 +98,19 @@
     return true;
   };
 
-  Refresh.confirmLarge = function (count, opts) {
+  Refresh.confirmLarge = async function (count, opts) {
     opts = opts || {};
     if (opts.warn === false) return true;
     if (!count || count <= WARN_AT) return true;
-    const approx = count * 2;
-    return window.confirm(
-      `Sync all ${count} communities?\n\n` +
-      `That is roughly ${approx} archive requests and can take a few minutes. ` +
-      `You can Cancel from the banner if it runs long.`
-    );
+    if (!window.Util || !Util.confirm) return true;
+    return Util.confirm({
+      title: "Ready to sync",
+      body: `This will refresh ${count} communities. It usually takes a minute or two.`,
+      detail: "You can cancel from the banner anytime — anything already loaded is kept.",
+      confirmLabel: `Sync ${count}`,
+      cancelLabel: "Not now",
+      tone: "info",
+    });
   };
 
   /* ------------------------------------------------------------------
@@ -266,7 +269,7 @@
       (n) => n
     );
     if (!list.length) return null;
-    if (!Refresh.confirmLarge(list.length, opts)) return null;
+    if (!(await Refresh.confirmLarge(list.length, opts))) return null;
     const key = "subs:" + list.map((n) => n.toLowerCase()).sort().join(",");
     if (!claim(key)) return null;
 
@@ -712,7 +715,7 @@
     return {
       phase: "loaded", action: "stale", label: `Sync ${due}`, icon: "↻",
       text: due > WARN_AT
-        ? `${what} · may take a few minutes · ${posts}.`
+        ? `${what} · usually a minute or two · ${posts}.`
         : `${what} · ${posts}.`,
     };
   };

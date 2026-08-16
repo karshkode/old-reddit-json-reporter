@@ -2026,6 +2026,40 @@ select { max-width: 100%; min-width: 0; }
   color: var(--text-dim);
   line-height: 1.5;
 }
+
+/* Soft confirm dialog — same shell as other modals, quieter copy */
+.confirm-modal .confirm-card {
+  max-width: 420px;
+}
+.confirm-modal .confirm-body {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-md, 14px);
+  line-height: 1.45;
+}
+.confirm-modal .confirm-detail {
+  margin: 0;
+  line-height: 1.4;
+}
+.confirm-modal .confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s-2, 8px);
+  margin-top: var(--s-2, 8px);
+}
+.confirm-modal.is-warn .confirm-card {
+  border-color: color-mix(in srgb, var(--warn, #b45309) 45%, var(--border-strong));
+}
+.confirm-modal.is-danger .confirm-card {
+  border-color: color-mix(in srgb, var(--bad, #b91c1c) 45%, var(--border-strong));
+}
+.confirm-modal.is-danger #confirm-modal-ok.btn {
+  background: var(--bad, #b91c1c);
+  border-color: var(--bad, #b91c1c);
+  color: #fff;
+}
+
 /* ---- Reset dialog ----------------------------------------------------
    Each scope is a full-width hit target rather than a bare checkbox: the
    count under the name is the part that makes the choice, so the row has
