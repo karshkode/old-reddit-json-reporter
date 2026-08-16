@@ -604,6 +604,51 @@
 
 /* ------------------------------------------------------- Loaded subs */
 
+.loaded-trim {
+  margin: 0 0 var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+}
+.loaded-trim-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin-bottom: var(--s-2);
+}
+.loaded-trim-head strong {
+  font-size: var(--fs-sm);
+}
+.loaded-trim-head .hint {
+  flex: 1 1 12rem;
+}
+.loaded-trim-cohesion {
+  margin: 0 0 var(--s-2);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn, #b45309) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn, #b45309) 35%, transparent);
+  font-size: var(--fs-sm);
+}
+.loaded-trim-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.loaded-trim-chips .chip {
+  font-size: var(--fs-xs);
+}
+.loaded-trim-chips .chip.danger-soft,
+button.chip.loaded-trim-unload {
+  border-color: color-mix(in srgb, var(--danger, #b91c1c) 40%, var(--border));
+  color: var(--danger, #b91c1c);
+}
+.loaded-trim-chips .chip.loaded-trim-unload:hover {
+  background: color-mix(in srgb, var(--danger, #b91c1c) 10%, transparent);
+}
+
 .subman-toolbar {
   margin-bottom: var(--s-3);
 }

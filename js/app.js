@@ -719,8 +719,19 @@
         return Promise.resolve(Refresh.pruneOlderThanWindow());
       case "all":
       case "go":
-      default:
+      default: {
+        const n = state.activeSubs ? state.activeSubs.size : 0;
+        const batch = (window.Refresh && Refresh.SYNC_BATCH) || 12;
+        if (scope === "all" && n > batch) {
+          const ok = window.confirm(
+            `Start over for all ${n} active communities?\n\n` +
+            `That re-fetches everything from scratch and discards posts that have fallen off listings. ` +
+            `Prefer Sync (${batch} at a time) unless you changed the listing or time window.`
+          );
+          if (!ok) return Promise.resolve(null);
+        }
         return Refresh.everything(true);
+      }
     }
   }
 
@@ -1795,8 +1806,9 @@
       if (!note) return;
       const f = Refresh.freshness();
       const due = f.unread.length + f.stale.length;
+      const batch = (Refresh.SYNC_BATCH || 12);
       note.textContent = state.activeSubs.size
-        ? `${due} of ${state.activeSubs.size} subreddits are out of date. Syncing keeps the ${Util.fmtNum(state.posts.length)} posts already collected; starting over discards them.`
+        ? `${due} of ${state.activeSubs.size} subreddits are out of date. Sync runs ${batch} at a time (tap again for the next batch) and keeps the ${Util.fmtNum(state.posts.length)} posts already collected; starting over discards them.`
         : "No subreddits loaded yet.";
     });
 
@@ -3344,9 +3356,7 @@
         }
       },
       (sub) => {
-        state.knownSubs = state.knownSubs.filter((s) => s !== sub);
-        state.activeSubs.delete(sub);
-        persist();
+        AppState.removeSubs([sub]);
         renderChips();
         markPending(`Removed r/${sub}`, { scope: "subs" });
         if (typeof Router !== "undefined" && Router.invalidate) {
@@ -3355,8 +3365,12 @@
       },
       {
         onOverflow: () => {
-          Router.go("communities");
-          CommunitiesView.goToTab("loaded");
+          if (window.CommunitiesView && CommunitiesView.openLoaded) {
+            CommunitiesView.openLoaded();
+          } else {
+            Router.go("communities");
+            CommunitiesView.goToTab("loaded");
+          }
         },
       }
     );

@@ -64,7 +64,7 @@
       more.type = "button";
       more.className = "chip chip-more";
       more.innerHTML = `${subs.length} subs<span aria-hidden="true">›</span>`;
-      more.title = `Manage all ${subs.length} subreddits — ${hidden} not shown here`;
+      more.title = `Trim themes & manage all ${subs.length} subreddits — ${hidden} not shown here`;
       more.addEventListener("click", () => {
         if (opts.onOverflow) opts.onOverflow();
       });
