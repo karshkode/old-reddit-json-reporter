@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081606" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081606" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081606" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081606" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081606" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081607" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081607" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081607" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081607" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081607" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081606"></script>
+  <script src="./js/theme.js?v=2026081607"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -194,11 +194,25 @@
             <nav class="section-rail recommend-subrail" id="recommend-subrail" role="tablist" aria-label="Recommend panels" hidden>
               <button type="button" role="tab" data-rec-tab="posts" class="active" aria-selected="true" aria-controls="rec-panel-posts">Posts</button>
               <button type="button" role="tab" data-rec-tab="syndicate" aria-selected="false" aria-controls="rec-panel-syndicate" tabindex="-1">Articles</button>
-              <button type="button" role="tab" data-rec-tab="crossposts" aria-selected="false" aria-controls="rec-panel-crossposts" tabindex="-1">Cross-posts</button>
             </nav>
           </div>
 
           <div class="dash-section active" id="dash-recommend" role="tabpanel">
+            <div class="card" id="trending-topics-card">
+              <header class="card-header">
+                <div>
+                  <h2>Themes to campaign on</h2>
+                  <span class="hint">Front-and-center desk topics — start a campaign from a trend, a headline, or matching loaded posts</span>
+                </div>
+                <div class="card-actions">
+                  <button class="btn small ghost" type="button" data-action="trending-refresh"
+                          title="Re-cluster from Syndicate headlines and loaded posts">↻ Refresh</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each theme is a curated mid-cycle desk entry with trigger keywords that also feed Recommend’s Reddit search. Matching Syndicate headlines and loaded inventory posts cluster under the theme with spread stats (subs, points, comments). + Campaign on theme creates a campaign anchored on that story — it does not require same-URL cross-posts. Sphere chips load issue communities from the catalog.">?</button>
+                </div>
+              </header>
+              <div id="trending-topics" class="trending-topics"></div>
+            </div>
+
             <div class="recommend-title-filter">
               <label class="group-label" for="recommend-title-search">Title</label>
               <input id="recommend-title-search" type="search" placeholder="Filter posts &amp; articles…"
@@ -218,7 +232,7 @@
                           title="Browse recommended posts as an in-app feed">☰ Feed</button>
                   <button class="btn small ghost" type="button" data-action="plan-rec-refresh"
                           title="Re-rank destinations for loaded posts">↻ Re-rank</button>
-                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each row is one post from your loaded inventory (cross-post copies are collapsed to a single representative). Post keywords come from the title and body and drive destination match — theme, sphere, reach and activity — with a floor so weak fits stay off the list. Audience tone and audience keywords come from the comment thread in the home subreddit: a separate reception signal for how the room is responding, not a substitute for subject fit. Destinations show as compact scores; open the post for the full match terms. Open in Plan hands the post to the Plan tab for a timed next move. View opens the in-app feed. When the same content already exists in two or more communities, Make campaign turns those copies into a tracked campaign.">?</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each row is one post from your loaded inventory (same-story copies are collapsed to a representative). When copies span communities, the row shows combined spread stats — subs, points, comments — without a separate Cross-posts panel. Destinations come from catalog, loaded rooms, and desk keyword search. + Campaign starts a theme-anchored campaign from the origin post (copies fold in when present). Open in Plan hands the post to Focus for a timed next move.">?</button>
                 </div>
                 </header>
                 <div id="plan-recommend-body" class="plan-rec-body">
@@ -234,7 +248,7 @@
                 <header class="card-header">
                   <div>
                     <h2>Syndicate articles</h2>
-                    <span class="hint">Headlines from your news desk — tap one for destinations in the sidebar</span>
+                    <span class="hint">Headlines from your news desk — open in Plan, or start a theme campaign from the article</span>
                   </div>
                   <div class="card-actions">
                     <button class="btn small primary" type="button" data-action="plan-syn-pull"
@@ -252,52 +266,6 @@
                 </div>
               </div>
               </div>
-            </div>
-
-            <div class="recommend-panel" id="rec-panel-crossposts" data-rec-panel="crossposts" role="tabpanel">
-            <div class="card" id="crossposts-card">
-              <header class="card-header">
-                <div>
-                  <h2>Existing cross-posts</h2>
-                  <span class="hint">Same URL or title already spanning multiple communities — turn a group into a campaign</span>
-                </div>
-              </header>
-
-              <div class="posts-controls crossposts-controls">
-                <div class="pc-search">
-                  <label class="group-label" for="crossposts-search">Search</label>
-                  <input id="crossposts-search" type="search" placeholder="title or URL keyword…" autocomplete="off" />
-                </div>
-                <div class="pc-filters">
-                  <div class="pc-filter">
-                    <label class="group-label" for="crossposts-sub-filter">Sub</label>
-                    <select id="crossposts-sub-filter"><option value="">All</option></select>
-                  </div>
-                  <div class="pc-filter">
-                    <span class="group-label">Min spread</span>
-                    <div class="chip-group" role="radiogroup" aria-label="Minimum number of subs">
-                      <button type="button" class="chip active" data-min-spread="0" role="radio" aria-checked="true">All</button>
-                      <button type="button" class="chip" data-min-spread="3" role="radio" aria-checked="false">≥3</button>
-                      <button type="button" class="chip" data-min-spread="5" role="radio" aria-checked="false">≥5</button>
-                      <button type="button" class="chip" data-min-spread="10" role="radio" aria-checked="false">≥10</button>
-                    </div>
-                  </div>
-                  <div class="pc-filter">
-                    <label class="group-label" for="crossposts-page-size">Per page</label>
-                    <select id="crossposts-page-size">
-                      <option value="10" selected>10</option>
-                      <option value="25">25</option>
-                      <option value="50">50</option>
-                      <option value="all">All</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div id="crossposts-meta" class="meta crossposts-meta" hidden></div>
-              <div id="crossposts" class="crosspost-list"></div>
-              <div id="crossposts-pagination" class="pagination" hidden></div>
-            </div>
             </div>
           </div>
 
@@ -337,22 +305,7 @@
           </div>
 
           <div class="dash-section" id="dash-trends" role="tabpanel">
-            <div class="card" id="trending-topics-card">
-              <header class="card-header">
-                <div>
-                  <h2>Trending topics</h2>
-                  <span class="hint">Semi-weekly progressive desk plus live Syndicate headlines clustered by story</span>
-                </div>
-                <div class="card-actions">
-                  <button class="btn small ghost" type="button" data-action="trending-refresh"
-                          title="Re-cluster from the current Syndicate cache">↻ Refresh</button>
-                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each topic is a curated mid-cycle desk entry — DOJ independence, voter-roll fights, forever tariffs, Gaza roadmap talks, House majority path — with trigger keywords that also feed Recommend’s Reddit search. When Syndicate headlines are cached, matching titles cluster under the topic. Sphere chips load that issue’s communities from the catalog.">?</button>
-                </div>
-              </header>
-              <div id="trending-topics" class="trending-topics"></div>
-            </div>
-
-            <div class="card" id="timeline-card" style="margin-top:var(--s-4)">
+            <div class="card" id="timeline-card">
               <header class="card-header">
                 <div>
                   <h2>When posts go up</h2>
@@ -1298,47 +1251,47 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081606"></script>
+<script src="./vendor/marked.min.js?v=2026081607"></script>
 
-<script src="./js/dom.js?v=2026081606"></script>
-<script src="./js/util.js?v=2026081606"></script>
-<script src="./js/state.js?v=2026081606"></script>
-<script src="./js/router.js?v=2026081606"></script>
-<script src="./js/sync.js?v=2026081606"></script>
-<script src="./js/archive.js?v=2026081606"></script>
-<script src="./js/imagetext.js?v=2026081606"></script>
-<script src="./js/reddit.js?v=2026081606"></script>
-<script src="./js/postcache.js?v=2026081606"></script>
-<script src="./js/live.js?v=2026081606"></script>
-<script src="./js/refresh.js?v=2026081606"></script>
-<script src="./js/subindex.js?v=2026081606"></script>
-<script src="./js/seeds.js?v=2026081606"></script>
-<script src="./js/matchlex.js?v=2026081606"></script>
-<script src="./js/rules.js?v=2026081606"></script>
-<script src="./js/timing.js?v=2026081606"></script>
-<script src="./js/analysis.js?v=2026081606"></script>
-<script src="./js/discovery.js?v=2026081606"></script>
-<script src="./js/charts.js?v=2026081606"></script>
-<script src="./js/campaigns.js?v=2026081606"></script>
-<script src="./js/reset.js?v=2026081606"></script>
-<script src="./js/analyze.js?v=2026081606"></script>
-<script src="./js/crosspost.js?v=2026081606"></script>
-<script src="./js/nextmove.js?v=2026081606"></script>
-<script src="./js/syndicate.js?v=2026081606"></script>
-<script src="./js/trending.js?v=2026081606"></script>
-<script src="./js/sidebar.js?v=2026081606"></script>
-<script src="./js/composer.js?v=2026081606"></script>
-<script src="./js/ui.js?v=2026081606"></script>
-<script src="./js/views/focus.js?v=2026081606"></script>
-<script src="./js/views/recommend.js?v=2026081606"></script>
-<script src="./js/views/feed.js?v=2026081606"></script>
-<script src="./js/views/dashboard.js?v=2026081606"></script>
-<script src="./js/views/campaign.js?v=2026081606"></script>
-<script src="./js/views/communities.js?v=2026081606"></script>
-<script src="./js/views/posts.js?v=2026081606"></script>
-<script src="./js/views/syndicate.js?v=2026081606"></script>
-<script src="./js/demo.js?v=2026081606"></script>
-<script src="./js/app.js?v=2026081606"></script>
+<script src="./js/dom.js?v=2026081607"></script>
+<script src="./js/util.js?v=2026081607"></script>
+<script src="./js/state.js?v=2026081607"></script>
+<script src="./js/router.js?v=2026081607"></script>
+<script src="./js/sync.js?v=2026081607"></script>
+<script src="./js/archive.js?v=2026081607"></script>
+<script src="./js/imagetext.js?v=2026081607"></script>
+<script src="./js/reddit.js?v=2026081607"></script>
+<script src="./js/postcache.js?v=2026081607"></script>
+<script src="./js/live.js?v=2026081607"></script>
+<script src="./js/refresh.js?v=2026081607"></script>
+<script src="./js/subindex.js?v=2026081607"></script>
+<script src="./js/seeds.js?v=2026081607"></script>
+<script src="./js/matchlex.js?v=2026081607"></script>
+<script src="./js/rules.js?v=2026081607"></script>
+<script src="./js/timing.js?v=2026081607"></script>
+<script src="./js/analysis.js?v=2026081607"></script>
+<script src="./js/discovery.js?v=2026081607"></script>
+<script src="./js/charts.js?v=2026081607"></script>
+<script src="./js/campaigns.js?v=2026081607"></script>
+<script src="./js/reset.js?v=2026081607"></script>
+<script src="./js/analyze.js?v=2026081607"></script>
+<script src="./js/crosspost.js?v=2026081607"></script>
+<script src="./js/nextmove.js?v=2026081607"></script>
+<script src="./js/syndicate.js?v=2026081607"></script>
+<script src="./js/trending.js?v=2026081607"></script>
+<script src="./js/sidebar.js?v=2026081607"></script>
+<script src="./js/composer.js?v=2026081607"></script>
+<script src="./js/ui.js?v=2026081607"></script>
+<script src="./js/views/focus.js?v=2026081607"></script>
+<script src="./js/views/recommend.js?v=2026081607"></script>
+<script src="./js/views/feed.js?v=2026081607"></script>
+<script src="./js/views/dashboard.js?v=2026081607"></script>
+<script src="./js/views/campaign.js?v=2026081607"></script>
+<script src="./js/views/communities.js?v=2026081607"></script>
+<script src="./js/views/posts.js?v=2026081607"></script>
+<script src="./js/views/syndicate.js?v=2026081607"></script>
+<script src="./js/demo.js?v=2026081607"></script>
+<script src="./js/app.js?v=2026081607"></script>
 
 <script>
   (function () {

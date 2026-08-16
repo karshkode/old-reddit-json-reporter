@@ -237,6 +237,11 @@
     const campaign = Campaigns.add({
       name: name || (title ? title.slice(0, 60) : `r/${result.post.subreddit} post`),
       postIds: posts.map((p) => p.id).filter(Boolean),
+      theme: {
+        kind: posts.length > 1 ? "posts" : "post",
+        label: title.slice(0, 120) || `r/${result.post.subreddit}`,
+        originPostId: result.post.id,
+      },
     });
     return { campaign: campaign, posts: posts };
   };

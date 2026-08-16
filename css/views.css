@@ -3020,3 +3020,21 @@ a.syn-title:focus-visible {
 .trending-headlines li { margin: 0 0 4px; }
 .trending-headlines a { color: var(--accent, var(--link)); }
 .trending-empty { margin: 0; }
+
+.trending-topic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--s-2);
+}
+.trending-material { margin: 0 0 var(--s-2); }
+.plan-rec-spread {
+  margin: 2px 0 6px;
+  color: var(--text-dim);
+}
+.campaign-tile-theme {
+  margin: 0 0 var(--s-2);
+}
+#trending-topics-card {
+  margin-bottom: var(--s-4);
+}

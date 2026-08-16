@@ -876,6 +876,8 @@
             </button>
             <div class="plan-syn-row-actions">
               <button type="button" class="btn primary small" data-action="plan-syn-open" data-syn-id="${esc(a.id)}">Open in Plan</button>
+              <button type="button" class="btn small ghost" data-action="plan-syn-make-campaign" data-syn-id="${esc(a.id)}"
+                      title="Start a theme campaign anchored on this headline">+ Campaign</button>
             </div>
           </article>`;
       }).join("")}
@@ -1089,6 +1091,27 @@
         article = picks[0] || null;
       }
       if (article) openInPlan(article);
+    });
+    Dom.delegate(document, "click", '[data-action="plan-syn-make-campaign"]', (e, el) => {
+      const id = el.dataset.synId;
+      const article = id ? Syndicate.articles().find((a) => a && a.id === id) : null;
+      if (!article || !window.Campaigns || !Campaigns.fromSyndicate) return;
+      try {
+        const existing = Campaigns.list().find((c) =>
+          c.theme && c.theme.kind === "syndicate" && c.theme.articleId === article.id
+        );
+        const campaign = existing || Campaigns.fromSyndicate(article);
+        Util.toast(existing
+          ? `Already tracking “${campaign.name}”`
+          : `Campaign “${campaign.name}” from headline`, existing ? "" : "ok");
+        if (window.App) {
+          if (App.populateCampaignSelectors) App.populateCampaignSelectors();
+          if (App.publishCampaign) App.publishCampaign(campaign);
+          if (App.openCampaign) App.openCampaign(campaign);
+        }
+      } catch (err) {
+        Util.toast("Couldn't make a campaign: " + ((err && err.message) || err), "err");
+      }
     });
 
     document.addEventListener("syndicate:pulled", () => {

@@ -38,7 +38,7 @@
       host.innerHTML = `<div class="card campaign-empty">${Dom.emptyState({
         icon: "◆",
         title: "No campaigns yet",
-        body: "A campaign groups the cross-posts of one message so you can watch how each community responds. Create one from a post you already made, or paste the URLs of a set you have posted.",
+        body: "A campaign is a theme you post on — a desk trend, a Syndicate headline, an origin post, or an aggregated set of related material. Create one from Recommend themes, an article, or a loaded post.",
         action: '<button class="btn primary" type="button" id="campaign-empty-new">Create your first campaign</button>',
       })}</div>`;
       return;
@@ -51,6 +51,8 @@
       const subs = summary && summary.subs ? summary.subs : [];
       const scorePct = c.goalScore && score != null ? Math.min(100, (score / c.goalScore) * 100) : null;
       const commentPct = c.goalComments && comments != null ? Math.min(100, (comments / c.goalComments) * 100) : null;
+      const themeKind = c.theme && Campaigns.themeKindLabel ? Campaigns.themeKindLabel(c.theme) : "";
+      const themeLabel = c.theme && c.theme.label ? trunc(c.theme.label, 72) : "";
 
       return `
         <button class="campaign-tile" type="button" data-view="campaign" data-view-id="${esc(c.id)}">
@@ -58,6 +60,7 @@
             <span class="campaign-tile-name">${esc(c.name)}</span>
             <span class="badge">${c.postIds.length} post${c.postIds.length === 1 ? "" : "s"}</span>
           </div>
+          ${themeKind ? `<div class="campaign-tile-theme meta"><span class="badge info">${esc(themeKind)}</span>${themeLabel && themeLabel !== c.name ? ` · ${esc(themeLabel)}` : ""}</div>` : ""}
           <div class="campaign-tile-stats">
             <span><strong>${score == null ? "—" : num(score)}</strong> upvotes</span>
             <span><strong>${comments == null ? "—" : num(comments)}</strong> comments</span>
@@ -179,7 +182,13 @@
 
     if (metaEl) {
       const created = campaign.createdAt ? Util.relTime(campaign.createdAt / 1000) : "";
-      metaEl.textContent = `${campaign.postIds.length} tracked post${campaign.postIds.length === 1 ? "" : "s"}${created ? ` · started ${created}` : ""}`;
+      const themeKind = campaign.theme && Campaigns.themeKindLabel
+        ? Campaigns.themeKindLabel(campaign.theme)
+        : "";
+      const themeBit = themeKind
+        ? ` · ${themeKind}${campaign.theme.label ? ` “${campaign.theme.label}”` : ""}`
+        : "";
+      metaEl.textContent = `${campaign.postIds.length} tracked post${campaign.postIds.length === 1 ? "" : "s"}${themeBit}${created ? ` · started ${created}` : ""}`;
     }
 
     if (kpiHost) {

@@ -251,19 +251,39 @@
     </div>`;
   }
 
+  function spreadStatsHtml(post) {
+    if (!post || !window.Crosspost) return "";
+    const copies = Crosspost.copiesOf ? Crosspost.copiesOf(post) : [];
+    const subs = Crosspost.subsWithCopies ? Crosspost.subsWithCopies(post) : new Set();
+    if (!subs || subs.size < 2) return "";
+    let pts = post.score || 0;
+    let comments = post.num_comments || 0;
+    for (const c of copies) {
+      if (!c) continue;
+      pts += c.score || 0;
+      comments += c.num_comments || 0;
+    }
+    return `<div class="plan-rec-spread meta" title="Combined totals across same-story copies">
+      Spread · ${subs.size} subs · ${Util.fmtNum(pts)} pts · ${Util.fmtNum(comments)} cmt
+    </div>`;
+  }
+
   function campaignActions(post) {
-    if (!window.Crosspost) return "";
-    const campaign = Crosspost.campaignFor && Crosspost.campaignFor(post);
+    if (!window.Crosspost && !window.Campaigns) return "";
+    const campaign = window.Crosspost && Crosspost.campaignFor && Crosspost.campaignFor(post);
     if (campaign) {
       return `<button type="button" class="btn small" data-action="plan-rec-open-campaign" data-campaign="${esc(campaign.id)}"
-                title="Open the campaign tracking these copies">Tracking · ${esc(trunc(campaign.name, 28))}</button>`;
+                title="Open the campaign tracking this theme">Tracking · ${esc(trunc(campaign.name, 28))}</button>`;
     }
-    const spread = Crosspost.subsWithCopies ? Crosspost.subsWithCopies(post).size : 0;
+    const spread = window.Crosspost && Crosspost.subsWithCopies ? Crosspost.subsWithCopies(post).size : 0;
     if (spread >= 2) {
       return `<button type="button" class="btn small primary" data-action="plan-rec-make-campaign" data-post="${esc(post.id)}"
-                title="Turn these ${spread} community copies into a campaign">+ Make campaign · ${spread} subs</button>`;
+                title="Campaign on this origin post and its ${spread} community copies">+ Campaign · ${spread} subs</button>`;
     }
-    return "";
+    /* Theme campaigns no longer require multi-sub copies — the post is
+     * the origin anchor until more material is linked. */
+    return `<button type="button" class="btn small ghost" data-action="plan-rec-make-campaign" data-post="${esc(post.id)}"
+              title="Start a campaign anchored on this post">+ Campaign</button>`;
   }
 
   function rowHtml(post, result) {
@@ -287,6 +307,7 @@
           </div>
           <h3 class="plan-rec-title">${esc(trunc(post.title || "(untitled)", 140))}</h3>
           ${keys.length ? `<div class="plan-syn-keys plan-rec-post-keys" title="From title and body">${keys.map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>` : ""}
+          ${spreadStatsHtml(post)}
           ${audienceHtml(post)}
           ${destHtml(tips, post.subreddit)}
           <div class="plan-syn-actions">
@@ -522,13 +543,37 @@
 
   View.makeCampaign = function (postId) {
     const post = ((window.AppState && AppState.posts) || []).find((p) => p && p.id === postId);
-    if (!post || !window.Crosspost) return;
+    if (!post) return;
     try {
-      const made = Crosspost.track(post);
-      Util.toast(`Tracking ${made.posts.length} posts as "${made.campaign.name}".`, "ok");
+      let campaign = null;
+      let count = 1;
+      /* Prefer Crosspost.track when copies already span communities so
+       * naming and adopt stay consistent with the historic path. */
+      if (window.Crosspost && Crosspost.subsWithCopies && Crosspost.subsWithCopies(post).size >= 2 && Crosspost.track) {
+        const made = Crosspost.track(post);
+        campaign = made.campaign;
+        count = (made.posts && made.posts.length) || campaign.postIds.length;
+        if (campaign && !campaign.theme && window.Campaigns && Campaigns.update) {
+          Campaigns.update(campaign.id, {
+            theme: {
+              kind: "posts",
+              label: String(post.title || "").slice(0, 120),
+              originPostId: post.id,
+            },
+          });
+          campaign = Campaigns.get(campaign.id) || campaign;
+        }
+      } else if (window.Campaigns && Campaigns.fromOriginPost) {
+        campaign = Campaigns.fromOriginPost(post);
+        count = (campaign.postIds && campaign.postIds.length) || 1;
+      } else {
+        throw new Error("Campaigns unavailable.");
+      }
+      Util.toast(`Campaign “${campaign.name}” · ${count} post${count === 1 ? "" : "s"}.`, "ok");
       if (window.App) {
-        App.populateCampaignSelectors();
-        App.publishCampaign(made.campaign);
+        if (App.populateCampaignSelectors) App.populateCampaignSelectors();
+        if (App.publishCampaign) App.publishCampaign(campaign);
+        if (App.openCampaign) App.openCampaign(campaign);
       }
       View.paint(dataSignature, { skipSchedule: true });
     } catch (err) {

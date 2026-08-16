@@ -39,12 +39,13 @@
   const SECTIONS = ["recommend", "plan", "briefing", "trends", "communities"];
   const RAIL = "dashboard-section-rail";
   const REC_RAIL = "recommend-subrail";
-  const REC_PANELS = ["posts", "syndicate", "crossposts"];
+  const REC_PANELS = ["posts", "syndicate"];
   const REC_MOVED = {
     articles: "syndicate",
     syn: "syndicate",
     recommend: "posts",
     inventory: "posts",
+    crossposts: "posts",
   };
 
   /* Where the retired tabs went, so old links and saved state still
@@ -199,24 +200,20 @@
     paintRecommendChrome(section);
     if (!bundle) return;
 
-    /* Recommend owns the inventory + syndicate carousel and cross-posts.
+    /* Recommend owns themes, inventory posts, and syndicate articles.
      * Plan owns the single-post Next move card. Both re-paint on every
      * visit so rankings stay current without wiping unrelated tabs. */
     if (section === "recommend") {
+      if (window.Trending && Trending.render) {
+        safe("trending", () => Trending.render(document.getElementById("trending-topics")));
+      }
       if (window.RecommendView) safe("recommend", () => RecommendView.paint(signature));
       if (window.SyndicateView && SyndicateView.paintPlanCarousel) {
         safe("syndicate", () => SyndicateView.paintPlanCarousel());
       }
-      if (!painted.has("recommend-crossposts")) {
-        painted.add("recommend-crossposts");
-        safe("crossposts", () => App.renderCrossPostsView());
-      }
     }
     if (section === "plan" && window.FocusView) {
       safe("focus", () => FocusView.paint(timingModel, signature));
-    }
-    if (section === "trends" && window.Trending && Trending.render) {
-      safe("trending", () => Trending.render(document.getElementById("trending-topics")));
     }
 
     if (painted.has(section)) return;
@@ -290,7 +287,7 @@
     const requested = section;
     if (SECTIONS.indexOf(section) === -1) section = MOVED[section];
     if (!section) return;
-    if (requested === "crossposts") AppState.recommendPanel = "crossposts";
+    if (requested === "crossposts") AppState.recommendPanel = "posts";
     AppState.dashSection = section;
     paintSection();
     Dom.revealRailTab(RAIL, "dash-tab", section);
@@ -421,7 +418,48 @@
     Dom.delegate(document, "click", '[data-action="trending-refresh"]', () => {
       if (window.Trending && Trending.render) {
         Trending.render(document.getElementById("trending-topics"));
-        if (window.Util && Util.toast) Util.toast("Trending topics refreshed", "ok");
+        if (window.Util && Util.toast) Util.toast("Themes refreshed", "ok");
+      }
+    });
+
+    Dom.delegate(document, "click", '[data-action="trending-make-campaign"]', (e, btn) => {
+      const id = btn && btn.getAttribute("data-trending");
+      if (!id || !window.Trending || !Trending.startCampaign) return;
+      try {
+        const result = Trending.startCampaign(id);
+        const c = result && result.campaign;
+        if (!c) return;
+        if (window.Util && Util.toast) {
+          Util.toast(result.created
+            ? `Campaign “${c.name}” started from theme`
+            : `Already tracking “${c.name}”`, result.created ? "ok" : "");
+        }
+        if (window.App && App.openCampaign) App.openCampaign(c);
+        else if (window.Trending && Trending.render) {
+          Trending.render(document.getElementById("trending-topics"));
+        }
+      } catch (err) {
+        if (window.Util && Util.toast) Util.toast((err && err.message) || String(err), "error");
+      }
+    });
+
+    Dom.delegate(document, "click", '[data-action="trending-open-campaign"]', (e, btn) => {
+      const id = btn && btn.getAttribute("data-campaign");
+      if (!id || !window.Campaigns) return;
+      const c = Campaigns.get(id);
+      if (c && window.App && App.openCampaign) App.openCampaign(c);
+    });
+
+    Dom.delegate(document, "click", '[data-action="trending-open-article"]', (e, btn) => {
+      const synId = btn && btn.getAttribute("data-syn-id");
+      if (!synId || !window.Syndicate) return;
+      const article = Syndicate.articles().find((a) => a && a.id === synId);
+      if (!article) return;
+      if (window.DashboardView && DashboardView.goToRecommendPanel) {
+        DashboardView.goToRecommendPanel("syndicate");
+      }
+      if (window.SyndicateView && SyndicateView.openArticleSidebar) {
+        SyndicateView.openArticleSidebar(article);
       }
     });
 
