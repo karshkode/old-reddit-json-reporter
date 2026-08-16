@@ -504,6 +504,7 @@
 
     const subs = Array.from(state.activeSubs);
     const myToken = ++state.fetchToken;
+    const op = (window.Refresh && Refresh.beginOp) ? Refresh.beginOp("refresh") : null;
     const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
     console.log(`[refreshData] start: ${subs.length} subs, listing=${state.listing}, limit=${state.limit}`);
 
@@ -539,6 +540,7 @@
     let circuitToastShown = false;
 
     await Util.pmap(subs, 3, async (sub) => {
+      if (op && Refresh.isCancelled(op)) return;
       const subStart = (typeof performance !== "undefined" ? performance.now() : Date.now());
       try {
         /* Same fill path as Sync: configured listing first, then `new`
@@ -551,14 +553,16 @@
               t: state.timeWindow,
               limit: state.limit,
             });
-        if (state.fetchToken !== myToken) return;
+        if (state.fetchToken !== myToken && !(op && Refresh.isCancelled(op))) return;
         for (const p of list) collected.push(p);
         state.posts = Util.uniqBy(collected, (p) => p.id);
-        Util.setProgress(
-          postProgressPct(),
-          `r/${sub} · ${list.length} of ${state.limit} · ${state.posts.length} posts loaded · ${completed + 1} / ${subs.length} subs`
-        );
-        rerenderLight();
+        if (!(op && Refresh.isCancelled(op))) {
+          Util.setProgress(
+            postProgressPct(),
+            `r/${sub} · ${list.length} of ${state.limit} · ${state.posts.length} posts loaded · ${completed + 1} / ${subs.length} subs`
+          );
+          rerenderLight();
+        }
         const dur = Math.round(((typeof performance !== "undefined" ? performance.now() : Date.now()) - subStart));
         console.log(`[refreshData] r/${sub}: ${list.length}/${state.limit} posts in ${dur}ms`);
       } catch (err) {
@@ -580,24 +584,27 @@
         }
       } finally {
         completed++;
-        if (state.fetchToken === myToken) {
+        if (state.fetchToken === myToken || (op && Refresh.isCancelled(op))) {
           /* Re-dedupe in case onPage hadn't fired for cached responses. */
           state.posts = Util.uniqBy(collected, (p) => p.id);
-          Util.setStatus(
-            `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… ${completed}/${subs.length}`,
-            errors ? "err" : "",
-            "via " + Reddit.SOURCE_LABEL
-          );
-          Util.setProgress(
-            postProgressPct(),
-            `Loaded r/${sub} · ${completed} / ${subs.length} sub${subs.length === 1 ? "" : "s"} done · ${state.posts.length} posts so far`
-          );
-          rerenderLight();
+          if (!(op && Refresh.isCancelled(op))) {
+            Util.setStatus(
+              `Fetching ${subs.length} subreddit${subs.length > 1 ? "s" : ""}… ${completed}/${subs.length}`,
+              errors ? "err" : "",
+              "via " + Reddit.SOURCE_LABEL
+            );
+            Util.setProgress(
+              postProgressPct(),
+              `Loaded r/${sub} · ${completed} / ${subs.length} sub${subs.length === 1 ? "" : "s"} done · ${state.posts.length} posts so far`
+            );
+            rerenderLight();
+          }
         }
       }
-    });
+    }, { stop: () => !!(op && Refresh.isCancelled(op)) });
 
-    if (state.fetchToken !== myToken) {
+    const cancelled = !!(op && Refresh.isCancelled(op));
+    if (state.fetchToken !== myToken && !cancelled) {
       console.log(`[refreshData] aborted (newer token outpaced this run)`);
       return;
     }
@@ -639,18 +646,31 @@
      * sweep that did not record itself would leave all of them
      * looking unread the moment it finished. */
     const failedSubs = new Set(state.lastErrors.map((e) => String(e.sub || "").toLowerCase()));
+    const touched = new Set();
+    for (const p of collected) {
+      if (p && p.subreddit) touched.add(String(p.subreddit).toLowerCase());
+    }
+    for (const e of state.lastErrors) {
+      if (e && e.sub) touched.add(String(e.sub).toLowerCase());
+    }
     for (const sub of subs) {
-      state.markSynced(sub, failedSubs.has(sub.toLowerCase())
+      const lc = sub.toLowerCase();
+      if (cancelled && !touched.has(lc)) continue;
+      state.markSynced(sub, failedSubs.has(lc)
         ? { count: 0, error: "fetch failed" }
         : { count: state.postsForSub(sub).length });
     }
     state.persistSubSync();
     const newCount = mergeSummary ? freshUnique.length - mergeSummary.replaced : state.posts.length;
     const tail = ` · ${state.listing} · ${state.timeWindow} · limit ${state.limit}`;
-    const loadedLine = mergeSummary
+    let loadedLine = mergeSummary
       ? `Refreshed: ${freshUnique.length} fetched (+${newCount} new) · ${state.posts.length} total in view${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}${tail}`
       : `Loaded ${state.posts.length} posts from ${subs.length} sub${subs.length > 1 ? "s" : ""}${errors ? ` (${errors} error${errors > 1 ? "s" : ""})` : ""}${tail}`;
+    if (cancelled) {
+      loadedLine = `Cancelled after ${completed} of ${subs.length} · ${state.posts.length} posts kept${tail}`;
+    }
     Util.hideProgress(loadedLine);
+    if (cancelled) Util.toast(loadedLine);
 
     /* Persist to disk for the NEXT page reload. Fire-and-forget. */
     persistPostCache().catch(() => {});
@@ -688,6 +708,7 @@
         console.warn("[refreshData] campaign refresh failed:", err && err.message);
       });
     }, 1200);
+    if (window.Refresh && Refresh.endOp) Refresh.endOp(op);
   }
 
   /* ---------- Scoped sync ---------- */
@@ -721,14 +742,16 @@
       case "go":
       default: {
         const n = state.activeSubs ? state.activeSubs.size : 0;
-        const batch = (window.Refresh && Refresh.SYNC_BATCH) || 12;
-        if (scope === "all" && n > batch) {
+        const warnAt = (window.Refresh && Refresh.WARN_AT) || 12;
+        if (scope === "all" && n > warnAt) {
           const ok = window.confirm(
             `Start over for all ${n} active communities?\n\n` +
             `That re-fetches everything from scratch and discards posts that have fallen off listings. ` +
-            `Prefer Sync (${batch} at a time) unless you changed the listing or time window.`
+            `Prefer Sync unless you changed the listing or time window.`
           );
           if (!ok) return Promise.resolve(null);
+        } else if ((scope === "go" || scope === "all" || !scope) && n > warnAt) {
+          if (!Refresh.confirmLarge(n)) return Promise.resolve(null);
         }
         return Refresh.everything(true);
       }
@@ -752,7 +775,7 @@
   }
 
   /* Staleness moves on its own, so the offer has to as well: a banner
-   * that read "Refresh" when the page loaded should say "Sync 12" once
+   * that read "Refresh" when the page loaded should say "Sync 4" once
    * twelve subs have aged past the window. Repaints only when the
    * offer actually changes, so the specific line a fetch just wrote
    * ("Refreshed: 500 fetched (+40 new)…") survives until it stops
@@ -1806,10 +1829,23 @@
       if (!note) return;
       const f = Refresh.freshness();
       const due = f.unread.length + f.stale.length;
-      const batch = (Refresh.SYNC_BATCH || 12);
+      const warnAt = (Refresh.WARN_AT || 12);
       note.textContent = state.activeSubs.size
-        ? `${due} of ${state.activeSubs.size} subreddits are out of date. Sync runs ${batch} at a time (tap again for the next batch) and keeps the ${Util.fmtNum(state.posts.length)} posts already collected; starting over discards them.`
+        ? `${due} of ${state.activeSubs.size} subreddits are out of date. Sync keeps the ${Util.fmtNum(state.posts.length)} posts already collected` +
+          (due > warnAt ? " (you'll get a heads-up when it will take a while)" : "") +
+          "; starting over discards them."
         : "No subreddits loaded yet.";
+    });
+
+    const cancelBtn = document.getElementById("action-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", () => {
+      if (!window.Refresh || !Refresh.cancel) return;
+      if (Refresh.cancel()) {
+        cancelBtn.disabled = true;
+        Util.setProgress(null, "Cancelling… finishing in-flight reads");
+        Util.toast("Cancelling sync — keeping what already loaded.");
+        window.setTimeout(() => { cancelBtn.disabled = false; }, 800);
+      }
     });
 
     /* "Clear cache" is a soft cache reset. It wipes Reddit's request

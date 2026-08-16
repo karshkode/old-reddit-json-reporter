@@ -12,8 +12,26 @@
 
 .campaign-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  /* auto-fit (not auto-fill): a single empty-state card must stretch
+   * full width on desktop instead of sitting in a 300px track with a
+   * blank column beside it. */
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: var(--s-3);
+}
+.campaign-grid > .campaign-empty {
+  grid-column: 1 / -1;
+}
+
+#view-campaigns #campaign-tools {
+  margin-top: var(--s-4);
+}
+#view-campaigns #campaign-tools .grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  #view-campaigns #campaign-tools .grid.two {
+    grid-template-columns: 1fr;
+  }
 }
 
 .campaign-tile {

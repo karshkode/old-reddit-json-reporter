@@ -52,19 +52,62 @@
    * flight; post-id batches are one request each so they can run a
    * little wider. */
   const SUB_CONCURRENCY = 3;
-
-  /* Cap how many subreddit listings one Sync tap fires. A 77-sub
-   * inventory otherwise means ~150 archive calls in one wave — slow,
-   * rude to the proxies, and rarely what someone meant by "catch up".
-   * Tap Sync again for the next batch; unread always go first. */
-  const SYNC_BATCH = 12;
-  Refresh.SYNC_BATCH = SYNC_BATCH;
   Refresh.SUB_CONCURRENCY = SUB_CONCURRENCY;
 
+  /* Warn before a Sync that will hit many communities — still syncs
+   * everything once confirmed. The old "12 at a time" split left users
+   * forgetting to finish the rest. */
+  const WARN_AT = 12;
+  Refresh.WARN_AT = WARN_AT;
+
   const running = new Set();
+  let activeOp = null;
 
   Refresh.busy = function () {
     return running.size > 0;
+  };
+
+  Refresh.beginOp = function (kind) {
+    activeOp = {
+      id: (activeOp && activeOp.id || 0) + 1,
+      kind: kind || "sync",
+      cancelled: false,
+      startedAt: Date.now(),
+    };
+    return activeOp;
+  };
+
+  Refresh.endOp = function (op) {
+    if (!op || activeOp === op) activeOp = null;
+  };
+
+  Refresh.currentOp = function () {
+    return activeOp;
+  };
+
+  Refresh.isCancelled = function (op) {
+    const cur = op || activeOp;
+    return !!(cur && cur.cancelled);
+  };
+
+  /* Soft-cancel the in-flight Sync. In-progress listing requests still
+   * finish; no new subs start. Partial results are kept. */
+  Refresh.cancel = function () {
+    if (!activeOp || activeOp.cancelled) return false;
+    activeOp.cancelled = true;
+    return true;
+  };
+
+  Refresh.confirmLarge = function (count, opts) {
+    opts = opts || {};
+    if (opts.warn === false) return true;
+    if (!count || count <= WARN_AT) return true;
+    const approx = count * 2;
+    return window.confirm(
+      `Sync all ${count} communities?\n\n` +
+      `That is roughly ${approx} archive requests and can take a few minutes. ` +
+      `You can Cancel from the banner if it runs long.`
+    );
   };
 
   /* ------------------------------------------------------------------
@@ -95,38 +138,6 @@
   Refresh.staleSubs = function (names) {
     const f = Refresh.freshness(names);
     return f.unread.concat(f.stale);
-  };
-
-  /* One Sync tap's worth of due subs — keeps network cost predictable. */
-  Refresh.dueBatch = function (names) {
-    const due = Refresh.staleSubs(names);
-    const batch = due.slice(0, SYNC_BATCH);
-    return {
-      due: due,
-      batch: batch,
-      remaining: Math.max(0, due.length - batch.length),
-    };
-  };
-
-  /* Rotate through active subs for "Sync new": least-recent first so
-   * repeated taps walk the inventory instead of hammering the same
-   * twelve forever. */
-  Refresh.newBatch = function (names) {
-    const s = state();
-    const list = (names ? [].concat(names) : Array.from(s.activeSubs)).slice().sort((a, b) => {
-      const aa = s.syncAgeOf(a);
-      const bb = s.syncAgeOf(b);
-      if (aa == null && bb == null) return String(a).localeCompare(String(b));
-      if (aa == null) return -1;
-      if (bb == null) return 1;
-      return bb - aa;
-    });
-    const batch = list.slice(0, SYNC_BATCH);
-    return {
-      due: list,
-      batch: batch,
-      remaining: Math.max(0, list.length - batch.length),
-    };
   };
 
   Refresh.ageLabel = function (name) {
@@ -255,9 +266,11 @@
       (n) => n
     );
     if (!list.length) return null;
+    if (!Refresh.confirmLarge(list.length, opts)) return null;
     const key = "subs:" + list.map((n) => n.toLowerCase()).sort().join(",");
     if (!claim(key)) return null;
 
+    const op = Refresh.beginOp("subs");
     const label = opts.label || (list.length === 1
       ? "r/" + list[0]
       : `${list.length} subreddits`);
@@ -265,6 +278,7 @@
     const collected = [];
     const errors = [];
     let done = 0;
+    let skipped = 0;
 
     if (showProgress) Util.setProgress(0, `Syncing ${label}…`);
 
@@ -273,8 +287,15 @@
 
     try {
       await Util.pmap(list, SUB_CONCURRENCY, async (sub) => {
+        if (Refresh.isCancelled(op)) {
+          skipped++;
+          return;
+        }
         try {
           const posts = await fetchUpTo(sub, target, s);
+          if (Refresh.isCancelled(op)) {
+            /* Keep whatever this sub already returned. */
+          }
           for (const p of posts) collected.push(p);
           perSubGot.push({ sub, got: posts.length, want: target });
           s.markSynced(sub, { count: posts.length, want: target });
@@ -285,14 +306,14 @@
           s.markSynced(sub, { count: 0, error: message });
         } finally {
           done++;
-          if (showProgress) {
+          if (showProgress && !Refresh.isCancelled(op)) {
             Util.setProgress(
               Math.min(95, (done / list.length) * 100),
               `Syncing ${label}… ${done}/${list.length} · ${target}/sub`
             );
           }
         }
-      });
+      }, { stop: () => Refresh.isCancelled(op) });
 
       s.persistSubSync();
       /* If the only thing making the dataset stale was subs that had
@@ -303,12 +324,29 @@
         s.pendingChanges = false;
       }
       const patch = apply(collected, opts);
-      const line = summarize(label, patch, errors, { perSubGot, target });
+      const cancelled = Refresh.isCancelled(op);
+      let line = summarize(label, patch, errors, { perSubGot, target });
+      if (cancelled) {
+        const finished = perSubGot.length;
+        line = `Cancelled after ${finished} of ${list.length} · ` + line.replace(/^[^·]+·\s*/, "");
+      }
       if (showProgress) Util.hideProgress(line);
-      if (opts.toast !== false) Util.toast(line, errors.length ? "error" : "");
-      return Object.assign({ scope: "subs", subs: list, errors, label, line, perSubGot, target }, patch);
+      if (opts.toast !== false) Util.toast(line, cancelled ? "" : (errors.length ? "error" : ""));
+      return Object.assign({
+        scope: "subs",
+        subs: list,
+        errors: errors,
+        label: label,
+        line: line,
+        perSubGot: perSubGot,
+        target: target,
+        cancelled: cancelled,
+        skipped: skipped,
+      }, patch);
     } finally {
       release(key);
+      if (Refresh.endOp) Refresh.endOp(op);
+      else if (activeOp === op) activeOp = null;
       if (showProgress) Refresh.repaintBanner();
     }
   };
@@ -428,51 +466,32 @@
   Refresh.newPosts = function (opts) {
     opts = opts || {};
     const s = state();
-    if (!s.activeSubs.size) {
+    const list = Array.from(s.activeSubs);
+    if (!list.length) {
       if (opts.toast !== false) Util.toast("No subreddits loaded to sync.");
       return Promise.resolve(null);
     }
-    const pick = Refresh.newBatch();
-    if (!pick.batch.length) {
-      if (opts.toast !== false) Util.toast("No subreddits loaded to sync.");
-      return Promise.resolve(null);
-    }
-    const label = pick.remaining
-      ? `${pick.batch.length} of ${pick.due.length} subreddits`
-      : `${pick.batch.length} subreddit${pick.batch.length === 1 ? "" : "s"}`;
-    return Refresh.subs(pick.batch, Object.assign({ label }, opts)).then((res) => {
-      if (res && pick.remaining && opts.toast !== false) {
-        Util.toast(`${pick.remaining} more still in the rotation — tap Sync again for the next batch.`);
-      }
-      return res ? Object.assign(res, { remaining: pick.remaining }) : res;
-    });
+    return Refresh.subs(list, Object.assign({
+      label: `${list.length} subreddit${list.length === 1 ? "" : "s"}`,
+    }, opts));
   };
 
   /* Everything that has not been read inside the stale window,
    * including everything that has never been read at all. This is the
    * one the main button runs, so it has to be honest when there is
-   * nothing to do rather than quietly doing the full sweep instead.
-   * Large inventories sync in batches of SYNC_BATCH so one tap does
-   * not fire a listing for every community at once. */
+   * nothing to do rather than quietly doing the full sweep instead. */
   Refresh.stale = async function (opts) {
     opts = opts || {};
-    const pick = Refresh.dueBatch();
-    if (!pick.batch.length) {
+    const due = Refresh.staleSubs();
+    if (!due.length) {
       if (opts.toast !== false) Util.toast("Everything is already up to date.");
       return null;
     }
     const f = Refresh.freshness();
-    let label = f.unread.length && !f.stale.length
-      ? `${Math.min(f.unread.length, pick.batch.length)} new subreddit${pick.batch.length === 1 ? "" : "s"}`
-      : `${pick.batch.length} subreddit${pick.batch.length === 1 ? "" : "s"}`;
-    if (pick.remaining) {
-      label = `${pick.batch.length} of ${pick.due.length} due`;
-    }
-    const res = await Refresh.subs(pick.batch, Object.assign({ label }, opts));
-    if (res && pick.remaining && opts.toast !== false) {
-      Util.toast(`${pick.remaining} still out of date — tap Sync again for the next batch.`);
-    }
-    return res ? Object.assign(res, { remaining: pick.remaining }) : res;
+    const label = f.unread.length && !f.stale.length
+      ? `${f.unread.length} new subreddit${f.unread.length === 1 ? "" : "s"}`
+      : `${due.length} subreddit${due.length === 1 ? "" : "s"}`;
+    return Refresh.subs(due, Object.assign({ label }, opts));
   };
 
   /* ------------------------------------------------------------------
@@ -676,7 +695,6 @@
     const due = f.unread.length + f.stale.length;
     const total = f.unread.length + f.stale.length + f.fresh.length;
     const posts = `${Util.fmtNum(s.posts.length)} posts loaded`;
-    const batch = Math.min(due || total, SYNC_BATCH);
     /* Nothing overdue, but "nothing overdue" is not "nothing new" —
      * subreddits keep posting inside the fifteen-minute window. So the
      * button still offers a fetch; it just offers the one that adds to
@@ -685,22 +703,17 @@
      * thing to choose on purpose, from the menu, not the thing that
      * happens when someone taps the only button on screen. */
     if (!due) {
-      const newLabel = total > SYNC_BATCH ? `Sync ${SYNC_BATCH}` : "Sync new";
-      const newText = total > SYNC_BATCH
-        ? `All ${total} subreddits read recently · next sync checks ${SYNC_BATCH} · ${posts}.`
-        : `All ${total} subreddit${total === 1 ? "" : "s"} read recently · ${posts}.`;
-      return { phase: "loaded", action: "new", label: newLabel, icon: "↻", text: newText };
+      return { phase: "loaded", action: "new", label: "Sync all", icon: "↻",
+        text: `All ${total} subreddit${total === 1 ? "" : "s"} read recently · ${posts}.` };
     }
     const what = f.unread.length && !f.stale.length
       ? `${f.unread.length} subreddit${f.unread.length === 1 ? "" : "s"} not fetched yet`
       : `${due} of ${total} subreddits out of date`;
-    const label = due > SYNC_BATCH ? `Sync ${batch}` : `Sync ${due}`;
-    const text = due > SYNC_BATCH
-      ? `${what} · next round syncs ${batch} · ${posts}.`
-      : `${what} · ${posts}.`;
     return {
-      phase: "loaded", action: "stale", label: label, icon: "↻",
-      text: text,
+      phase: "loaded", action: "stale", label: `Sync ${due}`, icon: "↻",
+      text: due > WARN_AT
+        ? `${what} · may take a few minutes · ${posts}.`
+        : `${what} · ${posts}.`,
     };
   };
 

@@ -537,10 +537,25 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+.action-banner-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
 .action-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.action-progress-timer {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+  letter-spacing: 0.02em;
 }
 .action-progress-track {
   margin-top: var(--s-1);
@@ -559,6 +574,15 @@
 .action-btn {
   flex: 0 0 auto;
 }
+.action-cancel {
+  flex: 0 0 auto;
+}
+.action-banner.phase-loading .action-cancel {
+  display: inline-flex;
+}
+.action-banner:not(.phase-loading) .action-cancel {
+  display: none !important;
+}
 
 /* Primary action and its scope picker read as one control, so the
  * caret is obviously "the same button, other scopes" rather than a
@@ -572,6 +596,11 @@
 .action-banner-buttons .action-btn {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+}
+.action-banner-buttons .action-cancel + .action-btn {
+  border-top-left-radius: var(--radius-sm, 6px);
+  border-bottom-left-radius: var(--radius-sm, 6px);
+  margin-left: var(--s-2);
 }
 .action-scope-toggle {
   border-top-left-radius: 0;
