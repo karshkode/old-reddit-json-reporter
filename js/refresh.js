@@ -90,12 +90,32 @@
     return !!(cur && cur.cancelled);
   };
 
-  /* Soft-cancel the in-flight Sync. In-progress listing requests still
-   * finish; no new subs start. Partial results are kept. */
-  Refresh.cancel = function () {
-    if (!activeOp || activeOp.cancelled) return false;
-    activeOp.cancelled = true;
-    return true;
+  /* Soft-cancel the in-flight Sync. First tap: stop queueing new
+   * communities; in-flight reads finish. Second tap (force): abort
+   * archive requests mid-flight and keep whatever already landed. */
+  Refresh.cancel = function (opts) {
+    opts = opts || {};
+    if (!activeOp) return null;
+    if (!activeOp.cancelled) {
+      activeOp.cancelled = true;
+      activeOp.softAt = Date.now();
+      return { mode: "soft" };
+    }
+    if (opts.force !== false) {
+      activeOp.force = true;
+      if (window.Reddit && Reddit.abortInflight) Reddit.abortInflight();
+      /* Outpace a Go/refreshData run keyed on fetchToken. */
+      if (window.AppState && AppState.fetchToken != null) AppState.fetchToken++;
+      return { mode: "force" };
+    }
+    return { mode: "soft" };
+  };
+
+  Refresh.cancelMode = function () {
+    if (!activeOp) return null;
+    if (activeOp.force) return "force";
+    if (activeOp.cancelled) return "soft";
+    return null;
   };
 
   Refresh.confirmLarge = async function (count, opts) {
@@ -303,6 +323,12 @@
           perSubGot.push({ sub, got: posts.length, want: target });
           s.markSynced(sub, { count: posts.length, want: target });
         } catch (err) {
+          /* Force-stop aborts in-flight archive reads on purpose — keep
+           * whatever already landed and skip the error toast noise. */
+          if (err && err.aborted && Refresh.isCancelled(op)) {
+            perSubGot.push({ sub, got: 0, want: target, aborted: true });
+            return;
+          }
           const message = (err && err.message) || String(err);
           errors.push({ sub, message });
           perSubGot.push({ sub, got: 0, want: target, error: message });
@@ -331,7 +357,8 @@
       let line = summarize(label, patch, errors, { perSubGot, target });
       if (cancelled) {
         const finished = perSubGot.length;
-        line = `Cancelled after ${finished} of ${list.length} · ` + line.replace(/^[^·]+·\s*/, "");
+        const how = (op && op.force) ? "Force stopped" : "Cancelled";
+        line = `${how} after ${finished} of ${list.length} · ` + line.replace(/^[^·]+·\s*/, "");
       }
       if (showProgress) Util.hideProgress(line);
       if (opts.toast !== false) Util.toast(line, cancelled ? "" : (errors.length ? "error" : ""));

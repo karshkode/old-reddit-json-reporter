@@ -448,8 +448,17 @@
     const track = document.getElementById("action-progress-track");
     const timer = document.getElementById("action-progress-timer");
     if (track) track.hidden = phase !== "loading";
-    if (cancel) cancel.hidden = phase !== "loading";
     if (timer) timer.hidden = phase !== "loading";
+    if (cancel) {
+      cancel.hidden = phase !== "loading";
+      /* Every new Sync must rearm Cancel — otherwise a prior Force stop
+       * label sticks around when the next run starts. */
+      if (phase === "loading") {
+        cancel.disabled = false;
+        cancel.textContent = "Cancel";
+        cancel.setAttribute("aria-label", "Cancel sync");
+      }
+    }
     if (btn) {
       btn.disabled = phase === "loading";
       banner.classList.toggle("is-loading", phase === "loading");

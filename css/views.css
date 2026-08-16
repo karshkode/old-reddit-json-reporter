@@ -2955,3 +2955,68 @@ a.syn-title:focus-visible {
 @media (max-width: 560px) {
   .plan-syn-row-actions { padding-left: 0; }
 }
+
+/* ---- Trending desk topics (Trends tab) ---- */
+.trending-topics { padding: 0 var(--s-3) var(--s-3); }
+.trending-meta { margin: 0 0 var(--s-3); }
+.trending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.trending-topic {
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--border);
+}
+.trending-topic:last-child { border-bottom: 0; padding-bottom: 0; }
+.trending-topic-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-1);
+}
+.trending-topic-label {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+.trending-topic-spheres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.trending-topic-blurb {
+  margin: 0 0 var(--s-2);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  max-width: 62ch;
+}
+.trending-topic-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--s-2);
+}
+.trending-topic-keys code {
+  font-size: var(--fs-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border);
+}
+.trending-headlines {
+  margin: 0;
+  padding-left: 1.1em;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.trending-headlines li { margin: 0 0 4px; }
+.trending-headlines a { color: var(--accent, var(--link)); }
+.trending-empty { margin: 0; }

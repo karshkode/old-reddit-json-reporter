@@ -215,6 +215,9 @@
     if (section === "plan" && window.FocusView) {
       safe("focus", () => FocusView.paint(timingModel, signature));
     }
+    if (section === "trends" && window.Trending && Trending.render) {
+      safe("trending", () => Trending.render(document.getElementById("trending-topics")));
+    }
 
     if (painted.has(section)) return;
     painted.add(section);
@@ -414,6 +417,13 @@
     if (window.UI && UI.mountAvailabilitySliders) {
       UI.mountAvailabilitySliders(AppState.postingAvail);
     }
+
+    Dom.delegate(document, "click", '[data-action="trending-refresh"]', () => {
+      if (window.Trending && Trending.render) {
+        Trending.render(document.getElementById("trending-topics"));
+        if (window.Util && Util.toast) Util.toast("Trending topics refreshed", "ok");
+      }
+    });
 
     Dom.delegate(document, "click", '[data-action="show-all-timing"]', () => {
       timingLimit = "all";
