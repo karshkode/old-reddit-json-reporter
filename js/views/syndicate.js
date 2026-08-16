@@ -708,6 +708,37 @@
   const DASH_LIST_CAP = 24;
   let dashPaintTimer = null;
 
+  function recommendTitleQuery() {
+    if (window.RecommendView && typeof RecommendView.titleQuery === "function") {
+      return RecommendView.titleQuery();
+    }
+    const el = Dom.byId("recommend-title-search");
+    return el ? String(el.value || "").trim().toLowerCase() : "";
+  }
+
+  /* Default: strong-destination top picks. With a title filter, search the
+   * full desk so matches outside the top-pick window still surface. */
+  function planArticles(limit) {
+    const cap = limit == null ? DASH_LIST_CAP : limit;
+    const q = recommendTitleQuery();
+    if (!q) {
+      return (Syndicate.topPicks && Syndicate.topPicks(cap)) || [];
+    }
+    const scoreOf = Syndicate.destinationScore
+      ? (id) => Syndicate.destinationScore(id)
+      : () => -2;
+    return Syndicate.articles()
+      .filter((a) => a && String(a.title || "").toLowerCase().indexOf(q) !== -1)
+      .slice()
+      .sort((a, b) => {
+        const db = scoreOf(b.id);
+        const da = scoreOf(a.id);
+        if (db !== da) return db - da;
+        return (b.published || 0) - (a.published || 0);
+      })
+      .slice(0, cap);
+  }
+
   function scheduleDashPaint() {
     if (dashPaintTimer) return;
     dashPaintTimer = setTimeout(() => {
@@ -793,17 +824,25 @@
     const host = Dom.byId("plan-syndicate-body");
     if (!host) return;
     paintDashPullButton();
-    const picks = (Syndicate.topPicks && Syndicate.topPicks(DASH_LIST_CAP)) || [];
+    const q = recommendTitleQuery();
+    const picks = planArticles(DASH_LIST_CAP);
     if (!picks.length) {
       planListSig = "";
-      host.innerHTML = `<div class="empty plan-syn-empty">
-        <strong>No headlines yet</strong>
-        <p>Tap <em>Pull latest</em> to read Politics and News feeds here.</p>
-      </div>`;
+      if (q && Syndicate.articles().length) {
+        host.innerHTML = `<div class="empty plan-syn-empty">
+          <strong>No title matches</strong>
+          <p>Nothing in pulled headlines matches “${esc(q)}”.</p>
+        </div>`;
+      } else {
+        host.innerHTML = `<div class="empty plan-syn-empty">
+          <strong>No headlines yet</strong>
+          <p>Tap <em>Pull latest</em> to read Politics and News feeds here.</p>
+        </div>`;
+      }
       return;
     }
 
-    const sig = picks.map((a) => a.id).join(",");
+    const sig = (q ? q + ":" : "") + picks.map((a) => a.id).join(",");
     /* Same set of headlines: refresh destination chips without replacing
      * the row buttons the user may be mid-tapping. */
     if (sig === planListSig && host.querySelector(".plan-syn-list")) {
@@ -1046,7 +1085,7 @@
       const id = el.dataset.synId;
       let article = id ? Syndicate.articles().find((a) => a && a.id === id) : null;
       if (!article) {
-        const picks = (Syndicate.topPicks && Syndicate.topPicks(DASH_LIST_CAP)) || [];
+        const picks = planArticles(DASH_LIST_CAP);
         article = picks[0] || null;
       }
       if (article) openInPlan(article);
