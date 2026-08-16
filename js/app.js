@@ -740,21 +740,25 @@
         return Promise.resolve(Refresh.pruneOlderThanWindow());
       case "all":
       case "go":
-      default: {
-        const n = state.activeSubs ? state.activeSubs.size : 0;
-        const warnAt = (window.Refresh && Refresh.WARN_AT) || 12;
-        if (scope === "all" && n > warnAt) {
-          const ok = window.confirm(
-            `Start over for all ${n} active communities?\n\n` +
-            `That re-fetches everything from scratch and discards posts that have fallen off listings. ` +
-            `Prefer Sync unless you changed the listing or time window.`
-          );
-          if (!ok) return Promise.resolve(null);
-        } else if ((scope === "go" || scope === "all" || !scope) && n > warnAt) {
-          if (!Refresh.confirmLarge(n)) return Promise.resolve(null);
-        }
-        return Refresh.everything(true);
-      }
+      default:
+        return (async () => {
+          const n = state.activeSubs ? state.activeSubs.size : 0;
+          const warnAt = (window.Refresh && Refresh.WARN_AT) || 12;
+          if (scope === "all" && n > warnAt) {
+            const ok = await Util.confirm({
+              title: "Start over from scratch?",
+              body: `Re-fetch all ${n} active communities and rebuild the inventory.`,
+              detail: "Posts that have fallen off listings will be dropped. Prefer Sync unless you changed the listing or time window.",
+              confirmLabel: "Start over",
+              cancelLabel: "Keep current",
+              tone: "warn",
+            });
+            if (!ok) return null;
+          } else if ((scope === "go" || !scope) && n > warnAt) {
+            if (!(await Refresh.confirmLarge(n))) return null;
+          }
+          return Refresh.everything(true);
+        })();
     }
   }
 
@@ -1832,7 +1836,7 @@
       const warnAt = (Refresh.WARN_AT || 12);
       note.textContent = state.activeSubs.size
         ? `${due} of ${state.activeSubs.size} subreddits are out of date. Sync keeps the ${Util.fmtNum(state.posts.length)} posts already collected` +
-          (due > warnAt ? " (you'll get a heads-up when it will take a while)" : "") +
+          (due > warnAt ? " — you'll get a quiet heads-up when a run will take a bit" : "") +
           "; starting over discards them."
         : "No subreddits loaded yet.";
     });

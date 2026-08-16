@@ -305,6 +305,96 @@
     Util._toastTimer = setTimeout(() => (el.hidden = true), 3500);
   };
 
+  /* Themed confirm — replaces abrasive window.confirm() with the same
+   * modal shell as Session / Reset. Resolves true on confirm, false on
+   * dismiss (backdrop, Escape, cancel). */
+  Util.confirm = function (opts) {
+    opts = opts || {};
+    const modal = document.getElementById("confirm-modal");
+    if (!modal) {
+      const fallback = [opts.title, opts.body, opts.detail].filter(Boolean).join("\n\n");
+      return Promise.resolve(window.confirm(fallback || "Continue?"));
+    }
+
+    if (Util._confirmResolve) {
+      const prev = Util._confirmResolve;
+      Util._confirmResolve = null;
+      prev(false);
+    }
+
+    return new Promise((resolve) => {
+      const titleEl = document.getElementById("confirm-modal-title");
+      const bodyEl = document.getElementById("confirm-modal-body");
+      const detailEl = document.getElementById("confirm-modal-detail");
+      const okBtn = document.getElementById("confirm-modal-ok");
+      const cancelBtn = document.getElementById("confirm-modal-cancel");
+
+      if (titleEl) titleEl.textContent = opts.title || "Confirm";
+      if (bodyEl) bodyEl.textContent = opts.body || "";
+      if (detailEl) {
+        const detail = opts.detail || "";
+        detailEl.hidden = !detail;
+        detailEl.textContent = detail;
+      }
+      if (okBtn) okBtn.textContent = opts.confirmLabel || "Continue";
+      if (cancelBtn) cancelBtn.textContent = opts.cancelLabel || "Not now";
+
+      modal.classList.remove("is-warn", "is-danger", "is-info");
+      const tone = opts.tone || "info";
+      if (tone === "warn" || tone === "danger" || tone === "info") {
+        modal.classList.add("is-" + tone);
+      }
+      if (okBtn) {
+        okBtn.className = "btn " + (tone === "danger" ? "danger" : "primary");
+      }
+
+      const finish = (ok) => {
+        if (Util._confirmResolve !== finish) return;
+        Util._confirmResolve = null;
+        modal.hidden = true;
+        document.body.classList.remove("modal-open");
+        document.removeEventListener("keydown", onKey, true);
+        resolve(!!ok);
+      };
+      Util._confirmResolve = finish;
+
+      function onKey(e) {
+        if (modal.hidden) return;
+        if (e.key === "Escape") {
+          e.preventDefault();
+          finish(false);
+        } else if (e.key === "Enter" && document.activeElement !== cancelBtn) {
+          e.preventDefault();
+          finish(true);
+        }
+      }
+
+      modal.onclick = (e) => {
+        const t = e.target;
+        if (!t) return;
+        if (t === okBtn || (t.closest && t.closest("#confirm-modal-ok"))) {
+          e.preventDefault();
+          finish(true);
+          return;
+        }
+        if (
+          t === cancelBtn ||
+          (t.closest && (t.closest("#confirm-modal-cancel") || t.closest("[data-confirm-dismiss]")))
+        ) {
+          e.preventDefault();
+          finish(false);
+        }
+      };
+
+      document.addEventListener("keydown", onKey, true);
+      modal.hidden = false;
+      document.body.classList.add("modal-open");
+      window.setTimeout(() => {
+        try { (okBtn || cancelBtn).focus(); } catch (_) {}
+      }, 0);
+    });
+  };
+
   Util.setStatus = function (msg, kind, extra) {
     const el = document.getElementById("status-bar");
     if (!el) return;
