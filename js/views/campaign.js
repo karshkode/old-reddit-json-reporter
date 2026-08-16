@@ -35,7 +35,7 @@
     const campaigns = Campaigns.list();
 
     if (!campaigns.length) {
-      host.innerHTML = `<div class="card">${Dom.emptyState({
+      host.innerHTML = `<div class="card campaign-empty">${Dom.emptyState({
         icon: "◆",
         title: "No campaigns yet",
         body: "A campaign groups the cross-posts of one message so you can watch how each community responds. Create one from a post you already made, or paste the URLs of a set you have posted.",

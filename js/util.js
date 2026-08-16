@@ -352,10 +352,14 @@
     if (text && message != null) text.textContent = message;
 
     const btn = document.getElementById("action-btn");
+    const cancel = document.getElementById("action-cancel");
     const icon = btn && btn.querySelector(".action-btn-icon");
     const label = btn && btn.querySelector(".action-btn-label");
     const track = document.getElementById("action-progress-track");
+    const timer = document.getElementById("action-progress-timer");
     if (track) track.hidden = phase !== "loading";
+    if (cancel) cancel.hidden = phase !== "loading";
+    if (timer) timer.hidden = phase !== "loading";
     if (btn) {
       btn.disabled = phase === "loading";
       banner.classList.toggle("is-loading", phase === "loading");
@@ -364,7 +368,9 @@
       if (icon) icon.textContent = "⟳";
       if (label) label.textContent = "Loading…";
       if (btn) btn.setAttribute("aria-label", "Loading…");
+      Util._ensureProgressTimer();
     } else if (phase === "loaded") {
+      Util._stopProgressTimer();
       /* hideProgress lands here 600ms after a fetch finishes, with the
        * summary line but no opts — and it used to hand the button back
        * its generic "Refresh", which ran the full sweep. So every
@@ -380,12 +386,46 @@
       if (label) label.textContent = text;
       if (btn) btn.setAttribute("aria-label", text === "Refresh" ? "Refresh data" : text);
     } else {
+      Util._stopProgressTimer();
       /* pending or empty */
       if (icon) icon.textContent = (opts && opts.icon) || "▶";
       if (label) label.textContent = (opts && opts.label) || "Go";
       if (btn) btn.setAttribute("aria-label", "Run search");
     }
     if (btn) btn.dataset.refreshAction = (opts && opts.action) || (phase === "loaded" ? "new" : "go");
+  };
+
+  Util._formatElapsed = function (ms) {
+    const sec = Math.max(0, Math.floor((ms || 0) / 1000));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m + ":" + String(s).padStart(2, "0");
+  };
+
+  Util._ensureProgressTimer = function () {
+    if (Util._progressStartedAt == null) Util._progressStartedAt = Date.now();
+    const tick = () => {
+      const el = document.getElementById("action-progress-timer");
+      if (!el || Util._progressStartedAt == null) return;
+      el.hidden = false;
+      el.textContent = Util._formatElapsed(Date.now() - Util._progressStartedAt);
+    };
+    tick();
+    if (Util._progressTimerIv) return;
+    Util._progressTimerIv = setInterval(tick, 250);
+  };
+
+  Util._stopProgressTimer = function () {
+    if (Util._progressTimerIv) {
+      clearInterval(Util._progressTimerIv);
+      Util._progressTimerIv = null;
+    }
+    Util._progressStartedAt = null;
+    const el = document.getElementById("action-progress-timer");
+    if (el) {
+      el.hidden = true;
+      el.textContent = "0:00";
+    }
   };
 
   Util.setProgress = function (percent, message) {
@@ -699,11 +739,13 @@
   /* Concurrency-limited parallel map. Spawns at most `n` workers and
    * resolves with an array aligned to `items` (errors caught into
    * { __error } objects so a single failure doesn't reject the batch). */
-  Util.pmap = async function (items, n, fn) {
+  Util.pmap = async function (items, n, fn, opts) {
+    opts = opts || {};
     const results = new Array(items.length);
     let idx = 0;
     const workers = Array.from({ length: Math.min(n, items.length) }, async () => {
       while (true) {
+        if (opts.stop && opts.stop()) return;
         const i = idx++;
         if (i >= items.length) return;
         try {

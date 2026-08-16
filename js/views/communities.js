@@ -397,13 +397,12 @@
     const { chunks, other } = loadedIssueChunks();
     const sphereCount = chunks.length;
     const sprawling = sphereCount > COHESION_MAX_SPHERES || total > COHESION_SOFT_SUBS;
-    const batch = (window.Refresh && Refresh.SYNC_BATCH) || 12;
 
     host.hidden = false;
     host.innerHTML = `
       <div class="loaded-trim-head">
         <strong>Trim by theme</strong>
-        <span class="hint">${sphereCount} issue theme${sphereCount === 1 ? "" : "s"} in inventory · Sync reads ${batch} communities per tap</span>
+        <span class="hint">${sphereCount} issue theme${sphereCount === 1 ? "" : "s"} in inventory · Sync warns above ${((window.Refresh && Refresh.WARN_AT) || 12)} communities</span>
       </div>
       ${sprawling ? `<p class="loaded-trim-cohesion">
         Inventory spans ${sphereCount} themes (${total} subs). Matching works best with about ${COHESION_MAX_SPHERES} related desks and under ~${COHESION_SOFT_SUBS} communities — unload themes you are not campaigning on.
@@ -469,10 +468,7 @@
     const subs = visibleSubs();
     const activeCount = AppState.knownSubs.filter((s) => AppState.activeSubs.has(s)).length;
     const allShownSelected = subs.length > 0 && subs.every((s) => selection.has(s));
-    const duePick = Refresh.dueBatch
-      ? Refresh.dueBatch(subs.filter((s) => AppState.activeSubs.has(s)))
-      : { batch: Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s))), remaining: 0, due: [] };
-    const dueN = (duePick.due && duePick.due.length) || duePick.batch.length;
+    const due = Refresh.staleSubs(subs.filter((s) => AppState.activeSubs.has(s)));
 
     toolbar.innerHTML = `
         <div class="subman-bar">
@@ -485,10 +481,10 @@
           <button class="btn small ghost" type="button" data-action="select-shown" ${subs.length ? "" : "disabled"}>
             ${allShownSelected ? "Deselect" : "Select"} ${loadedFilter ? `these ${subs.length}` : "all"}
           </button>
-          ${dueN ? `
+          ${due.length ? `
             <button class="btn small primary" type="button" data-sync="stale"
-                    title="${duePick.remaining ? `Syncs ${duePick.batch.length} of ${dueN} due this round` : `Sync ${dueN} out of date`}">
-              Sync ${duePick.remaining ? `${duePick.batch.length} of ${dueN}` : dueN} out of date
+                    title="Sync ${due.length} out of date">
+              Sync ${due.length} out of date
             </button>` : ""}
         </div>
         ${selection.size ? `
@@ -607,9 +603,8 @@
     View.render();
     Router.invalidate(["dashboard", "posts"]);
     if (added.length) {
-      const batch = (window.Refresh && Refresh.SYNC_BATCH) || 12;
       Util.toast(
-        `Added ${added.length} subreddit${added.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""} — Sync reads ${batch} at a time`
+        `Added ${added.length} subreddit${added.length === 1 ? "" : "s"}${label ? ` from ${label}` : ""} — tap Sync to load their posts`
       );
     }
     /* Warm a short head of the index only — full-catalog metadata for
@@ -809,16 +804,10 @@
         return;
       }
       const held = names.length - fetchable.length;
-      const cap = (window.Refresh && Refresh.SYNC_BATCH) || 12;
-      const batch = fetchable.slice(0, cap);
-      const remaining = fetchable.length - batch.length;
-      Refresh.subs(batch, {
-        label: remaining
-          ? `${batch.length} of ${fetchable.length} selected`
-          : (batch.length === 1 ? "r/" + batch[0] : `${batch.length} selected`),
+      Refresh.subs(fetchable, {
+        label: fetchable.length === 1 ? "r/" + fetchable[0] : `${fetchable.length} selected`,
       }).then(() => {
         if (held) Util.toast(`${held} of those are excluded from fetching, so they were skipped.`);
-        else if (remaining) Util.toast(`${remaining} selected still waiting — Sync again for the next batch.`);
         renderLoaded();
       });
     });
