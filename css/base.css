@@ -1005,6 +1005,17 @@ table.data .num {
   }
 }
 
+@keyframes sheet-in-left {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
 @media (max-width: 720px) {
   .sheet {
     top: auto;
@@ -1017,6 +1028,122 @@ table.data .num {
     animation-name: sheet-in-bottom;
     padding-bottom: var(--safe-bottom);
   }
+}
+
+/* ---- Planner: the left-hand follow-through sidebar ---- */
+
+/* Docks LEFT at every width — it is a running to-do list, and keeping
+ * it on the same edge on phone and desktop is what makes it feel like
+ * one place rather than another popover. Placed after the generic
+ * mobile bottom-sheet rule so these edges win there too. */
+.planner-sheet,
+.planner-sheet.sheet {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: auto;
+  width: min(380px, 92vw);
+  max-height: none;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  animation-name: sheet-in-left;
+  padding-bottom: var(--safe-bottom, 0px);
+}
+.planner-body {
+  gap: var(--s-3);
+  padding: var(--s-3);
+}
+.planner-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+}
+.planner-item {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev-2);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.planner-item.is-due {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.planner-item.is-posted {
+  opacity: 0.7;
+}
+.planner-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.planner-item-sub {
+  font-weight: var(--fw-semibold);
+  color: var(--accent);
+}
+.planner-item-title {
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.planner-item-meta {
+  font-size: var(--fs-xs);
+}
+.planner-item-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.planner-item-actions .planner-remove {
+  margin-left: auto;
+}
+.planner-done {
+  margin-top: var(--s-3);
+}
+.planner-done > summary {
+  cursor: pointer;
+  color: var(--text-mute);
+  font-size: var(--fs-sm);
+}
+.planner-done .planner-items {
+  margin-top: var(--s-2);
+}
+.planner-done .planner-clear-done {
+  margin-top: var(--s-2);
+}
+
+/* Topbar pin with its waiting-moves count. */
+.planner-toggle-top {
+  position: relative;
+}
+.topbar-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text-mute);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 14px;
+  text-align: center;
+}
+.topbar-badge.is-due,
+.rail-link-count.is-due {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 /* ------------------------------------------------------- Section rail */
