@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081610" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081610" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081610" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081610" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081610" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081611" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081611" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081611" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081611" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081611" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081610"></script>
+  <script src="./js/theme.js?v=2026081611"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -55,6 +55,12 @@
         <span class="rail-link-icon" aria-hidden="true">≡</span>
         <span class="rail-link-label">Posts</span>
         <span class="rail-link-count" id="rail-count-posts" hidden>0</span>
+      </button>
+      <button class="rail-link" type="button" data-action="planner-toggle"
+              title="Planned moves — suggestions you froze to follow through on">
+        <span class="rail-link-icon" aria-hidden="true">◷</span>
+        <span class="rail-link-label">Planner</span>
+        <span class="rail-link-count" id="rail-count-planner" hidden>0</span>
       </button>
     </nav>
 
@@ -107,6 +113,8 @@
       </div>
 
       <div class="topbar-actions">
+        <button class="btn ghost icon-only planner-toggle-top" type="button" data-action="planner-toggle"
+                aria-label="Planned moves" title="Planned moves — frozen suggestions to follow through on">◷<span class="topbar-badge" id="planner-count-top" hidden>0</span></button>
         <button class="btn ghost icon-only only-mobile" type="button" id="settings-toggle-mobile" aria-label="Settings">⚙</button>
       </div>
     </header>
@@ -834,6 +842,23 @@
 <div id="toast" class="toast" hidden></div>
 <button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top" title="Back to top">↑</button>
 
+<!-- Planner: the follow-through list. Suggestions added from Plan are
+     FROZEN here — community, suggested time, prefilled submit link —
+     so later syncs cannot move the original intention. -->
+<div id="planner-backdrop" class="sheet-backdrop" hidden></div>
+<aside id="planner-sheet" class="sheet planner-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="planner-sheet-title">
+  <header class="sheet-header">
+    <div>
+      <h2 id="planner-sheet-title">Planned moves</h2>
+      <span class="hint">Frozen when you added them — later syncs don't move these</span>
+    </div>
+    <button class="btn ghost icon-only" type="button" data-action="planner-close" aria-label="Close planner">×</button>
+  </header>
+  <div class="sheet-body planner-body">
+    <div id="planner-list"></div>
+  </div>
+</aside>
+
 <!-- Settings sheet: everything that configures how data is fetched. -->
 <div id="settings-sheet-backdrop" class="sheet-backdrop" hidden></div>
 <aside id="settings-sheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="settings-sheet-title">
@@ -1214,47 +1239,48 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081610"></script>
+<script src="./vendor/marked.min.js?v=2026081611"></script>
 
-<script src="./js/dom.js?v=2026081610"></script>
-<script src="./js/util.js?v=2026081610"></script>
-<script src="./js/state.js?v=2026081610"></script>
-<script src="./js/router.js?v=2026081610"></script>
-<script src="./js/sync.js?v=2026081610"></script>
-<script src="./js/archive.js?v=2026081610"></script>
-<script src="./js/imagetext.js?v=2026081610"></script>
-<script src="./js/reddit.js?v=2026081610"></script>
-<script src="./js/postcache.js?v=2026081610"></script>
-<script src="./js/live.js?v=2026081610"></script>
-<script src="./js/refresh.js?v=2026081610"></script>
-<script src="./js/subindex.js?v=2026081610"></script>
-<script src="./js/seeds.js?v=2026081610"></script>
-<script src="./js/matchlex.js?v=2026081610"></script>
-<script src="./js/rules.js?v=2026081610"></script>
-<script src="./js/timing.js?v=2026081610"></script>
-<script src="./js/analysis.js?v=2026081610"></script>
-<script src="./js/discovery.js?v=2026081610"></script>
-<script src="./js/charts.js?v=2026081610"></script>
-<script src="./js/campaigns.js?v=2026081610"></script>
-<script src="./js/reset.js?v=2026081610"></script>
-<script src="./js/analyze.js?v=2026081610"></script>
-<script src="./js/crosspost.js?v=2026081610"></script>
-<script src="./js/nextmove.js?v=2026081610"></script>
-<script src="./js/syndicate.js?v=2026081610"></script>
-<script src="./js/trending.js?v=2026081610"></script>
-<script src="./js/sidebar.js?v=2026081610"></script>
-<script src="./js/composer.js?v=2026081610"></script>
-<script src="./js/ui.js?v=2026081610"></script>
-<script src="./js/views/focus.js?v=2026081610"></script>
-<script src="./js/views/recommend.js?v=2026081610"></script>
-<script src="./js/views/feed.js?v=2026081610"></script>
-<script src="./js/views/dashboard.js?v=2026081610"></script>
-<script src="./js/views/campaign.js?v=2026081610"></script>
-<script src="./js/views/communities.js?v=2026081610"></script>
-<script src="./js/views/posts.js?v=2026081610"></script>
-<script src="./js/views/syndicate.js?v=2026081610"></script>
-<script src="./js/demo.js?v=2026081610"></script>
-<script src="./js/app.js?v=2026081610"></script>
+<script src="./js/dom.js?v=2026081611"></script>
+<script src="./js/util.js?v=2026081611"></script>
+<script src="./js/state.js?v=2026081611"></script>
+<script src="./js/router.js?v=2026081611"></script>
+<script src="./js/sync.js?v=2026081611"></script>
+<script src="./js/archive.js?v=2026081611"></script>
+<script src="./js/imagetext.js?v=2026081611"></script>
+<script src="./js/reddit.js?v=2026081611"></script>
+<script src="./js/postcache.js?v=2026081611"></script>
+<script src="./js/live.js?v=2026081611"></script>
+<script src="./js/refresh.js?v=2026081611"></script>
+<script src="./js/subindex.js?v=2026081611"></script>
+<script src="./js/seeds.js?v=2026081611"></script>
+<script src="./js/matchlex.js?v=2026081611"></script>
+<script src="./js/rules.js?v=2026081611"></script>
+<script src="./js/timing.js?v=2026081611"></script>
+<script src="./js/analysis.js?v=2026081611"></script>
+<script src="./js/discovery.js?v=2026081611"></script>
+<script src="./js/charts.js?v=2026081611"></script>
+<script src="./js/campaigns.js?v=2026081611"></script>
+<script src="./js/reset.js?v=2026081611"></script>
+<script src="./js/analyze.js?v=2026081611"></script>
+<script src="./js/crosspost.js?v=2026081611"></script>
+<script src="./js/nextmove.js?v=2026081611"></script>
+<script src="./js/syndicate.js?v=2026081611"></script>
+<script src="./js/trending.js?v=2026081611"></script>
+<script src="./js/planner.js?v=2026081611"></script>
+<script src="./js/sidebar.js?v=2026081611"></script>
+<script src="./js/composer.js?v=2026081611"></script>
+<script src="./js/ui.js?v=2026081611"></script>
+<script src="./js/views/focus.js?v=2026081611"></script>
+<script src="./js/views/recommend.js?v=2026081611"></script>
+<script src="./js/views/feed.js?v=2026081611"></script>
+<script src="./js/views/dashboard.js?v=2026081611"></script>
+<script src="./js/views/campaign.js?v=2026081611"></script>
+<script src="./js/views/communities.js?v=2026081611"></script>
+<script src="./js/views/posts.js?v=2026081611"></script>
+<script src="./js/views/syndicate.js?v=2026081611"></script>
+<script src="./js/demo.js?v=2026081611"></script>
+<script src="./js/app.js?v=2026081611"></script>
 
 <script>
   (function () {
