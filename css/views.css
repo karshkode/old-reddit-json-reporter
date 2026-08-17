@@ -1410,6 +1410,60 @@ body.sheet-open {
   }
 }
 
+/* ---- campaign composer: what gets submitted ---- */
+
+.focus-compose {
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+}
+.focus-compose-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-2);
+}
+.focus-compose-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s-2) var(--s-3);
+  align-items: end;
+}
+.focus-compose-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.focus-compose-field .group-label { margin: 0; }
+.focus-compose-field input,
+.focus-compose-field select {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  font-size: 14px;
+  min-height: 38px;
+}
+.focus-compose-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.focus-compose-preview {
+  margin: var(--s-2) 0 0;
+}
+@media (max-width: 900px) {
+  .focus-compose-grid { grid-template-columns: 1fr; }
+  /* 16px stops iOS zooming the page when the headline field focuses. */
+  .focus-compose-field input { font-size: 16px; }
+}
+
 /* ---- where the content already is ---- */
 
 .focus-reach {
