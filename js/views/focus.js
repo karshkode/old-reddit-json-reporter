@@ -985,6 +985,7 @@
         <p class="focus-lead-why">${esc(explain(m, result))}</p>
         <div class="focus-lead-actions">
           ${crosspostHtml(m, result.post, { lead: true })}
+          ${planBtnHtml(m, result.post)}
         </div>
         ${detailHtml(m)}
       </div>
@@ -1022,6 +1023,19 @@
                data-action="focus-crosspost" data-sub="${esc(m.name)}"
                href="${esc(url)}" target="_blank" rel="noopener"
                title="${esc(tip)}">${opts.lead ? `Cross-post to r/${esc(m.name)}` : "Cross-post"}</a>`;
+  }
+
+  /* Freeze this suggestion into the Planner sidebar. The button carries
+     the move's key; the handler snapshots community, suggested time and
+     the prefilled submit link, so later syncs cannot move any of it. */
+  function planBtnHtml(m, post) {
+    if (!window.Planner || !post) return "";
+    if (Planner.has(post.id, m.name)) {
+      return `<button type="button" class="btn tiny ghost is-planned" data-action="focus-plan-open"
+                      title="Already in your planner — open it">In plan ✓</button>`;
+    }
+    return `<button type="button" class="btn tiny ghost" data-action="focus-plan-add" data-key="${esc(m.key)}"
+                    title="Freeze this move into the Planner — community, suggested time and the prefilled cross-post link stay exactly as they are now">＋ Plan</button>`;
   }
 
   /* The three signals, in the same order and the same shape everywhere,
@@ -1154,6 +1168,7 @@
         ${signalsHtml(m)}
         <div class="focus-move-actions">
           ${crosspostHtml(m, post)}
+          ${planBtnHtml(m, post)}
         </div>
         ${detailHtml(m)}
       </li>
@@ -1172,6 +1187,7 @@
         <span class="focus-unmeasured-meta">${esc(m.viaSphere ? `via ${m.viaSphere}` : (m.record && m.record.subscribers ? `${Util.fmtNum(m.record.subscribers)} members` : "in the catalog"))}</span>
         <span class="focus-unmeasured-actions">
           ${crosspostHtml(m, post, { quiet: true })}
+          ${planBtnHtml(m, post)}
           <button type="button" class="btn tiny" data-action="focus-load-sub" data-sub="${esc(m.name)}"
                   title="Pull this community's posts so it gets a clock and a comparison like the rest">${m.loaded ? "Sync" : "Load"}</button>
         </span>
@@ -1394,6 +1410,65 @@
 
     Dom.delegate(document, "click", '[data-action="focus-open-campaign"]', (e, el) => {
       if (el.dataset.campaign) App.openCampaign(el.dataset.campaign);
+    });
+
+    /* ＋ Plan — snapshot a suggestion into the Planner sidebar. The
+     * submit URL is built NOW (campaign compose choices included), and
+     * the suggested slot is resolved to a concrete timestamp, so the
+     * entry is a record of the original intention rather than a live
+     * recommendation that drifts with the next sync. */
+    Dom.delegate(document, "click", '[data-action="focus-plan-add"]', (e, btn) => {
+      const post = focused();
+      if (!post || !window.Planner) return;
+      const result = resultFor(post);
+      if (!result) return;
+      const key = btn.dataset.key;
+      const all = (result.moves || []).concat(result.unmeasured || []);
+      const m = all.find((x) => x && x.key === key);
+      if (!m) return;
+
+      /* Prefer the staggered run slot when there is one — it is what
+       * the card itself shows on the row — else the community's own
+       * next window. */
+      let runAt = null;
+      try {
+        runAt = (attachSchedule(result).find((x) => x.key === key) || {}).runAt || null;
+      } catch (_) {}
+      let targetTime = null;
+      if (runAt && runAt.targetTime) targetTime = new Date(runAt.targetTime).getTime();
+      else if (m.when && m.when.date) targetTime = new Date(m.when.date).getTime();
+      if (!Number.isFinite(targetTime)) targetTime = null;
+
+      const whenLabel = (runAt && runAt.label)
+        || (!m.graded ? "any time"
+          : m.when ? (m.when.open ? `now, until ${m.when.closesAt}` : m.when.label)
+          : m.slotLabel);
+
+      const data = submitDataFor(post);
+      const noteBits = [`${m.fit} match`];
+      const gain = NextMove.gainLabel ? NextMove.gainLabel(m.ratio) : "";
+      if (gain) noteBits.push(gain);
+
+      const made = Planner.add({
+        postId: post.id,
+        campaignId: post.campaignId || "",
+        postTitle: (data !== post && data.title) ? data.title : (post.title || ""),
+        sub: m.name,
+        submitUrl: Crosspost.submitUrl(m.name, data) || "",
+        whenLabel: whenLabel,
+        targetTime: targetTime,
+        note: noteBits.join(" · "),
+      });
+      if (window.Util && Util.toast) {
+        Util.toast(made.created
+          ? `Planned: r/${m.name} · ${whenLabel}. It's frozen in the Planner.`
+          : `Updated the planned move for r/${m.name}.`, "ok");
+      }
+      render();
+    });
+
+    Dom.delegate(document, "click", '[data-action="focus-plan-open"]', () => {
+      if (window.Planner) Planner.open();
     });
 
     /* Campaign composer — headline typing and source picks patch the
