@@ -69,7 +69,7 @@
   --focus-ring: 2px solid var(--accent);
 
   /* ---- Layout ---- */
-  --rail-w: 196px;
+  --rail-w: 208px;
   --rail-w-compact: 64px;
   --topbar-h: 48px;
   --content-max: 1480px;
@@ -149,8 +149,8 @@
   --border-soft: #e8ecf4;
   --border-strong: #b8c2d4;
 
-  --wash-a: rgba(232, 71, 26, 0.08);
-  --wash-b: rgba(43, 111, 214, 0.06);
+  --wash-a: rgba(232, 71, 26, 0.16);
+  --wash-b: rgba(43, 111, 214, 0.12);
 
   --text: #131a2a;
   --text-dim: #4d5972;
@@ -197,8 +197,8 @@
     --border-soft: #e8ecf4;
     --border-strong: #b8c2d4;
 
-    --wash-a: rgba(232, 71, 26, 0.08);
-    --wash-b: rgba(43, 111, 214, 0.06);
+    --wash-a: rgba(232, 71, 26, 0.16);
+    --wash-b: rgba(43, 111, 214, 0.12);
 
     --text: #131a2a;
     --text-dim: #4d5972;

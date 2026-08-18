@@ -74,12 +74,11 @@
 }
 .rail-brand-text strong {
   display: block;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 .rail-brand-text span {
   display: block;
@@ -99,7 +98,7 @@
 .rail-link {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
   padding: var(--s-2) var(--s-3);
   border-radius: var(--radius-sm);
   border: 0;

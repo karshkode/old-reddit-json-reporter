@@ -17,13 +17,13 @@
 /* ---------------------------------------------------------------- Card */
 
 .card {
-  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--s-3) var(--s-4);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
   min-width: 0;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 }
 
 .card.flush {
