@@ -3086,8 +3086,117 @@ a.syn-title:focus-visible {
 .campaign-tile-theme {
   margin: 0 0 var(--s-2);
 }
-#trending-topics-card {
-  margin-bottom: var(--s-4);
+/* Recommend: posts/articles take the main column; desk themes sit
+ * beside them as a supportive rail, not above the fold. */
+.recommend-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: var(--s-4);
+  align-items: start;
+}
+.recommend-main { min-width: 0; }
+.recommend-aside {
+  position: sticky;
+  top: calc(var(--topbar-h) + 52px);
+  margin-bottom: 0;
+}
+.recommend-aside .card-header h2 { font-size: var(--fs-md); }
+.trending-lead {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.trending-lead a { color: var(--accent); }
+.trending-more { margin-top: var(--s-2); }
+.trending-more > summary {
+  cursor: pointer;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.trending-more[open] > summary { margin-bottom: var(--s-2); }
+@media (max-width: 960px) {
+  .recommend-desk { grid-template-columns: 1fr; }
+  .recommend-aside {
+    position: static;
+    order: 2;
+    margin-top: var(--s-3);
+  }
+  .recommend-main { order: 1; }
+}
+
+.focus-theme-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: 6px;
+}
+.focus-theme-chip-label {
+  color: var(--text-mute);
+  font-size: var(--fs-sm);
+}
+.focus-tune {
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+.focus-tune > summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.focus-tune-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--s-2) var(--s-3);
+  margin-top: var(--s-2);
+}
+.focus-tune-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+}
+.focus-roster {
+  margin-top: var(--s-3);
+}
+.focus-roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.focus-roster-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elev);
+  min-width: 0;
+}
+.focus-roster-row.is-current {
+  border-color: var(--accent);
+}
+.focus-roster-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.focus-roster-title {
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .focus-tune-grid { grid-template-columns: 1fr; }
 }
 
 /* ---- Campaign workspace overflow guards ----

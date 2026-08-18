@@ -107,10 +107,18 @@
 
     const signature = dataSignature;
     try {
-      const result = await NextMove.rank(post, {
+      const campaign = focusedCampaign(post);
+      const tune = campaignTune(campaign);
+      const work = Object.assign({}, post);
+      if (tune.extra) {
+        work.selftext = [post.selftext || "", tune.extra].filter(Boolean).join("\n");
+      }
+      const result = await NextMove.rank(work, {
         timing: timing,
         exclude: alreadyIn(post),
-        live: !(window.Demo && Demo.isActive()),
+        live: tune.loadedOnly ? false : !(window.Demo && Demo.isActive()),
+        loadedOnly: tune.loadedOnly,
+        minFit: tune.minFit || undefined,
         onPartial: (partial) => {
           /* Paint the offline answer immediately. The network pass only
              sharpens it, and staring at a spinner while forty about.json
@@ -583,6 +591,7 @@
     return `
       <div class="focus-chosen">
         <div class="focus-chosen-main">
+          ${campaignThemeChip(post)}
           <div class="focus-chosen-title">${esc(trunc(post.title || "(untitled)", 120))}</div>
           <div class="focus-chosen-meta">${whereBit}${scoreBit}${cmtBit} · ${kindBit}${kindBit ? " · " : ""}read from ${esc(read.join(" and "))}</div>
           ${audienceStrip(post)}
@@ -595,6 +604,8 @@
         </div>
       </div>
       ${composerHtml(post)}
+      ${campaignTuneHtml(post)}
+      ${campaignRosterHtml(post)}
       ${reachHtml(post)}
       ${pendingPostHtml(post)}
     `;
@@ -611,8 +622,121 @@
    * choice, live, without re-ranking. */
 
   function focusedCampaign(post) {
-    if (!post || !post.campaignId || !window.Campaigns) return null;
-    return Campaigns.get(post.campaignId);
+    if (!post || !window.Campaigns) return null;
+    if (post.campaignId) return Campaigns.get(post.campaignId);
+    if (window.AppState && AppState.openCampaignId) {
+      const open = Campaigns.get(AppState.openCampaignId);
+      if (open && (open.postIds || []).indexOf(post.id) >= 0) return open;
+    }
+    return null;
+  }
+
+  /* Compact chip so the theme supports the card instead of becoming
+   * the headline. The working title is the post (or compose draft). */
+  function campaignThemeChip(post) {
+    const campaign = focusedCampaign(post);
+    if (!campaign || !campaign.theme) return "";
+    const kind = Campaigns.themeKindLabel(campaign.theme) || "Theme";
+    const label = campaign.theme.label || campaign.name;
+    return `<div class="focus-theme-chip">
+      <span class="badge info">${esc(kind)}</span>
+      <span class="focus-theme-chip-label">${esc(trunc(label, 72))}</span>
+    </div>`;
+  }
+
+  function campaignTune(campaign) {
+    const t = (campaign && campaign.tune) || {};
+    return {
+      extra: String(t.extra || "").trim(),
+      loadedOnly: !!t.loadedOnly,
+      minFit: Number.isFinite(Number(t.minFit)) ? Math.max(0, Math.min(80, Number(t.minFit))) : 0,
+    };
+  }
+
+  /* Extra keywords, loaded-only, min-match — persist on the campaign
+   * and feed the next rank without leaving Plan. */
+  function campaignTuneHtml(post) {
+    const campaign = focusedCampaign(post);
+    if (!campaign) return "";
+    const tune = campaignTune(campaign);
+    return `
+      <details class="focus-tune" data-focus-tune>
+        <summary>Tune this ranking</summary>
+        <p class="meta">These inputs reshape the destinations below — they do not change the I can post slider, which still clips every clock.</p>
+        <div class="focus-tune-grid">
+          <label class="focus-compose-field">
+            <span class="group-label">Boost keywords</span>
+            <input id="focus-tune-extra" type="text" autocomplete="off"
+                   value="${esc(tune.extra)}" placeholder="mail-in voting, section 338…" />
+          </label>
+          <label class="focus-compose-field">
+            <span class="group-label">Min match</span>
+            <input id="focus-tune-minfit" type="number" min="0" max="80" step="5"
+                   value="${tune.minFit || ""}" placeholder="default" />
+          </label>
+          <label class="focus-tune-check">
+            <input id="focus-tune-loaded" type="checkbox"${tune.loadedOnly ? " checked" : ""} />
+            <span>Loaded rooms only — skip catalog / keyword search</span>
+          </label>
+        </div>
+      </details>`;
+  }
+
+  /* One row per campaign post/article so the next move is for a
+   * concrete piece of material, not the campaign-as-blob. */
+  function campaignRosterHtml(post) {
+    const campaign = focusedCampaign(post);
+    if (!campaign || !window.Campaigns || !Campaigns.resolvePosts) return "";
+    const members = Campaigns.resolvePosts(campaign);
+    const theme = campaign.theme || null;
+    const rows = [];
+    if (theme && (theme.articleLink || theme.articleId)) {
+      rows.push({
+        id: theme.articleId ? "art_" + theme.articleId : "art_theme",
+        kind: "article",
+        title: theme.label || campaign.name,
+        meta: "Theme article",
+        isCurrent: !!(post.syndicated && post.campaignId && !members.some((p) => p && p.id === post.id)),
+      });
+    }
+    for (const p of members.slice(0, 12)) {
+      if (!p || !p.id) continue;
+      rows.push({
+        id: p.id,
+        kind: "post",
+        title: p.title || "(untitled)",
+        meta: `r/${p.subreddit || "?"} · ${Util.fmtNum(p.score || 0)} pts`,
+        isCurrent: post.id === p.id,
+        post: p,
+      });
+    }
+    if (!rows.length) return "";
+    return `
+      <div class="focus-roster">
+        <div class="focus-compose-head">
+          <span class="focus-block-label">Next move for each piece</span>
+          <span class="meta">Rank a row to time that post or article on its own</span>
+        </div>
+        <ul class="focus-roster-list">
+          ${rows.map((r) => {
+            const cached = r.post ? resultFor(r.post) : null;
+            const lead = cached && cached.lead;
+            const nextBit = lead
+              ? ` → r/${esc(lead.name)}${lead.when && lead.when.label ? ` · ${esc(lead.when.label)}` : (!lead.graded ? " · any time" : "")}`
+              : "";
+            return `<li class="focus-roster-row${r.isCurrent ? " is-current" : ""}">
+              <div class="focus-roster-main">
+                <span class="focus-roster-title">${esc(trunc(r.title, 80))}</span>
+                <span class="meta">${esc(r.meta)}${nextBit}</span>
+              </div>
+              ${r.isCurrent
+                ? `<span class="badge info">ranking</span>`
+                : `<button type="button" class="btn tiny" data-action="focus-roster-rank" data-post-id="${esc(r.id)}"
+                           data-kind="${esc(r.kind)}">Rank this</button>`}
+            </li>`;
+          }).join("")}
+        </ul>
+      </div>`;
   }
 
   /* What buildSubmitUrl should receive for this post — the compose
@@ -880,11 +1004,8 @@
               Try loading a sphere from Communities, or check Trends for today’s topic keywords.</p>`;
     }
 
-    const scheduled = attachSchedule(result);
-    const lead = result.lead
-      ? (scheduled.find((m) => m.key === result.lead.key) || result.lead)
-      : null;
-    const rest = scheduled
+    const lead = result.lead || null;
+    const rest = (result.moves || []).slice()
       .filter((m) => !lead || m.key !== lead.key)
       .sort((a, b) => {
         const wa = NextMove.waitOf ? NextMove.waitOf(a) : 0;
@@ -896,7 +1017,7 @@
       ${lead ? leadHtml(lead, result) : noneMeasuredHtml(result)}
       ${rest.length ? `
         <div class="focus-block">
-          <div class="focus-block-label">Then · in posting order</div>
+          <div class="focus-block-label">Then · each room’s best window inside your hours</div>
           <ol class="focus-moves">${rest.map((m) => moveHtml(m, result.post)).join("")}</ol>
         </div>` : ""}
       ${result.unmeasured.length ? `
@@ -971,16 +1092,12 @@
       : m.when
         ? (m.when.open ? `window open until ${esc(m.when.closesAt)}` : esc(m.when.inLabel))
         : "";
-    const runBit = m.runAt && m.runAt.label
-      ? `<div class="focus-lead-run">On the run · ${esc(m.runAt.label)}</div>`
-      : "";
 
     return `
       <div class="focus-lead" data-verdict="${esc(m.verdict)}">
         <div class="focus-lead-label">Next move</div>
         <div class="focus-lead-headline">${when} in <span class="focus-lead-sub">r/${esc(m.name)}</span></div>
         <div class="focus-lead-sub-line">${tail}${verdictBadge(m)}</div>
-        ${runBit}
         ${signalsHtml(m)}
         <p class="focus-lead-why">${esc(explain(m, result))}</p>
         <div class="focus-lead-actions">
@@ -1157,13 +1274,12 @@
       : m.when
         ? (m.when.open ? "open now" : m.when.label)
         : m.slotLabel;
-    const runLabel = m.runAt && m.runAt.label ? m.runAt.label : "";
     return `
       <li class="focus-move" data-verdict="${esc(m.verdict)}">
         <div class="focus-move-head">
           <span class="focus-move-sub">r/${esc(m.name)}</span>
           ${verdictBadge(m)}
-          <span class="focus-move-when">${esc(runLabel || whenLabel)}</span>
+          <span class="focus-move-when">${esc(whenLabel)}</span>
         </div>
         ${signalsHtml(m)}
         <div class="focus-move-actions">
@@ -1427,22 +1543,19 @@
       const m = all.find((x) => x && x.key === key);
       if (!m) return;
 
-      /* Prefer the staggered run slot when there is one — it is what
-       * the card itself shows on the row — else the community's own
-       * next window. */
-      let runAt = null;
-      try {
-        runAt = (attachSchedule(result).find((x) => x.key === key) || {}).runAt || null;
-      } catch (_) {}
+      /* Freeze the community's own recommended window — the time the
+       * card headlines, already clipped to the I can post slider.
+       * The old cascade "on the run" slot was a stagger so two rooms
+       * did not share an hour; that is not the recommended time. */
       let targetTime = null;
-      if (runAt && runAt.targetTime) targetTime = new Date(runAt.targetTime).getTime();
-      else if (m.when && m.when.date) targetTime = new Date(m.when.date).getTime();
+      if (m.when && m.when.date) targetTime = new Date(m.when.date).getTime();
       if (!Number.isFinite(targetTime)) targetTime = null;
 
-      const whenLabel = (runAt && runAt.label)
-        || (!m.graded ? "any time"
-          : m.when ? (m.when.open ? `now, until ${m.when.closesAt}` : m.when.label)
-          : m.slotLabel);
+      const whenLabel = !m.graded
+        ? "any time"
+        : m.when
+          ? (m.when.open ? `now, until ${m.when.closesAt}` : m.when.label)
+          : (m.slotLabel || "any time");
 
       const data = submitDataFor(post);
       const noteBits = [`${m.fit} match`];
@@ -1469,6 +1582,73 @@
 
     Dom.delegate(document, "click", '[data-action="focus-plan-open"]', () => {
       if (window.Planner) Planner.open();
+    });
+
+    function rerankFromTune() {
+      const post = focused();
+      if (!post) return;
+      cache.delete(post.id);
+      busy = false;
+      rank();
+    }
+
+    let tuneTimer = 0;
+    function saveTune(patch) {
+      const post = focused();
+      const campaign = focusedCampaign(post);
+      if (!campaign) return;
+      const tune = Object.assign({}, campaign.tune || {}, patch);
+      Campaigns.update(campaign.id, { tune: tune });
+      if (tuneTimer) window.clearTimeout(tuneTimer);
+      tuneTimer = window.setTimeout(() => {
+        tuneTimer = 0;
+        rerankFromTune();
+      }, 350);
+    }
+
+    Dom.delegate(document, "input", "#focus-tune-extra", (e, input) => {
+      saveTune({ extra: input.value });
+    });
+    Dom.delegate(document, "input", "#focus-tune-minfit", (e, input) => {
+      const n = Number(input.value);
+      saveTune({ minFit: Number.isFinite(n) && n > 0 ? n : 0 });
+    });
+    Dom.delegate(document, "change", "#focus-tune-loaded", (e, input) => {
+      saveTune({ loadedOnly: !!input.checked });
+    });
+
+    Dom.delegate(document, "click", '[data-action="focus-roster-rank"]', (e, btn) => {
+      const campaign = focusedCampaign(focused());
+      if (!campaign) return;
+      const kind = btn.dataset.kind;
+      const id = btn.dataset.postId;
+      if (kind === "post") {
+        const p = Campaigns.resolvePosts(campaign).find((x) => x && x.id === id);
+        if (p) View.focusPost(Object.assign({}, p, { campaignId: campaign.id }));
+        return;
+      }
+      const theme = campaign.theme || {};
+      const article = (window.Syndicate && Syndicate.articles)
+        ? Syndicate.articles().find((a) => a && (a.id === theme.articleId || a.link === theme.articleLink))
+        : null;
+      const draft = article
+        ? Object.assign({}, article, {
+            id: article.id && String(article.id).indexOf("art_") === 0 ? article.id : "art_" + article.id,
+            syndicated: true,
+            campaignId: campaign.id,
+            source_label: article.source || article.feedTitle || "Theme article",
+          })
+        : {
+            id: id || "art_theme",
+            syndicated: true,
+            campaignId: campaign.id,
+            title: theme.label || campaign.name,
+            url: theme.articleLink || "",
+            selftext: (theme.keywords || []).join(", "),
+            is_self: false,
+            source_label: "Theme article",
+          };
+      View.focusPost(draft);
     });
 
     /* Campaign composer — headline typing and source picks patch the

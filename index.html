@@ -10,14 +10,14 @@
   <link rel="preconnect" href="https://api.allorigins.win" />
   <link rel="preconnect" href="https://api.rss2json.com" />
   <link rel="preconnect" href="https://corsproxy.io" />
-  <link rel="stylesheet" href="./css/tokens.css?v=2026081611" />
-  <link rel="stylesheet" href="./css/base.css?v=2026081611" />
-  <link rel="stylesheet" href="./css/shell.css?v=2026081611" />
-  <link rel="stylesheet" href="./css/views.css?v=2026081611" />
-  <link rel="stylesheet" href="./css/styles.css?v=2026081611" />
+  <link rel="stylesheet" href="./css/tokens.css?v=2026081812" />
+  <link rel="stylesheet" href="./css/base.css?v=2026081812" />
+  <link rel="stylesheet" href="./css/shell.css?v=2026081812" />
+  <link rel="stylesheet" href="./css/views.css?v=2026081812" />
+  <link rel="stylesheet" href="./css/styles.css?v=2026081812" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff5c2b'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' font-size='18' font-family='Arial' fill='white' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
   <!-- Runs before first paint so the palette never flashes. -->
-  <script src="./js/theme.js?v=2026081611"></script>
+  <script src="./js/theme.js?v=2026081812"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -201,21 +201,8 @@
           </div>
 
           <div class="dash-section active" id="dash-recommend" role="tabpanel">
-            <div class="card" id="trending-topics-card">
-              <header class="card-header">
-                <div>
-                  <h2>Themes to campaign on</h2>
-                  <span class="hint">Front-and-center desk topics — start a campaign from a trend, a headline, or matching loaded posts</span>
-                </div>
-                <div class="card-actions">
-                  <button class="btn small ghost" type="button" data-action="trending-refresh"
-                          title="Re-cluster from Syndicate headlines and loaded posts">↻ Refresh</button>
-                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Each theme is a curated mid-cycle desk entry with trigger keywords that also feed Recommend’s Reddit search. Matching Syndicate headlines and loaded inventory posts cluster under the theme with spread stats (subs, points, comments). + Campaign on theme creates a campaign anchored on that story — it does not require same-URL cross-posts. Sphere chips load issue communities from the catalog.">?</button>
-                </div>
-              </header>
-              <div id="trending-topics" class="trending-topics"></div>
-            </div>
-
+            <div class="recommend-desk">
+            <div class="recommend-main">
             <!-- The stem of the T: a fixed two-way picker, not a second
                  sliding rail. Desktop shows both columns and hides this. -->
             <nav class="segmented recommend-seg" id="recommend-subrail" role="tablist" aria-label="Recommend panels">
@@ -276,6 +263,23 @@
                 </div>
               </div>
               </div>
+            </div>
+            </div>
+
+            <aside class="recommend-aside card" id="trending-topics-card">
+              <header class="card-header">
+                <div>
+                  <h2>Desk themes</h2>
+                  <span class="hint">Support for the lists — start a campaign from a story</span>
+                </div>
+                <div class="card-actions">
+                  <button class="btn small ghost" type="button" data-action="trending-refresh"
+                          title="Re-cluster from Syndicate headlines and loaded posts">↻</button>
+                  <button class="card-help" type="button" aria-label="How this card is built" data-help="Compact mid-cycle desk. Each theme clusters matching Syndicate headlines and loaded posts. + Campaign anchors a campaign on that story without requiring same-URL copies. Sphere chips load issue rooms from the catalog.">?</button>
+                </div>
+              </header>
+              <div id="trending-topics" class="trending-topics"></div>
+            </aside>
             </div>
           </div>
 
@@ -537,8 +541,8 @@
           <div class="card" id="campaign-plan-next-card" style="margin-top:var(--s-4)">
             <header class="card-header">
               <div>
-                <h2>Communities this campaign hasn't reached</h2>
-                <span class="hint">Runs the same engine as a single post — theme keywords and every campaign post become one profile</span>
+                <h2>Find rooms for this theme</h2>
+                <span class="hint">Opens Plan with a roster of each campaign post and article — rank a row for its own next move, or tune the match below</span>
               </div>
               <button id="campaign-rank-in-plan" class="btn primary small" type="button" data-action="campaign-rank-in-plan">Rank in Plan</button>
             </header>
@@ -1239,48 +1243,48 @@
 </div>
 <div id="section-sidebar-backdrop" class="sidebar-backdrop" data-sidebar-backdrop hidden></div>
 
-<script src="./vendor/marked.min.js?v=2026081611"></script>
+<script src="./vendor/marked.min.js?v=2026081812"></script>
 
-<script src="./js/dom.js?v=2026081611"></script>
-<script src="./js/util.js?v=2026081611"></script>
-<script src="./js/state.js?v=2026081611"></script>
-<script src="./js/router.js?v=2026081611"></script>
-<script src="./js/sync.js?v=2026081611"></script>
-<script src="./js/archive.js?v=2026081611"></script>
-<script src="./js/imagetext.js?v=2026081611"></script>
-<script src="./js/reddit.js?v=2026081611"></script>
-<script src="./js/postcache.js?v=2026081611"></script>
-<script src="./js/live.js?v=2026081611"></script>
-<script src="./js/refresh.js?v=2026081611"></script>
-<script src="./js/subindex.js?v=2026081611"></script>
-<script src="./js/seeds.js?v=2026081611"></script>
-<script src="./js/matchlex.js?v=2026081611"></script>
-<script src="./js/rules.js?v=2026081611"></script>
-<script src="./js/timing.js?v=2026081611"></script>
-<script src="./js/analysis.js?v=2026081611"></script>
-<script src="./js/discovery.js?v=2026081611"></script>
-<script src="./js/charts.js?v=2026081611"></script>
-<script src="./js/campaigns.js?v=2026081611"></script>
-<script src="./js/reset.js?v=2026081611"></script>
-<script src="./js/analyze.js?v=2026081611"></script>
-<script src="./js/crosspost.js?v=2026081611"></script>
-<script src="./js/nextmove.js?v=2026081611"></script>
-<script src="./js/syndicate.js?v=2026081611"></script>
-<script src="./js/trending.js?v=2026081611"></script>
-<script src="./js/planner.js?v=2026081611"></script>
-<script src="./js/sidebar.js?v=2026081611"></script>
-<script src="./js/composer.js?v=2026081611"></script>
-<script src="./js/ui.js?v=2026081611"></script>
-<script src="./js/views/focus.js?v=2026081611"></script>
-<script src="./js/views/recommend.js?v=2026081611"></script>
-<script src="./js/views/feed.js?v=2026081611"></script>
-<script src="./js/views/dashboard.js?v=2026081611"></script>
-<script src="./js/views/campaign.js?v=2026081611"></script>
-<script src="./js/views/communities.js?v=2026081611"></script>
-<script src="./js/views/posts.js?v=2026081611"></script>
-<script src="./js/views/syndicate.js?v=2026081611"></script>
-<script src="./js/demo.js?v=2026081611"></script>
-<script src="./js/app.js?v=2026081611"></script>
+<script src="./js/dom.js?v=2026081812"></script>
+<script src="./js/util.js?v=2026081812"></script>
+<script src="./js/state.js?v=2026081812"></script>
+<script src="./js/router.js?v=2026081812"></script>
+<script src="./js/sync.js?v=2026081812"></script>
+<script src="./js/archive.js?v=2026081812"></script>
+<script src="./js/imagetext.js?v=2026081812"></script>
+<script src="./js/reddit.js?v=2026081812"></script>
+<script src="./js/postcache.js?v=2026081812"></script>
+<script src="./js/live.js?v=2026081812"></script>
+<script src="./js/refresh.js?v=2026081812"></script>
+<script src="./js/subindex.js?v=2026081812"></script>
+<script src="./js/seeds.js?v=2026081812"></script>
+<script src="./js/matchlex.js?v=2026081812"></script>
+<script src="./js/rules.js?v=2026081812"></script>
+<script src="./js/timing.js?v=2026081812"></script>
+<script src="./js/analysis.js?v=2026081812"></script>
+<script src="./js/discovery.js?v=2026081812"></script>
+<script src="./js/charts.js?v=2026081812"></script>
+<script src="./js/campaigns.js?v=2026081812"></script>
+<script src="./js/reset.js?v=2026081812"></script>
+<script src="./js/analyze.js?v=2026081812"></script>
+<script src="./js/crosspost.js?v=2026081812"></script>
+<script src="./js/nextmove.js?v=2026081812"></script>
+<script src="./js/syndicate.js?v=2026081812"></script>
+<script src="./js/trending.js?v=2026081812"></script>
+<script src="./js/planner.js?v=2026081812"></script>
+<script src="./js/sidebar.js?v=2026081812"></script>
+<script src="./js/composer.js?v=2026081812"></script>
+<script src="./js/ui.js?v=2026081812"></script>
+<script src="./js/views/focus.js?v=2026081812"></script>
+<script src="./js/views/recommend.js?v=2026081812"></script>
+<script src="./js/views/feed.js?v=2026081812"></script>
+<script src="./js/views/dashboard.js?v=2026081812"></script>
+<script src="./js/views/campaign.js?v=2026081812"></script>
+<script src="./js/views/communities.js?v=2026081812"></script>
+<script src="./js/views/posts.js?v=2026081812"></script>
+<script src="./js/views/syndicate.js?v=2026081812"></script>
+<script src="./js/demo.js?v=2026081812"></script>
+<script src="./js/app.js?v=2026081812"></script>
 
 <script>
   (function () {

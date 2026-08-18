@@ -464,6 +464,7 @@
     const bodyBits = [];
     if (theme && theme.label && theme.label !== campaign.name) bodyBits.push(theme.label);
     if (theme && theme.keywords && theme.keywords.length) bodyBits.push(theme.keywords.join(", "));
+    if (campaign.tune && campaign.tune.extra) bodyBits.push(String(campaign.tune.extra));
     for (const p of posts.slice(0, 12)) {
       if (p && p.title) bodyBits.push(p.title);
     }
