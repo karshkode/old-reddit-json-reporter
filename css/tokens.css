@@ -38,8 +38,8 @@
   --fs-2xl: 26px;
   --fs-3xl: 34px;
 
-  --lh-tight: 1.2;
-  --lh-normal: 1.5;
+  --lh-tight: 1.18;
+  --lh-normal: 1.42;
 
   --fw-normal: 450;
   --fw-medium: 550;
@@ -52,10 +52,10 @@
     "Liberation Mono", monospace;
 
   /* ---- Radii ---- */
-  --radius-xs: 6px;
-  --radius-sm: 9px;
-  --radius: 13px;
-  --radius-lg: 18px;
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius: 11px;
+  --radius-lg: 16px;
   --radius-pill: 999px;
 
   /* ---- Motion ---- */
@@ -69,10 +69,10 @@
   --focus-ring: 2px solid var(--accent);
 
   /* ---- Layout ---- */
-  --rail-w: 220px;
-  --rail-w-compact: 68px;
-  --topbar-h: 58px;
-  --content-max: 1560px;
+  --rail-w: 196px;
+  --rail-w-compact: 64px;
+  --topbar-h: 48px;
+  --content-max: 1480px;
 
   /* ---- Safe areas (iOS notch / home indicator) ---- */
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
@@ -89,15 +89,18 @@
   color-scheme: dark;
 
   /* Surfaces, back to front */
-  --bg: #0a0c11;
-  --bg-elev: #12151d;
-  --bg-elev-2: #1a1f2b;
-  --bg-elev-3: #232936;
-  --bg-inset: #0d1016;
+  --bg: #080a0f;
+  --bg-elev: #11141c;
+  --bg-elev-2: #191d28;
+  --bg-elev-3: #222836;
+  --bg-inset: #0c0e14;
 
-  --border: #232a38;
-  --border-soft: #1a202c;
-  --border-strong: #333d52;
+  --border: #262c3a;
+  --border-soft: #1b202b;
+  --border-strong: #3a4458;
+
+  --wash-a: rgba(255, 92, 43, 0.16);
+  --wash-b: rgba(96, 165, 250, 0.08);
 
   --text: #e8edf7;
   --text-dim: #9ba7bf;
@@ -136,15 +139,18 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #f4f6fb;
+  --bg: #eef1f7;
   --bg-elev: #ffffff;
-  --bg-elev-2: #eef1f7;
-  --bg-elev-3: #e4e9f2;
-  --bg-inset: #f8fAfd;
+  --bg-elev-2: #f3f5fa;
+  --bg-elev-3: #e7ebf3;
+  --bg-inset: #f7f8fc;
 
-  --border: #e0e5ef;
-  --border-soft: #edf0f6;
-  --border-strong: #c3ccdd;
+  --border: #d8deea;
+  --border-soft: #e8ecf4;
+  --border-strong: #b8c2d4;
+
+  --wash-a: rgba(232, 71, 26, 0.08);
+  --wash-b: rgba(43, 111, 214, 0.06);
 
   --text: #131a2a;
   --text-dim: #4d5972;
@@ -181,15 +187,18 @@
   :root[data-theme="system"] {
     color-scheme: light;
 
-    --bg: #f4f6fb;
+    --bg: #eef1f7;
     --bg-elev: #ffffff;
-    --bg-elev-2: #eef1f7;
-    --bg-elev-3: #e4e9f2;
-    --bg-inset: #f8fafd;
+    --bg-elev-2: #f3f5fa;
+    --bg-elev-3: #e7ebf3;
+    --bg-inset: #f7f8fc;
 
-    --border: #e0e5ef;
-    --border-soft: #edf0f6;
-    --border-strong: #c3ccdd;
+    --border: #d8deea;
+    --border-soft: #e8ecf4;
+    --border-strong: #b8c2d4;
+
+    --wash-a: rgba(232, 71, 26, 0.08);
+    --wash-b: rgba(43, 111, 214, 0.06);
 
     --text: #131a2a;
     --text-dim: #4d5972;
@@ -249,6 +258,10 @@ body {
 body {
   padding-bottom: var(--safe-bottom);
   overflow-x: hidden;
+  background:
+    radial-gradient(1100px 520px at 8% -12%, var(--wash-a), transparent 58%),
+    radial-gradient(820px 440px at 96% -8%, var(--wash-b), transparent 52%),
+    var(--bg);
 }
 
 h1,

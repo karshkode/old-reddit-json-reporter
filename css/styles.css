@@ -2150,7 +2150,7 @@ select { max-width: 100%; min-width: 0; }
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 .analyze-invite h2 { margin: 0 0 2px; font-size: 15px; }
 .analyze-invite .hint { display: block; max-width: 62ch; }
@@ -2385,8 +2385,8 @@ body.modal-open { overflow: hidden; }
    * 22px past the edge of a 320px screen. */
   align-items: stretch;
   flex-wrap: nowrap;
-  gap: 10px;
-  padding: 10px 14px 0;
+  gap: 8px;
+  padding: 8px 12px 0;
 }
 .posts-controls .pc-search,
 .posts-controls .pc-filters {
@@ -2419,11 +2419,11 @@ body.modal-open { overflow: hidden; }
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   outline: none;
-  min-height: 38px;
+  min-height: 34px;
 }
 .posts-controls .pc-search input:focus {
   border-color: var(--accent);
@@ -2436,8 +2436,8 @@ body.modal-open { overflow: hidden; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   align-items: start;
-  gap: 12px;
-  padding-bottom: 8px;
+  gap: 10px;
+  padding-bottom: 6px;
 }
 .posts-controls .pc-filter {
   display: flex;
