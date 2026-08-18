@@ -15,7 +15,7 @@
   /* auto-fit (not auto-fill): a single empty-state card must stretch
    * full width on desktop instead of sitting in a 300px track with a
    * blank column beside it. */
-  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: var(--s-3);
 }
 .campaign-grid > .campaign-empty {
@@ -43,11 +43,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  background: var(--bg-elev);
+  background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: var(--s-4);
-  box-shadow: var(--shadow-sm);
+  padding: var(--s-3);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+  backdrop-filter: blur(12px);
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
 }
@@ -111,7 +112,7 @@
   align-items: flex-start;
   gap: var(--s-3);
   flex-wrap: wrap;
-  margin-bottom: var(--s-4);
+  margin-bottom: var(--s-3);
 }
 .campaign-workspace-head > .btn {
   flex: 0 0 auto;
@@ -238,7 +239,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  gap: var(--s-2);
 }
 .briefing > li {
   display: grid;
@@ -248,7 +249,7 @@
 }
 .briefing > li + li {
   border-top: 1px solid var(--border-soft);
-  padding-top: var(--s-3);
+  padding-top: var(--s-2);
 }
 .briefing-label {
   font-size: var(--fs-xs);
@@ -300,8 +301,8 @@
 .campaign-sub-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
-  gap: var(--s-4);
-  margin-top: var(--s-4);
+  gap: var(--s-3);
+  margin-top: var(--s-3);
 }
 
 .sub-card {
@@ -1574,9 +1575,9 @@ body.sheet-open {
 /* ---- the lead move ---- */
 
 .focus-lead {
-  margin-top: var(--s-4);
-  padding: var(--s-4);
-  background: var(--bg-elev-2);
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+  background: color-mix(in srgb, var(--bg-elev-2) 88%, transparent);
   border-radius: var(--radius-sm);
   /* Same grammar as the timing rows: a left edge keyed to how much the
      evidence supports the suggestion. */
@@ -1655,7 +1656,7 @@ body.sheet-open {
 /* ---- the runners-up ---- */
 
 .focus-block {
-  margin-top: var(--s-5);
+  margin-top: var(--s-4);
 }
 .focus-moves {
   margin: var(--s-2) 0 0;
@@ -1874,7 +1875,7 @@ body.sheet-open {
  * SYNDICATE
  * ===================================================================== */
 
-.syn-toolbar-card { margin-bottom: var(--s-4); }
+.syn-toolbar-card { margin-bottom: var(--s-3); }
 .syn-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1955,7 +1956,7 @@ body.sheet-open {
 .recommend-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--s-4);
+  gap: var(--s-3);
   align-items: start;
 }
 @media (max-width: 960px) {
@@ -2008,7 +2009,7 @@ body.sheet-open {
     -webkit-overflow-scrolling: touch;
   }
 }
-.plan-syn-empty { padding: var(--s-5); }
+.plan-syn-empty { padding: var(--s-4); }
 .plan-syn-slide {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
@@ -2112,10 +2113,10 @@ body.sheet-open {
   gap: var(--s-2);
 }
 .plan-rec-row {
-  padding: var(--s-3);
+  padding: var(--s-2) var(--s-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-elev-1);
+  background: color-mix(in srgb, var(--bg-elev-2) 70%, transparent);
 }
 .plan-rec-title {
   margin: 0 0 var(--s-1);
@@ -2567,7 +2568,7 @@ a.syn-title:focus-visible {
 @media (max-width: 560px) {
   .tabbar-link {
     font-size: 9px;
-    padding: var(--s-2) 2px;
+    padding: 6px 2px;
   }
   .syn-list { max-height: none; }
 }
@@ -2950,7 +2951,7 @@ a.syn-title:focus-visible {
   padding: var(--s-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-elev-1);
+  background: color-mix(in srgb, var(--bg-elev-2) 70%, transparent);
 }
 .plan-syn-row-main {
   appearance: none;
@@ -3016,7 +3017,7 @@ a.syn-title:focus-visible {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: var(--s-3);
 }
 .trending-topic {
   padding-bottom: var(--s-3);
@@ -3091,7 +3092,7 @@ a.syn-title:focus-visible {
 .recommend-desk {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
-  gap: var(--s-4);
+  gap: var(--s-3);
   align-items: start;
 }
 .recommend-main { min-width: 0; }

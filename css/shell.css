@@ -22,10 +22,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  padding: var(--s-4) var(--s-3);
+  padding: var(--s-3);
   padding-left: max(var(--s-3), var(--safe-left));
   border-right: 1px solid var(--border);
-  background: var(--bg-elev);
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  backdrop-filter: blur(16px);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -73,12 +74,11 @@
 }
 .rail-brand-text strong {
   display: block;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 .rail-brand-text span {
   display: block;
@@ -98,7 +98,7 @@
 .rail-link {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
   padding: var(--s-2) var(--s-3);
   border-radius: var(--radius-sm);
   border: 0;
@@ -109,7 +109,7 @@
   cursor: pointer;
   text-align: left;
   width: 100%;
-  min-height: 40px;
+  min-height: 36px;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .rail-link:hover {
@@ -190,12 +190,12 @@
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-2) var(--s-4);
+  padding: 0 var(--s-4);
   padding-right: max(var(--s-4), var(--safe-right));
   min-height: var(--topbar-h);
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(16px);
   position: sticky;
   top: 0;
   z-index: 25;
@@ -258,11 +258,12 @@
 .scopebar {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  padding: var(--s-2) var(--s-4);
+  gap: var(--s-2);
+  padding: 6px var(--s-4);
   padding-right: max(var(--s-4), var(--safe-right));
   border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
+  background: color-mix(in srgb, var(--bg-elev) 78%, transparent);
+  backdrop-filter: blur(14px);
   flex-wrap: wrap;
 }
 
@@ -316,10 +317,10 @@
 
 .view-host {
   flex: 1 1 auto;
-  padding: var(--s-4);
-  padding-left: max(var(--s-4), var(--safe-left));
-  padding-right: max(var(--s-4), var(--safe-right));
-  padding-bottom: var(--s-8);
+  padding: var(--s-3);
+  padding-left: max(var(--s-3), var(--safe-left));
+  padding-right: max(var(--s-3), var(--safe-right));
+  padding-bottom: var(--s-6);
   max-width: var(--content-max);
   width: 100%;
   margin: 0 auto;
@@ -349,7 +350,7 @@
   scroll-margin-top: calc(var(--topbar-h) + 56px);
 }
 .view-section + .view-section {
-  margin-top: var(--s-4);
+  margin-top: var(--s-3);
 }
 
 .view-head {
@@ -358,10 +359,10 @@
   justify-content: space-between;
   gap: var(--s-3);
   flex-wrap: wrap;
-  margin-bottom: var(--s-4);
+  margin-bottom: var(--s-3);
 }
 .view-head h2 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
   letter-spacing: -0.02em;
 }
 .view-head p {
@@ -417,7 +418,7 @@
 
   .view-host {
     padding: var(--s-3);
-    padding-bottom: calc(72px + var(--safe-bottom));
+    padding-bottom: calc(64px + var(--safe-bottom));
   }
 
   .topbar {
@@ -475,9 +476,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    padding: var(--s-2) var(--s-1);
-    min-height: 56px;
+    gap: 1px;
+    padding: 6px var(--s-1);
+    min-height: 50px;
     font-size: var(--fs-2xs);
     font-weight: var(--fw-bold);
     cursor: pointer;
@@ -509,10 +510,10 @@
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-2) var(--s-4);
+  padding: 6px var(--s-4);
   padding-right: max(var(--s-4), var(--safe-right));
   border-bottom: 1px solid var(--border);
-  background: var(--bg-elev-2);
+  background: color-mix(in srgb, var(--bg-elev-2) 90%, transparent);
   font-size: var(--fs-md);
 }
 .action-banner[hidden] {
@@ -778,7 +779,7 @@
 
 @media (max-width: 900px) {
   .statusbar {
-    padding-bottom: calc(72px + var(--safe-bottom));
+    padding-bottom: calc(64px + var(--safe-bottom));
   }
   .action-banner {
     padding: var(--s-2) var(--s-3);
@@ -854,7 +855,7 @@
 }
 @media (max-width: 900px) {
   .toast {
-    bottom: calc(76px + var(--safe-bottom));
+    bottom: calc(68px + var(--safe-bottom));
   }
 }
 
@@ -922,8 +923,8 @@ body.sidebar-open .back-to-top {
   display: none;
 }
 @media (max-width: 900px) {
-  /* Clear of the tab bar, which owns the bottom 56px plus the inset. */
+  /* Clear of the tab bar, which owns the bottom 50px plus the inset. */
   .back-to-top {
-    bottom: calc(72px + var(--safe-bottom));
+    bottom: calc(64px + var(--safe-bottom));
   }
 }

@@ -17,12 +17,13 @@
 /* ---------------------------------------------------------------- Card */
 
 .card {
-  background: var(--bg-elev);
+  background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: var(--s-4);
-  box-shadow: var(--shadow-sm);
+  padding: var(--s-3) var(--s-4);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
   min-width: 0;
+  backdrop-filter: blur(12px);
 }
 
 .card.flush {
@@ -35,7 +36,7 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--s-2);
-  margin-bottom: var(--s-3);
+  margin-bottom: var(--s-2);
   flex-wrap: wrap;
 }
 
@@ -88,7 +89,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--s-2);
-  min-height: 36px;
+  min-height: 32px;
   white-space: nowrap;
   transition: background var(--dur) var(--ease),
     border-color var(--dur) var(--ease), color var(--dur) var(--ease),
@@ -176,8 +177,8 @@
 /* Icon-only square button, used across the topbar and card headers. */
 .btn.icon-only {
   padding: 0;
-  width: 36px;
-  min-height: 36px;
+  width: 32px;
+  min-height: 32px;
 }
 .btn.icon-only.small {
   width: 30px;
@@ -197,13 +198,13 @@
   align-items: center;
   gap: var(--s-2);
   padding: 0 var(--s-3);
-  min-height: 32px;
+  min-height: 28px;
   border-radius: var(--radius-pill);
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
   color: var(--text-dim);
   cursor: pointer;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   user-select: none;
   transition: background var(--dur) var(--ease),
@@ -297,7 +298,7 @@ textarea {
   padding: 0 var(--s-3);
   border-radius: var(--radius-sm);
   font-size: var(--fs-base);
-  min-height: 38px;
+  min-height: 34px;
   min-width: 0;
   outline: none;
   transition: border-color var(--dur) var(--ease),
@@ -443,6 +444,7 @@ textarea:disabled {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: var(--s-2);
+  margin-bottom: var(--s-3);
 }
 
 /* Six headline tiles stack two-by-three on a phone, which spent a third
@@ -475,10 +477,10 @@ textarea:disabled {
 }
 
 .stat {
-  background: var(--bg-elev);
+  background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--s-3) var(--s-4);
+  border-radius: var(--radius-sm);
+  padding: var(--s-2) var(--s-3);
   min-width: 0;
   position: relative;
   overflow: hidden;
@@ -504,10 +506,10 @@ textarea:disabled {
 
 .stat .value,
 .stat-value {
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
   font-weight: var(--fw-black);
   letter-spacing: -0.02em;
-  margin: 2px 0;
+  margin: 1px 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -664,13 +666,13 @@ table.data .num {
 
 .chart-wrap {
   position: relative;
-  height: 230px;
+  height: 210px;
 }
 .chart-wrap.tall {
-  height: 300px;
+  height: 270px;
 }
 .chart-wrap.short {
-  height: 150px;
+  height: 140px;
 }
 .chart-wrap canvas {
   position: absolute;
@@ -754,7 +756,7 @@ table.data .num {
   justify-content: center;
   gap: var(--s-2);
   text-align: center;
-  padding: var(--s-6) var(--s-4);
+  padding: var(--s-5) var(--s-4);
   color: var(--text-mute);
   font-size: var(--fs-md);
 }
@@ -819,7 +821,7 @@ table.data .num {
  * container when there is no room for the preferred width. */
 .grid {
   display: grid;
-  gap: var(--s-4);
+  gap: var(--s-3);
 }
 .grid.two {
   grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
@@ -1211,31 +1213,40 @@ table.data .num {
   position: sticky;
   top: var(--topbar-h);
   z-index: 15;
-  background: var(--bg);
-  margin-bottom: var(--s-2);
-  padding-bottom: var(--s-1);
-  border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--bg-elev) 82%, transparent);
+  backdrop-filter: blur(14px);
+  margin-bottom: var(--s-3);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 .dash-nav-stack .section-rail {
   position: static;
   top: auto;
   z-index: auto;
   margin-bottom: 0;
+  padding: 0;
   background: transparent;
   mask-image: none;
 }
+.dash-rail {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow-x: visible;
+}
 .dash-rail button {
   text-align: center;
+  min-height: 34px;
 }
 @media (max-width: 900px) {
   .dash-nav-stack {
     margin-inline: calc(var(--s-3) * -1);
-    padding-inline: var(--s-3);
+    padding: 4px var(--s-3);
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
   }
   .dash-nav-stack .dash-rail {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    overflow-x: visible;
     margin-inline: 0;
     padding-inline: 0;
     mask-image: none;
