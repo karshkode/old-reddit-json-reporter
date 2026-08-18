@@ -414,9 +414,12 @@
        * shared words are incidental. When nothing clears the absolute
        * bar the honest answer is that nothing loaded is about this,
        * which is what the card then says. */
-      const eligible = all.filter((m) => !m.blocked);
+      const eligible = all.filter((m) => !m.blocked && (!opts.loadedOnly || m.measured));
       const bestFit = eligible.reduce((m, c) => Math.max(m, c.fit || 0), 0);
-      const floor = Math.max(MIN_MEASURED_FIT, RELEVANT_SHARE * bestFit);
+      const floor = Math.max(
+        opts.minFit > 0 ? opts.minFit : MIN_MEASURED_FIT,
+        RELEVANT_SHARE * bestFit
+      );
 
       const measured = eligible.filter((m) => m.measured && m.fit >= floor)
         .sort((a, b) => b.score - a.score);
@@ -490,7 +493,7 @@
 
     const related = await Discovery.forPost(post, {
       limit: opts.candidateLimit || 40,
-      live: opts.live,
+      live: opts.loadedOnly ? false : opts.live,
       exclude: opts.exclude,
       include: loaded,
       onPartial: typeof opts.onPartial === "function"

@@ -12,57 +12,62 @@
 
   const Trending = {};
 
-  /* Mid-Aug 2026 progressive / civic desk. Bump alongside
+  /* 18 Aug 2026 progressive / civic desk. Bump alongside
    * data/match/sphere-triggers.json when the news cycle shifts. */
   const DESK = [
     {
-      id: "doj-independence",
-      label: "DOJ independence & Blanche",
-      blurb: "Attorney General Todd Blanche declines a hard independence pledge; prosecutorial loyalty stays in the news cycle.",
-      spheres: ["democracy", "civic_discussion", "election_law"],
+      id: "section-338-canada",
+      label: "Section 338 Canada tariffs",
+      blurb: "50% duties on ~$20B of Canadian goods take effect 19 Aug unless last-minute talks hold — first-ever use of Tariff Act §338, paid by U.S. importers into the midterm affordability fight.",
+      spheres: ["economy_business", "labor", "progressive"],
       keywords: [
-        "todd blanche", "attorney general", "doj independence", "justice department",
-        "weaponized doj", "politicized prosecution", "meet the press", "unitary executive",
+        "section 338", "canada tariff", "canadian tariffs", "50 percent tariff",
+        "usmca", "import tax", "affordability", "cost of living", "trade war",
+        "hockey sticks", "carney",
       ],
     },
     {
       id: "voter-rolls",
-      label: "Voter rolls & midterms",
-      blurb: "DOJ keeps pressing states for voter-registration data ahead of November despite a long string of court losses.",
+      label: "DOJ monitors & mail-in fights",
+      blurb: "Civil expanded a 1,000-monitor midterm deployment while courts keep blocking the mail-in crackdown — voter-roll demands and 'rigged' framing stay the November story.",
       spheres: ["voting", "election_law", "democracy"],
       keywords: [
-        "voter roll", "voter rolls", "voter registration", "election integrity",
-        "midterm", "midterms", "2026 election", "title iii", "voting rights",
-      ],
-    },
-    {
-      id: "forever-tariffs",
-      label: "Forever tariffs & prices",
-      blurb: "Long-haul Section 301 / 232 import taxes land on consumers; affordability becomes a midterm frame.",
-      spheres: ["economy_business", "labor", "progressive"],
-      keywords: [
-        "tariff", "tariffs", "forever tariff", "section 301", "section 232",
-        "import tax", "affordability", "cost of living", "canada tariff", "trade war",
+        "election monitor", "doj monitors", "voter roll", "voter rolls",
+        "mail-in", "mail in ballot", "absentee", "election integrity",
+        "midterm", "midterms", "voting rights", "save america act",
       ],
     },
     {
       id: "gaza-roadmap",
-      label: "Gaza roadmap talks",
-      blurb: "Kushner–Hamas contacts and a proposed disarmament roadmap collide with Netanyahu’s rejection.",
+      label: "Gaza disarmament impasse",
+      blurb: "Kushner left Jerusalem 17 Aug with no breakthrough: Netanyahu will not withdraw until Hamas disarms; new working groups lock reconstruction to demilitarization.",
       spheres: ["palestine_gaza", "civic_discussion", "media_news"],
       keywords: [
-        "gaza", "kushner", "hamas", "roadmap", "road map", "ceasefire",
-        "board of peace", "disarmament", "netanyahu", "west bank",
+        "gaza", "kushner", "netanyahu", "disarmament", "demilitarization",
+        "board of peace", "working group", "ceasefire", "hamas", "withdrawal",
+        "15-point", "roadmap",
       ],
     },
     {
       id: "house-majority",
-      label: "House majority path",
-      blurb: "Leadership distances from the DSA left while progressives push affordability and primary energy.",
+      label: "House majority & affordability",
+      blurb: "Jeffries campaigns on prices into November; DSA energy and primary fights sit next to the House-majority math.",
       spheres: ["progressive", "voting", "movement"],
       keywords: [
-        "jeffries", "democratic socialists", "dsa", "medicare for all",
-        "house majority", "blue wave", "primary challenger", "downballot",
+        "jeffries", "hakeem jeffries", "affordability", "house majority",
+        "democratic socialists", "dsa", "medicare for all", "blue wave",
+        "primary challenger", "downballot",
+      ],
+    },
+    {
+      id: "doj-independence",
+      label: "DOJ independence & Blanche",
+      blurb: "Prosecutorial loyalty and a politicized Civil Rights Division stay on the desk as monitors and voter-roll cases scale up.",
+      spheres: ["democracy", "civic_discussion", "election_law"],
+      keywords: [
+        "todd blanche", "attorney general", "doj independence", "justice department",
+        "weaponized doj", "politicized prosecution", "civil rights division",
+        "harmeet dhillon", "unitary executive",
       ],
     },
   ];
@@ -188,7 +193,7 @@
       || a.label.localeCompare(b.label)
     );
     return {
-      updated: "2026-08-16",
+      updated: "2026-08-18",
       topics: topics,
       headlineCount: articles.length,
       postCount: posts.length,
@@ -243,24 +248,43 @@
             if (t.postPts) materialBits.push(`${fmt(t.postPts)} pts`);
             if (t.postComments) materialBits.push(`${fmt(t.postComments)} cmt`);
           }
+          const topHead = t.headlines && t.headlines[0];
           return `
           <li class="trending-topic" data-trending="${esc(t.id)}">
             <div class="trending-topic-head">
               <h3 class="trending-topic-label">${esc(t.label)}</h3>
+            </div>
+            ${materialBits.length
+              ? `<p class="meta trending-material">${esc(materialBits.join(" · "))}</p>`
+              : `<p class="meta trending-empty">No matches yet</p>`}
+            ${topHead ? `
+              <p class="trending-lead">
+                ${topHead.link
+                  ? `<a href="${esc(topHead.link)}" target="_blank" rel="noopener noreferrer">${esc(topHead.title)}</a>`
+                  : `<span>${esc(topHead.title)}</span>`}
+                ${topHead.id ? `<button type="button" class="btn tiny ghost" data-action="trending-open-article" data-syn-id="${esc(topHead.id)}">Plan</button>` : ""}
+              </p>` : ""}
+            <div class="trending-topic-actions">
+              ${camp
+                ? `<button type="button" class="btn tiny" data-action="trending-open-campaign" data-campaign="${esc(camp.id)}">Open</button>`
+                : `<button type="button" class="btn tiny primary" data-action="trending-make-campaign" data-trending="${esc(t.id)}"
+                     title="Start a theme campaign — articles and matching posts fold in when available">+ Campaign</button>`}
+              ${(t.spheres || []).length
+                ? `<button type="button" class="btn tiny ghost" data-action="load-sphere-from-post" data-sphere="${esc(t.spheres[0])}">Load rooms</button>`
+                : ""}
+            </div>
+            <details class="trending-more">
+              <summary>Zoom in</summary>
+              <p class="trending-topic-blurb">${esc(t.blurb)}</p>
+              <div class="trending-topic-keys meta">${(t.keywords || []).map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>
               <div class="trending-topic-spheres">
                 ${(t.spheres || []).map((s) =>
                   `<button type="button" class="chip" data-action="load-sphere-from-post" data-sphere="${esc(s)}">${esc(s.replace(/_/g, " "))}</button>`
                 ).join("")}
               </div>
-            </div>
-            <p class="trending-topic-blurb">${esc(t.blurb)}</p>
-            <div class="trending-topic-keys meta">${(t.keywords || []).map((k) => `<code>${esc(k)}</code>`).join(" ")}</div>
-            ${materialBits.length
-              ? `<p class="meta trending-material">${esc(materialBits.join(" · "))}</p>`
-              : `<p class="meta trending-empty">No matching headlines or loaded posts yet — start a theme campaign anyway.</p>`}
-            ${t.headlines && t.headlines.length ? `
+              ${t.headlines && t.headlines.length > 1 ? `
               <ul class="trending-headlines">
-                ${t.headlines.map((h) => `
+                ${t.headlines.slice(1).map((h) => `
                   <li>
                     ${h.link
                       ? `<a href="${esc(h.link)}" target="_blank" rel="noopener noreferrer">${esc(h.title)}</a>`
@@ -269,15 +293,7 @@
                     ${h.id ? `<button type="button" class="btn tiny ghost" data-action="trending-open-article" data-syn-id="${esc(h.id)}">Plan</button>` : ""}
                   </li>`).join("")}
               </ul>` : ""}
-            <div class="trending-topic-actions">
-              ${camp
-                ? `<button type="button" class="btn small" data-action="trending-open-campaign" data-campaign="${esc(camp.id)}">Open campaign</button>`
-                : `<button type="button" class="btn small primary" data-action="trending-make-campaign" data-trending="${esc(t.id)}"
-                     title="Start a theme campaign — articles and matching posts fold in when available">+ Campaign on theme</button>`}
-              ${(t.spheres || []).length
-                ? `<button type="button" class="btn small ghost" data-action="load-sphere-from-post" data-sphere="${esc(t.spheres[0])}">Load ${esc(t.spheres[0].replace(/_/g, " "))} rooms</button>`
-                : ""}
-            </div>
+            </details>
           </li>`;
         }).join("")}
       </ul>${expanderHtml}`;
