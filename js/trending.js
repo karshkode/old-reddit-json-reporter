@@ -12,62 +12,62 @@
 
   const Trending = {};
 
-  /* 18 Aug 2026 progressive / civic desk. Bump alongside
+  /* 23 Aug 2026 progressive / civic desk. Bump alongside
    * data/match/sphere-triggers.json when the news cycle shifts. */
   const DESK = [
     {
       id: "section-338-canada",
-      label: "Section 338 Canada tariffs",
-      blurb: "50% duties on ~$20B of Canadian goods take effect 19 Aug unless last-minute talks hold — first-ever use of Tariff Act §338, paid by U.S. importers into the midterm affordability fight.",
+      label: "Canada trade war escalates",
+      blurb: "Section 338 50% tariffs took effect 22 Aug after talks collapsed; Carney suspended negotiations and matched dollar-for-dollar retaliation from 8 Sept — affordability and border-state pushback into Labor Day.",
       spheres: ["economy_business", "labor", "progressive"],
       keywords: [
         "section 338", "canada tariff", "canadian tariffs", "50 percent tariff",
-        "usmca", "import tax", "affordability", "cost of living", "trade war",
-        "hockey sticks", "carney",
+        "mark carney", "retaliatory tariff", "trade talks collapsed", "september 8",
+        "usmca", "import tax", "affordability", "trade war", "jamieson greer",
       ],
     },
     {
       id: "voter-rolls",
       label: "DOJ monitors & mail-in fights",
-      blurb: "Civil expanded a 1,000-monitor midterm deployment while courts keep blocking the mail-in crackdown — voter-roll demands and 'rigged' framing stay the November story.",
+      blurb: "Civil Rights sent monitors to Florida and Wyoming primaries 18 Aug and is scaling toward ~1,000 for November — while courts keep blocking the mail-in crackdown and voter-roll letters land statewide.",
       spheres: ["voting", "election_law", "democracy"],
       keywords: [
-        "election monitor", "doj monitors", "voter roll", "voter rolls",
-        "mail-in", "mail in ballot", "absentee", "election integrity",
-        "midterm", "midterms", "voting rights", "save america act",
+        "election monitor", "doj monitors", "poll monitor", "miami-dade", "laramie",
+        "voter roll", "voter rolls", "mail-in", "mail in ballot", "election integrity",
+        "midterm", "midterms", "harmeet dhillon", "save america act",
       ],
     },
     {
       id: "gaza-roadmap",
       label: "Gaza disarmament impasse",
-      blurb: "Kushner left Jerusalem 17 Aug with no breakthrough: Netanyahu will not withdraw until Hamas disarms; new working groups lock reconstruction to demilitarization.",
+      blurb: "Kushner met Hamas in Egypt then Netanyahu in Jerusalem with no breakthrough; regional powers condemned Israel for blocking the 15-point roadmap while strikes continue and disarmament-before-withdrawal stalls the Board of Peace.",
       spheres: ["palestine_gaza", "civic_discussion", "media_news"],
       keywords: [
-        "gaza", "kushner", "netanyahu", "disarmament", "demilitarization",
-        "board of peace", "working group", "ceasefire", "hamas", "withdrawal",
-        "15-point", "roadmap",
+        "gaza", "kushner", "netanyahu", "hamas", "disarmament", "15-point",
+        "board of peace", "khalil al-hayya", "ceasefire", "obstructing peace",
+        "withdrawal", "demilitarization", "stabilization force",
       ],
     },
     {
-      id: "house-majority",
-      label: "House majority & affordability",
-      blurb: "Jeffries campaigns on prices into November; DSA energy and primary fights sit next to the House-majority math.",
+      id: "ukraine-ceasefire",
+      label: "Ukraine ceasefire push",
+      blurb: "Witkoff and Kushner may visit Kyiv around 24 Aug Independence Day; Zelenskyy outlined a ceasefire plus a third-party buffer zone as Trump’s peacemaker agenda stalls on multiple fronts.",
+      spheres: ["civic_discussion", "media_news", "democracy"],
+      keywords: [
+        "witkoff", "steve witkoff", "zelenskyy", "ukraine", "kyiv", "ceasefire",
+        "free economic zone", "independence day", "putin", "russia ukraine",
+        "peace plan", "buffer zone",
+      ],
+    },
+    {
+      id: "midterm-crunch",
+      label: "Midterm crunch & affordability",
+      blurb: "Approval sits near 33% as tariffs, Gaza and Ukraine stall ahead of Labor Day — Jeffries and downballot fights frame November as an affordability and House-majority referendum.",
       spheres: ["progressive", "voting", "movement"],
       keywords: [
-        "jeffries", "hakeem jeffries", "affordability", "house majority",
-        "democratic socialists", "dsa", "medicare for all", "blue wave",
-        "primary challenger", "downballot",
-      ],
-    },
-    {
-      id: "doj-independence",
-      label: "DOJ independence & Blanche",
-      blurb: "Prosecutorial loyalty and a politicized Civil Rights Division stay on the desk as monitors and voter-roll cases scale up.",
-      spheres: ["democracy", "civic_discussion", "election_law"],
-      keywords: [
-        "todd blanche", "attorney general", "doj independence", "justice department",
-        "weaponized doj", "politicized prosecution", "civil rights division",
-        "harmeet dhillon", "unitary executive",
+        "midterm", "midterms", "labor day", "affordability", "approval rating",
+        "house majority", "jeffries", "hakeem jeffries", "downballot", "blue wave",
+        "cost of living", "primary challenger",
       ],
     },
   ];
